@@ -196,6 +196,7 @@ drift-away/
   index.html              # canvas + UI shell
   style.css               # layout, resource bar, tile panel styling
   README.md               # what it is, how to run it, controls
+  CNAME                   # "driftaway.jakechurchill.com" — GitHub Pages custom domain
   memory-bank/
     project-overview.md   # concept, current status, key decisions
     tile-design.md        # the tile table above + balance notes, kept up to date as tuned
@@ -216,3 +217,12 @@ drift-away/
 ## 11. Testing / verification
 
 No test framework or build step. `state.js`'s core math (`tick`, `effectiveRate`, `isEligible`) is kept DOM-free so `tests/economy.test.mjs` can exercise it directly with Node's built-in `assert` (`node tests/economy.test.mjs`) — fast regression check with zero dependencies. Everything involving rendering, input, and the actual feel of play is verified by running the game in a browser and exercising the full loop end-to-end (tick rates, clicking to unlock both cost- and milestone-gated tiles, boosters affecting the right resource, save/reload restoring state correctly) before considering any implementation step done.
+
+## 12. Deployment
+
+The repo (`Jake-Churchill/drift-away` on GitHub) is public, and the game is intended to be served at **driftaway.jakechurchill.com**. Since there's no build step, this deploys as a static site directly from the repo via **GitHub Pages**:
+
+- Pages source: `main` branch, root (`/`) — not `/docs`, since `docs/` in this repo holds design specs, not the site itself. `index.html` at repo root is what Pages serves.
+- A `CNAME` file at repo root containing exactly `driftaway.jakechurchill.com` tells Pages which custom domain to bind to.
+- DNS: the user owns `jakechurchill.com` and will point `driftaway` via a `CNAME` DNS record at their registrar to `<github-username>.github.io` — this is an external DNS/account change outside the repo and outside what an assistant should do unprompted; it's called out here so the plan doesn't silently assume it's handled.
+- Because the site is public, no secrets/API keys are ever introduced (there are none needed — pure client-side static game with `localStorage` only).
