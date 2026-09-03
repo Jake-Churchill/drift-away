@@ -68,22 +68,48 @@ function tracePolygon(ctx, points, offsetY = 0) {
   ctx.closePath();
 }
 
+const WATER_BANDS = [
+  { speed: 40, amp: 20, width: 2, alpha: 0.18, phase: 0 },
+  { speed: 65, amp: 14, width: 1.5, alpha: 0.12, phase: 40 },
+  { speed: 25, amp: 26, width: 2.5, alpha: 0.1, phase: 80 },
+];
+const WATER_SPARKLE_COUNT = 18;
+
 function drawWater(ctx, canvas, time) {
   const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
   gradient.addColorStop(0, '#1b4965');
+  gradient.addColorStop(0.55, '#235d80');
   gradient.addColorStop(1, '#2e6f95');
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   ctx.save();
-  ctx.strokeStyle = 'rgba(95, 168, 211, 0.15)';
-  ctx.lineWidth = 2;
-  for (let i = 0; i < 5; i++) {
-    const yBase = (canvas.height / 5) * i + ((time / 40) % canvas.height) - canvas.height;
+  for (const band of WATER_BANDS) {
+    ctx.strokeStyle = `rgba(150, 210, 235, ${band.alpha})`;
+    ctx.lineWidth = band.width;
+    for (let j = 0; j < 4; j++) {
+      const yBase =
+        (canvas.height / 4) * j +
+        ((time / band.speed + band.phase) % canvas.height) -
+        canvas.height;
+      ctx.beginPath();
+      ctx.moveTo(0, yBase);
+      ctx.quadraticCurveTo(canvas.width / 2, yBase + band.amp, canvas.width, yBase);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+
+  ctx.save();
+  for (let i = 0; i < WATER_SPARKLE_COUNT; i++) {
+    const seed = i * 137.5;
+    const px = (seed * 3.1 + time / 25) % canvas.width;
+    const py = (seed * 1.7) % canvas.height;
+    const twinkle = 0.5 + 0.5 * Math.sin(time / 400 + i * 1.3);
+    ctx.fillStyle = `rgba(255, 255, 255, ${Math.max(0, twinkle - 0.3) * 0.6})`;
     ctx.beginPath();
-    ctx.moveTo(0, yBase);
-    ctx.quadraticCurveTo(canvas.width / 2, yBase + 20, canvas.width, yBase);
-    ctx.stroke();
+    ctx.arc(px, py, 1.3, 0, Math.PI * 2);
+    ctx.fill();
   }
   ctx.restore();
 }
@@ -113,7 +139,17 @@ function drawLockedTile(ctx, cx, cy, eligible, time) {
 }
 
 function drawFishProp(ctx) {
-  ctx.fillStyle = '#5fa8d3';
+  ctx.save();
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+  ctx.beginPath();
+  ctx.ellipse(1, 3, 15, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  const bodyGradient = ctx.createLinearGradient(-14, -8, 14, 8);
+  bodyGradient.addColorStop(0, '#8cc7e8');
+  bodyGradient.addColorStop(1, '#3d84ad');
+  ctx.fillStyle = bodyGradient;
   ctx.beginPath();
   ctx.moveTo(-14, 0);
   ctx.quadraticCurveTo(0, -10, 14, 0);
@@ -129,7 +165,17 @@ function drawFishProp(ctx) {
 }
 
 function drawKelpProp(ctx) {
-  ctx.strokeStyle = '#4c9a6a';
+  ctx.save();
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
+  ctx.beginPath();
+  ctx.ellipse(0, 14, 14, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  const strandGradient = ctx.createLinearGradient(0, 14, 0, -14);
+  strandGradient.addColorStop(0, '#2f6b48');
+  strandGradient.addColorStop(1, '#6fc190');
+  ctx.strokeStyle = strandGradient;
   ctx.lineWidth = 4;
   ctx.lineCap = 'round';
   for (const dx of [-10, 0, 10]) {
@@ -141,7 +187,17 @@ function drawKelpProp(ctx) {
 }
 
 function drawDriftwoodProp(ctx) {
-  ctx.strokeStyle = '#5a3f22';
+  ctx.save();
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.18)';
+  ctx.beginPath();
+  ctx.ellipse(0, 8, 18, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  const logGradient = ctx.createLinearGradient(0, -10, 0, 10);
+  logGradient.addColorStop(0, '#7a5330');
+  logGradient.addColorStop(1, '#3f2a15');
+  ctx.strokeStyle = logGradient;
   ctx.lineWidth = 6;
   ctx.lineCap = 'round';
   ctx.beginPath(); ctx.moveTo(-16, 8); ctx.lineTo(16, 4); ctx.stroke();
@@ -149,7 +205,17 @@ function drawDriftwoodProp(ctx) {
 }
 
 function drawCropsProp(ctx) {
-  ctx.strokeStyle = '#d9b545';
+  ctx.save();
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
+  ctx.beginPath();
+  ctx.ellipse(0, 13, 16, 4, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  const stalkGradient = ctx.createLinearGradient(0, 12, 0, -12);
+  stalkGradient.addColorStop(0, '#a9822c');
+  stalkGradient.addColorStop(1, '#f0d878');
+  ctx.strokeStyle = stalkGradient;
   ctx.lineWidth = 3;
   for (const dx of [-12, -4, 4, 12]) {
     ctx.beginPath();
@@ -160,7 +226,17 @@ function drawCropsProp(ctx) {
 }
 
 function drawBoosterProp(ctx, id) {
-  ctx.fillStyle = '#e0b84b';
+  ctx.save();
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.18)';
+  ctx.beginPath();
+  ctx.ellipse(0, 12, 14, 4, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  const boosterGradient = ctx.createLinearGradient(-10, -14, 10, 14);
+  boosterGradient.addColorStop(0, '#f6dc98');
+  boosterGradient.addColorStop(1, '#c9973f');
+  ctx.fillStyle = boosterGradient;
   if (id === 'booster_windmill') {
     ctx.fillRect(-2, -14, 4, 20);
     for (const angle of [0, 90, 180, 270]) {
@@ -209,20 +285,52 @@ function drawUnlockedTile(ctx, tile, cx, cy) {
   ctx.restore();
 
   ctx.save();
-  ctx.fillStyle = WOOD_SIDE;
+  const sideGradient = ctx.createLinearGradient(0, cy, 0, cy + WALL_HEIGHT + HEX_RADIUS * 0.3);
+  sideGradient.addColorStop(0, '#a3763f');
+  sideGradient.addColorStop(1, '#5e4020');
+  ctx.fillStyle = sideGradient;
   tracePolygon(ctx, topPoly, WALL_HEIGHT);
   ctx.fill();
   ctx.restore();
 
   ctx.save();
-  ctx.fillStyle = WOOD_TOP;
+  const topGradient = ctx.createRadialGradient(
+    cx - HEX_RADIUS * 0.3,
+    cy - HEX_RADIUS * 0.35,
+    HEX_RADIUS * 0.1,
+    cx,
+    cy,
+    HEX_RADIUS
+  );
+  topGradient.addColorStop(0, '#e8bd83');
+  topGradient.addColorStop(0.55, WOOD_TOP);
+  topGradient.addColorStop(1, '#a97c46');
+  ctx.fillStyle = topGradient;
   tracePolygon(ctx, topPoly);
   ctx.fill();
+
+  ctx.strokeStyle = 'rgba(94, 64, 32, 0.3)';
+  ctx.lineWidth = 1.4;
+  for (let i = -2; i <= 2; i++) {
+    const gy = cy + i * (HEX_RADIUS * 0.28);
+    ctx.beginPath();
+    ctx.moveTo(cx - HEX_RADIUS * 0.7, gy);
+    ctx.quadraticCurveTo(cx, gy + 5, cx + HEX_RADIUS * 0.7, gy);
+    ctx.stroke();
+  }
+
   if (tile.kind === 'booster') {
     ctx.lineWidth = 3;
     ctx.strokeStyle = BOOSTER_TRIM;
     ctx.stroke();
   }
+
+  ctx.strokeStyle = 'rgba(255, 240, 210, 0.45)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(topPoly[4].x, topPoly[4].y);
+  ctx.lineTo(topPoly[3].x, topPoly[3].y);
+  ctx.stroke();
   ctx.restore();
 
   drawProp(ctx, tile, cx, cy);
