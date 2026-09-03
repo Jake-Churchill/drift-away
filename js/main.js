@@ -48,6 +48,7 @@ canvas.addEventListener('click', (event) => {
 });
 
 let lastFrameTime = performance.now();
+let timeSinceSave = 0;
 
 function loop(now) {
   const dt = Math.min(0.25, (now - lastFrameTime) / 1000);
@@ -65,7 +66,17 @@ function loop(now) {
 
   drawScene(ctx, canvas, state, now);
 
+  timeSinceSave += dt;
+  if (timeSinceSave >= 10) {
+    saveState(state);
+    timeSinceSave = 0;
+  }
+
   requestAnimationFrame(loop);
 }
 
 requestAnimationFrame(loop);
+
+window.addEventListener('beforeunload', () => {
+  saveState(state);
+});
