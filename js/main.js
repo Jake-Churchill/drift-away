@@ -3,7 +3,9 @@ import { loadState, tick, isEligible, unlockTile, saveState } from './state.js';
 import { drawScene, screenToGrid } from './render.js';
 import { initUI, getCanvas, updateResourceBar, showTilePanel, hideTilePanel } from './ui.js';
 
-initUI();
+initUI(() => {
+  selectedTileId = null;
+});
 
 const canvas = getCanvas();
 const ctx = canvas.getContext('2d');

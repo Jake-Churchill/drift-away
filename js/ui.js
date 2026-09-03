@@ -9,7 +9,7 @@ function tileIcon(tile) {
   return tile.boosts.map((b) => RESOURCE_ICONS[b.resource]).join('');
 }
 
-export function initUI() {
+export function initUI(onClose) {
   elements.canvas = document.getElementById('game-canvas');
   elements.counts = {};
   for (const resource of RESOURCES) {
@@ -22,7 +22,10 @@ export function initUI() {
   elements.panelProgress = document.getElementById('tile-panel-progress');
   elements.panelUnlockBtn = document.getElementById('tile-panel-unlock-btn');
   elements.panelCloseBtn = document.getElementById('tile-panel-close-btn');
-  elements.panelCloseBtn.addEventListener('click', hideTilePanel);
+  elements.panelCloseBtn.addEventListener('click', () => {
+    hideTilePanel();
+    if (onClose) onClose();
+  });
 }
 
 export function getCanvas() {
