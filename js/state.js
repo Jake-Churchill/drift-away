@@ -4,24 +4,29 @@ export const RESOURCES = ['fish', 'kelp', 'driftwood', 'crops'];
 export const SAVE_KEY = 'driftaway_save_v1';
 
 export function createInitialState() {
-  const resources = { fish: 0, kelp: 0, driftwood: 0, crops: 0 };
-  const lifetime = { fish: 0, kelp: 0, driftwood: 0, crops: 0 };
+  const resources = Object.fromEntries(RESOURCES.map((r) => [r, 0]));
+  const lifetime = Object.fromEntries(RESOURCES.map((r) => [r, 0]));
   const unlocked = TILES.filter((t) => t.unlock.type === 'start').map((t) => t.id);
   return { version: 1, resources, lifetime, unlocked };
+}
+
+function boostPercentFor(resource, unlockedIds) {
+  return TILES
+    .filter((t) => unlockedIds.includes(t.id) && t.kind === 'booster')
+    .flatMap((t) => t.boosts)
+    .filter((b) => b.resource === resource)
+    .reduce((sum, b) => sum + b.percent, 0);
 }
 
 export function effectiveRate(resource, unlockedIds) {
   const baseSum = TILES
     .filter((t) => unlockedIds.includes(t.id) && t.kind === 'producer' && t.produces === resource)
     .reduce((sum, t) => sum + t.rate, 0);
+  return baseSum * (1 + boostPercentFor(resource, unlockedIds) / 100);
+}
 
-  const boostPct = TILES
-    .filter((t) => unlockedIds.includes(t.id) && t.kind === 'booster')
-    .flatMap((t) => t.boosts)
-    .filter((b) => b.resource === resource)
-    .reduce((sum, b) => sum + b.percent, 0);
-
-  return baseSum * (1 + boostPct / 100);
+export function effectiveTileRate(tile, unlockedIds) {
+  return tile.rate * (1 + boostPercentFor(tile.produces, unlockedIds) / 100);
 }
 
 export function isEligible(tile, state) {
@@ -61,7 +66,11 @@ export function unlockTile(state, tile) {
 }
 
 export function saveState(state) {
-  localStorage.setItem(SAVE_KEY, JSON.stringify(state));
+  try {
+    localStorage.setItem(SAVE_KEY, JSON.stringify(state));
+  } catch {
+    // storage unavailable (blocked, sandboxed, quota) — play continues without persistence
+  }
 }
 
 export function loadState() {
@@ -75,7 +84,14 @@ export function loadState() {
       parsed.resources &&
       parsed.lifetime &&
       Array.isArray(parsed.unlocked);
-    return looksValid ? parsed : createInitialState();
+    if (!looksValid) return createInitialState();
+    const base = createInitialState();
+    return {
+      ...base,
+      ...parsed,
+      resources: { ...base.resources, ...parsed.resources },
+      lifetime: { ...base.lifetime, ...parsed.lifetime },
+    };
   } catch {
     return createInitialState();
   }

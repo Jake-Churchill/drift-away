@@ -1,6 +1,8 @@
 import { TILES } from './tiles.js';
 import { isEligible } from './state.js';
 
+const DRAW_ORDER = [...TILES].sort((a, b) => a.gridPos.row - b.gridPos.row);
+
 const GRID_ROWS = 5;
 const GRID_COLS = 5;
 const HEX_RADIUS = 42;
@@ -247,7 +249,7 @@ export function drawScene(ctx, canvas, state, time) {
   ctx.scale(fitScale, fitScale * SCALE_Y);
   ctx.translate(-bounds.width / 2, -bounds.height / 2);
 
-  for (const tile of TILES) {
+  for (const tile of DRAW_ORDER) {
     drawTile(ctx, tile, state, time);
   }
 

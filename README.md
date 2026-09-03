@@ -2,7 +2,7 @@
 
 A calm, idle resource-management game: unlock hexagonal raft tiles on the open sea, each producing fish, kelp, driftwood, or crops, or boosting another resource's output, until all 25 slots are claimed.
 
-Play it live at **https://driftaway.jakechurchill.com**.
+Once deployed, it will be live at **https://driftaway.jakechurchill.com**.
 
 ## Running locally
 

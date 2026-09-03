@@ -1,4 +1,4 @@
-import { RESOURCES } from './state.js';
+import { RESOURCES, effectiveTileRate } from './state.js';
 
 const elements = {};
 
@@ -66,7 +66,7 @@ export function showTilePanel(tile, state, eligible, onUnlock) {
   if (unlocked) {
     elements.panelDesc.textContent =
       tile.kind === 'producer'
-        ? `Produces ${tile.rate}/s ${tile.produces}`
+        ? `Produces ${Number(effectiveTileRate(tile, state.unlocked).toFixed(2))} ${tile.produces}/s`
         : tile.boosts.map((b) => `+${b.percent}% ${b.resource}`).join(', ');
     elements.panelProgress.textContent = '';
     elements.panelUnlockBtn.classList.add('hidden');

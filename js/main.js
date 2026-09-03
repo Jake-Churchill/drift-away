@@ -3,6 +3,8 @@ import { loadState, tick, isEligible, unlockTile, saveState } from './state.js';
 import { drawScene, screenToGrid } from './render.js';
 import { initUI, getCanvas, updateResourceBar, showTilePanel, hideTilePanel } from './ui.js';
 
+let selectedTileId = null;
+
 initUI(() => {
   selectedTileId = null;
 });
@@ -11,7 +13,6 @@ const canvas = getCanvas();
 const ctx = canvas.getContext('2d');
 
 let state = loadState();
-let selectedTileId = null;
 
 function resizeCanvas() {
   canvas.width = window.innerWidth;

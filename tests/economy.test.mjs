@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { TILES } from '../js/tiles.js';
-import { createInitialState, effectiveRate, isEligible, tick, unlockTile } from '../js/state.js';
+import { createInitialState, effectiveRate, effectiveTileRate, isEligible, tick, unlockTile } from '../js/state.js';
 
 // --- Tile data integrity ---
 
@@ -37,6 +37,22 @@ assert.deepEqual(
 
 console.log('tile data tests passed');
 
+// --- createInitialState ---
+
+{
+  const state = createInitialState();
+  assert.deepEqual(
+    state.resources,
+    { fish: 0, kelp: 0, driftwood: 0, crops: 0 },
+    'resources shape must match pre-refactor output exactly'
+  );
+  assert.deepEqual(
+    state.lifetime,
+    { fish: 0, kelp: 0, driftwood: 0, crops: 0 },
+    'lifetime shape must match pre-refactor output exactly'
+  );
+}
+
 // --- effectiveRate ---
 
 {
@@ -50,6 +66,18 @@ console.log('tile data tests passed');
 {
   const unlocked = ['fish_start', 'booster_smokehouse'];
   assert.equal(effectiveRate('fish', unlocked), 1.25, 'smokehouse adds +25% to fish');
+}
+
+// --- effectiveTileRate ---
+
+{
+  const tile = TILES.find((t) => t.id === 'fish_start');
+  assert.equal(effectiveTileRate(tile, ['fish_start']), 1.0, 'no boosters unlocked returns raw rate');
+  assert.equal(
+    effectiveTileRate(tile, ['fish_start', 'booster_smokehouse']),
+    1.25,
+    'smokehouse boosts fish_start tile rate by +25%'
+  );
 }
 
 // --- isEligible ---
