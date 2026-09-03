@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Drift Away</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <canvas id="game-canvas"></canvas>
+  <div id="resource-bar">
+    <div class="resource" data-resource="fish"><span class="icon">🐟</span><span class="count" id="count-fish">0</span></div>
+    <div class="resource" data-resource="kelp"><span class="icon">🌿</span><span class="count" id="count-kelp">0</span></div>
+    <div class="resource" data-resource="driftwood"><span class="icon">🪵</span><span class="count" id="count-driftwood">0</span></div>
+    <div class="resource" data-resource="crops"><span class="icon">🌾</span><span class="count" id="count-crops">0</span></div>
+  </div>
+  <div id="tile-panel" class="hidden">
+    <button id="tile-panel-close-btn">×</button>
+    <span id="tile-panel-icon" class="tile-panel-icon"></span>
+    <h2 id="tile-panel-name"></h2>
+    <p id="tile-panel-desc"></p>
+    <div id="tile-panel-progress"></div>
+    <button id="tile-panel-unlock-btn" class="hidden">Unlock</button>
+  </div>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
