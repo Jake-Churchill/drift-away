@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { TILES } from '../js/tiles.js';
+import { createInitialState, effectiveRate, isEligible, tick, unlockTile } from '../js/state.js';
 
 // --- Tile data integrity ---
 
@@ -35,3 +36,69 @@ assert.deepEqual(
 );
 
 console.log('tile data tests passed');
+
+// --- effectiveRate ---
+
+{
+  const state = createInitialState();
+  assert.equal(effectiveRate('fish', state.unlocked), 1.0, 'starting fish rate');
+  assert.equal(effectiveRate('kelp', state.unlocked), 1.0, 'starting kelp rate');
+  assert.equal(effectiveRate('driftwood', state.unlocked), 0.5, 'starting driftwood rate');
+  assert.equal(effectiveRate('crops', state.unlocked), 0.5, 'starting crops rate');
+}
+
+{
+  const unlocked = ['fish_start', 'booster_smokehouse'];
+  assert.equal(effectiveRate('fish', unlocked), 1.25, 'smokehouse adds +25% to fish');
+}
+
+// --- isEligible ---
+
+{
+  const tile = { unlock: { type: 'cost', cost: { driftwood: 30 } } };
+  assert.equal(isEligible(tile, { resources: { driftwood: 10 } }), false);
+  assert.equal(isEligible(tile, { resources: { driftwood: 30 } }), true);
+}
+
+{
+  const tile = { unlock: { type: 'milestone', resource: 'fish', target: 200 } };
+  assert.equal(isEligible(tile, { lifetime: { fish: 199 } }), false);
+  assert.equal(isEligible(tile, { lifetime: { fish: 200 } }), true);
+}
+
+{
+  const tile = { unlock: { type: 'start' } };
+  assert.equal(isEligible(tile, {}), true);
+}
+
+// --- tick ---
+
+{
+  const state = createInitialState();
+  tick(state, 2);
+  assert.equal(state.resources.fish, 2.0, 'fish accrues at 1/s for 2s');
+  assert.equal(state.lifetime.fish, 2.0, 'lifetime tracks the same total');
+  assert.equal(state.resources.driftwood, 1.0, 'driftwood accrues at 0.5/s for 2s');
+}
+
+// --- unlockTile ---
+
+{
+  const state = createInitialState();
+  state.resources.driftwood = 30;
+  const tile = TILES.find((t) => t.id === 'fish_anchored_net');
+  const ok = unlockTile(state, tile);
+  assert.equal(ok, true, 'unlock succeeds when eligible');
+  assert.equal(state.resources.driftwood, 0, 'cost is deducted');
+  assert.ok(state.unlocked.includes('fish_anchored_net'), 'tile id added to unlocked');
+}
+
+{
+  const state = createInitialState();
+  const tile = TILES.find((t) => t.id === 'fish_anchored_net');
+  const ok = unlockTile(state, tile);
+  assert.equal(ok, false, 'unlock fails when not eligible');
+  assert.ok(!state.unlocked.includes('fish_anchored_net'));
+}
+
+console.log('economy math tests passed');
