@@ -16,7 +16,7 @@ tiles.js (static data)
    ↓
 state.js (tick/effectiveRate/isEligible/unlockTile — pure math over TILES + a state object)
    ↓
-main.js's RAF loop: tick(state, dt) → updateResourceBar(state) → drawScene(ctx, canvas, state, now)
+main.js's RAF loop: tick(state, dt) → updateResourceBar(state) → updateScene(state, now)
    ↑
 ui.js (DOM) ←── click → screenToGrid (render.js) → find tile in TILES → showTilePanel(tile, state, ...)
 ```
