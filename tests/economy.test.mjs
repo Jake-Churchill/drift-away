@@ -4,15 +4,15 @@ import { createInitialState, effectiveRate, effectiveTileRate, isEligible, tick,
 
 // --- Tile data integrity ---
 
-assert.equal(TILES.length, 25, 'expected exactly 25 tiles');
+assert.equal(TILES.length, 36, 'expected exactly 36 tiles');
 
 const ids = TILES.map((t) => t.id);
-assert.equal(new Set(ids).size, 25, 'tile ids must be unique');
+assert.equal(new Set(ids).size, 36, 'tile ids must be unique');
 
 const positions = TILES.map((t) => `${t.gridPos.row},${t.gridPos.col}`);
-assert.equal(new Set(positions).size, 25, 'grid positions must be unique');
-for (let row = 0; row < 5; row++) {
-  for (let col = 0; col < 5; col++) {
+assert.equal(new Set(positions).size, 36, 'grid positions must be unique');
+for (let row = 0; row < 6; row++) {
+  for (let col = 0; col < 6; col++) {
     assert.ok(positions.includes(`${row},${col}`), `missing tile at (${row},${col})`);
   }
 }
@@ -31,7 +31,7 @@ const familyCounts = TILES.reduce((counts, t) => {
 }, {});
 assert.deepEqual(
   familyCounts,
-  { fish: 6, kelp: 6, driftwood: 5, crops: 5, booster: 3 },
+  { fish: 8, kelp: 8, driftwood: 7, crops: 7, booster: 6 },
   'family counts must match the spec'
 );
 
