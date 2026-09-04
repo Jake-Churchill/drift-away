@@ -1,12 +1,14 @@
 # Drift Away
 
-A calm, idle resource-management game: unlock hexagonal raft tiles on the open sea, each producing fish, kelp, driftwood, or crops, or boosting another resource's output, until all 25 slots are claimed.
+A calm, idle resource-management game: unlock hexagonal raft tiles on the open sea, each producing fish, kelp, driftwood, or crops, or boosting another resource's output, until all 36 tiles are claimed on a 6×6 grid.
 
 Once deployed, it will be live at **https://driftaway.jakechurchill.com**.
 
+The renderer is [Three.js](https://threejs.org), loaded from a CDN at runtime — an internet connection is required to load the game, even when running it locally.
+
 ## Running locally
 
-This is a plain HTML/CSS/JS project — no build step, no dependencies. It uses ES modules, which browsers block from loading over `file://`, so serve it with any static file server:
+This is a plain HTML/CSS/JS project — no build step, no dev dependencies. It uses ES modules, which browsers block from loading over `file://`, so serve it with any static file server:
 
 ```bash
 npx serve .
