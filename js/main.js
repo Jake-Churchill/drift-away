@@ -1,6 +1,6 @@
 import { TILES } from './tiles.js';
 import { loadState, tick, isEligible, unlockTile, saveState } from './state.js';
-import { drawScene, screenToGrid } from './render.js';
+import { initScene, updateScene, screenToGrid } from './render.js';
 import { initUI, getCanvas, updateResourceBar, showTilePanel, hideTilePanel } from './ui.js';
 
 let selectedTileId = null;
@@ -10,16 +10,9 @@ initUI(() => {
 });
 
 const canvas = getCanvas();
-const ctx = canvas.getContext('2d');
+initScene(canvas);
 
 let state = loadState();
-
-function resizeCanvas() {
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
-}
-window.addEventListener('resize', resizeCanvas);
-resizeCanvas();
 
 function handleUnlockClick(tile) {
   const success = unlockTile(state, tile);
@@ -33,7 +26,7 @@ canvas.addEventListener('click', (event) => {
   const rect = canvas.getBoundingClientRect();
   const x = event.clientX - rect.left;
   const y = event.clientY - rect.top;
-  const gridPos = screenToGrid(x, y, canvas.width, canvas.height);
+  const gridPos = screenToGrid(x, y, rect.width, rect.height);
 
   if (!gridPos) {
     selectedTileId = null;
@@ -65,7 +58,7 @@ function loop(now) {
     }
   }
 
-  drawScene(ctx, canvas, state, now);
+  updateScene(state, now);
 
   timeSinceSave += dt;
   if (timeSinceSave >= 10) {
