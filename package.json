@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node tests/economy.test.mjs"
+    "test": "node tests/economy.test.mjs",
+    "build": "rm -rf dist && mkdir -p dist && cp index.html style.css dist/ && cp -R js dist/js && (cd dist && zip -qr ../drift-away-dist.zip .) && echo 'built dist/ and drift-away-dist.zip'"
   }
 }
