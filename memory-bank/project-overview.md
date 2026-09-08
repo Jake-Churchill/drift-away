@@ -2,11 +2,11 @@
 
 ## Concept
 
-An idle/incremental farming game on the open sea. A fixed 5×5 grid (25 slots) of hexagonal raft tiles, rendered in a 2.5D pseudo-isometric style. Four resources (fish, kelp, driftwood, crops); tiles either produce one of them over time or boost another tile family's output raft-wide. All 25 tile identities and positions are fixed in `js/tiles.js` — there's no player choice of *what* to place, only *which already-defined slot* to unlock next.
+An idle/incremental farming game on the open sea. A fixed 6×6 grid (36 slots) of hexagonal raft tiles, rendered in a 2.5D pseudo-isometric style. Four resources (fish, kelp, driftwood, crops); tiles either produce one of them over time or boost another tile family's output raft-wide. All 36 tile identities and positions are fixed in `js/tiles.js` — there's no player choice of *what* to place, only *which already-defined slot* to unlock next.
 
 ## Status
 
-MVP complete per `docs/superpowers/specs/2026-09-02-drift-away-design.md`: full 25-tile economy, hex rendering with raft depth/props, click-to-unlock flow (both cost- and milestone-gated), localStorage persistence, deployed to GitHub Pages.
+MVP complete per `docs/superpowers/specs/2026-09-02-drift-away-design.md`: full 36-tile economy, Three.js hex rendering with raft depth/props, click-to-unlock flow (cost- or milestone-gated, plus grid adjacency), localStorage persistence, deployed to GitHub Pages.
 
 ## Key decisions and why
 
