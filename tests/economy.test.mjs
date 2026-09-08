@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict';
-import { TILES } from '../js/tiles.js';
-import { createInitialState, effectiveRate, effectiveTileRate, isEligible, tick, unlockTile } from '../js/state.js';
+import { TILES, TILE_NEIGHBORS } from '../js/tiles.js';
+import {
+  createInitialState,
+  effectiveRate,
+  effectiveTileRate,
+  isDiscovered,
+  isEligible,
+  tick,
+  unlockTile,
+} from '../js/state.js';
 
 // --- Tile data integrity ---
 
@@ -18,11 +26,11 @@ for (let row = 0; row < 6; row++) {
 }
 
 const startTiles = TILES.filter((t) => t.unlock.type === 'start');
-assert.equal(startTiles.length, 4, 'expected exactly 4 starting tiles');
+assert.equal(startTiles.length, 1, 'expected exactly 1 starting tile');
 assert.deepEqual(
-  startTiles.map((t) => t.family).sort(),
-  ['crops', 'driftwood', 'fish', 'kelp'],
-  'each resource family should have exactly one starting tile'
+  startTiles.map((t) => t.id),
+  ['driftwood_start'],
+  'driftwood_start is the sole starting tile'
 );
 
 const familyCounts = TILES.reduce((counts, t) => {
@@ -32,10 +40,44 @@ const familyCounts = TILES.reduce((counts, t) => {
 assert.deepEqual(
   familyCounts,
   { fish: 8, kelp: 8, driftwood: 7, crops: 7, booster: 6 },
-  'family counts must match the spec'
+  'family counts are unchanged by the rebalance'
 );
 
 console.log('tile data tests passed');
+
+// --- TILE_NEIGHBORS ---
+
+assert.equal(TILE_NEIGHBORS.size, 36, 'every tile has a neighbor-list entry');
+
+for (const [id, neighbors] of TILE_NEIGHBORS) {
+  for (const neighborId of neighbors) {
+    assert.ok(
+      TILE_NEIGHBORS.get(neighborId).includes(id),
+      `adjacency must be symmetric: ${id} <-> ${neighborId}`
+    );
+  }
+}
+
+assert.deepEqual(
+  [...TILE_NEIGHBORS.get('driftwood_start')].sort(),
+  [
+    'crops_soil_barge',
+    'crops_start',
+    'crops_vertical_farm',
+    'driftwood_flotsam_dredge',
+    'driftwood_salvage_raft',
+    'driftwood_shipwreck_salvage',
+  ],
+  'driftwood_start (2,3) has exactly these 6 neighbors'
+);
+
+assert.deepEqual(
+  [...TILE_NEIGHBORS.get('kelp_start')].sort(),
+  ['kelp_abyssal_forest', 'kelp_nursery', 'kelp_open_water_farm', 'kelp_seaweed_raft'],
+  'kelp_start (0,1) has exactly these 4 neighbors (grid-edge tile, fewer than 6)'
+);
+
+console.log('adjacency tests passed');
 
 // --- createInitialState ---
 
@@ -51,16 +93,17 @@ console.log('tile data tests passed');
     { fish: 0, kelp: 0, driftwood: 0, crops: 0 },
     'lifetime shape must match pre-refactor output exactly'
   );
+  assert.deepEqual(state.unlocked, ['driftwood_start'], 'only the single start tile is unlocked');
 }
 
 // --- effectiveRate ---
 
 {
   const state = createInitialState();
-  assert.equal(effectiveRate('fish', state.unlocked), 1.0, 'starting fish rate');
-  assert.equal(effectiveRate('kelp', state.unlocked), 1.0, 'starting kelp rate');
+  assert.equal(effectiveRate('fish', state.unlocked), 0, 'no fish producer unlocked at start');
+  assert.equal(effectiveRate('kelp', state.unlocked), 0, 'no kelp producer unlocked at start');
   assert.equal(effectiveRate('driftwood', state.unlocked), 0.5, 'starting driftwood rate');
-  assert.equal(effectiveRate('crops', state.unlocked), 0.5, 'starting crops rate');
+  assert.equal(effectiveRate('crops', state.unlocked), 0, 'no crops producer unlocked at start');
 }
 
 {
@@ -80,23 +123,55 @@ console.log('tile data tests passed');
   );
 }
 
+// --- isDiscovered ---
+
+{
+  const state = { unlocked: ['driftwood_start'] };
+  const adjacent = TILES.find((t) => t.id === 'crops_start');
+  assert.equal(isDiscovered(adjacent, state), true, 'crops_start is adjacent to driftwood_start');
+
+  const distant = TILES.find((t) => t.id === 'kelp_start');
+  assert.equal(isDiscovered(distant, state), false, 'kelp_start is 3 hops from driftwood_start');
+
+  const start = TILES.find((t) => t.id === 'driftwood_start');
+  assert.equal(isDiscovered(start, state), true, 'an already-unlocked tile is always discovered');
+}
+
 // --- isEligible ---
 
 {
-  const tile = { unlock: { type: 'cost', cost: { driftwood: 30 } } };
-  assert.equal(isEligible(tile, { resources: { driftwood: 10 } }), false);
-  assert.equal(isEligible(tile, { resources: { driftwood: 30 } }), true);
+  // cost-gated, adjacent to the sole unlocked tile: gated on resources only
+  const tile = TILES.find((t) => t.id === 'crops_start'); // cost: 20 driftwood
+  const state = { unlocked: ['driftwood_start'], resources: { driftwood: 10 }, lifetime: {} };
+  assert.equal(isEligible(tile, state), false, 'not enough driftwood yet');
+  state.resources.driftwood = 20;
+  assert.equal(isEligible(tile, state), true, 'discovered and affordable');
 }
 
 {
-  const tile = { unlock: { type: 'milestone', resource: 'fish', target: 200 } };
-  assert.equal(isEligible(tile, { lifetime: { fish: 199 } }), false);
-  assert.equal(isEligible(tile, { lifetime: { fish: 200 } }), true);
+  // milestone-gated, adjacent to the sole unlocked tile
+  const tile = TILES.find((t) => t.id === 'driftwood_shipwreck_salvage'); // milestone: driftwood >= 60
+  const state = { unlocked: ['driftwood_start'], resources: {}, lifetime: { driftwood: 59 } };
+  assert.equal(isEligible(tile, state), false);
+  state.lifetime.driftwood = 60;
+  assert.equal(isEligible(tile, state), true);
 }
 
 {
-  const tile = { unlock: { type: 'start' } };
-  assert.equal(isEligible(tile, {}), true);
+  // not discovered: plenty of resources, but not adjacent to anything unlocked
+  const tile = TILES.find((t) => t.id === 'kelp_start'); // cost: 50 driftwood + 40 crops
+  const state = {
+    unlocked: ['driftwood_start'],
+    resources: { driftwood: 9999, crops: 9999 },
+    lifetime: {},
+  };
+  assert.equal(isEligible(tile, state), false, 'undiscovered tiles are never eligible');
+}
+
+{
+  // the start tile itself is always eligible, even with nothing unlocked yet
+  const tile = TILES.find((t) => t.id === 'driftwood_start');
+  assert.equal(isEligible(tile, { unlocked: [], resources: {}, lifetime: {} }), true);
 }
 
 // --- tick ---
@@ -104,29 +179,38 @@ console.log('tile data tests passed');
 {
   const state = createInitialState();
   tick(state, 2);
-  assert.equal(state.resources.fish, 2.0, 'fish accrues at 1/s for 2s');
-  assert.equal(state.lifetime.fish, 2.0, 'lifetime tracks the same total');
   assert.equal(state.resources.driftwood, 1.0, 'driftwood accrues at 0.5/s for 2s');
+  assert.equal(state.lifetime.driftwood, 1.0, 'lifetime tracks the same total');
+  assert.equal(state.resources.fish, 0, 'fish does not accrue before fish_start is unlocked');
 }
 
 // --- unlockTile ---
 
 {
   const state = createInitialState();
-  state.resources.driftwood = 30;
-  const tile = TILES.find((t) => t.id === 'fish_anchored_net');
+  state.resources.driftwood = 20;
+  const tile = TILES.find((t) => t.id === 'crops_start');
   const ok = unlockTile(state, tile);
-  assert.equal(ok, true, 'unlock succeeds when eligible');
+  assert.equal(ok, true, 'unlock succeeds when adjacent and affordable');
   assert.equal(state.resources.driftwood, 0, 'cost is deducted');
-  assert.ok(state.unlocked.includes('fish_anchored_net'), 'tile id added to unlocked');
+  assert.ok(state.unlocked.includes('crops_start'), 'tile id added to unlocked');
 }
 
 {
   const state = createInitialState();
-  const tile = TILES.find((t) => t.id === 'fish_anchored_net');
+  const tile = TILES.find((t) => t.id === 'crops_start');
   const ok = unlockTile(state, tile);
-  assert.equal(ok, false, 'unlock fails when not eligible');
-  assert.ok(!state.unlocked.includes('fish_anchored_net'));
+  assert.equal(ok, false, 'unlock fails when not enough resources');
+  assert.ok(!state.unlocked.includes('crops_start'));
+}
+
+{
+  const state = createInitialState();
+  state.resources.driftwood = 9999;
+  state.resources.crops = 9999;
+  const tile = TILES.find((t) => t.id === 'fish_start'); // not adjacent to driftwood_start alone
+  const ok = unlockTile(state, tile);
+  assert.equal(ok, false, 'unlock fails when not adjacent to anything unlocked, however affordable');
 }
 
 console.log('economy math tests passed');

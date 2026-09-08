@@ -1,4 +1,4 @@
-import { TILES } from './tiles.js';
+import { TILES, TILE_NEIGHBORS } from './tiles.js';
 
 export const RESOURCES = ['fish', 'kelp', 'driftwood', 'crops'];
 export const SAVE_KEY = 'driftaway_save_v1';
@@ -29,8 +29,14 @@ export function effectiveTileRate(tile, unlockedIds) {
   return tile.rate * (1 + boostPercentFor(tile.produces, unlockedIds) / 100);
 }
 
+export function isDiscovered(tile, state) {
+  if (state.unlocked.includes(tile.id)) return true;
+  return TILE_NEIGHBORS.get(tile.id).some((id) => state.unlocked.includes(id));
+}
+
 export function isEligible(tile, state) {
   if (tile.unlock.type === 'start') return true;
+  if (!isDiscovered(tile, state)) return false;
   if (tile.unlock.type === 'cost') {
     return Object.entries(tile.unlock.cost).every(
       ([resource, amount]) => state.resources[resource] >= amount
