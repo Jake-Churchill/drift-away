@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { TILES } from './tiles.js';
-import { isEligible } from './state.js';
+import { isDiscovered, isEligible } from './state.js';
 import { buildScene } from './scene.js';
 
 let renderer, scene, camera, resizeFn, waterMesh, waterBasePositions, tileObjects;
@@ -46,10 +46,12 @@ export function updateScene(state, time) {
   for (const tile of TILES) {
     const objects = tileObjects.get(tile.id);
     const unlocked = state.unlocked.includes(tile.id);
-    objects.raftMesh.visible = unlocked;
-    objects.markerMesh.visible = !unlocked;
+    const discovered = isDiscovered(tile, state); // already true when `unlocked` is true
 
-    if (!unlocked) {
+    objects.raftMesh.visible = unlocked;
+    objects.markerMesh.visible = !unlocked && discovered;
+
+    if (!unlocked && discovered) {
       const eligible = isEligible(tile, state);
       const pulse = eligible ? 0.35 + 0.4 * (0.5 + 0.5 * Math.sin(time / 300)) : 0.35;
       objects.markerMesh.userData.outlineMaterial.opacity = pulse;
@@ -64,7 +66,9 @@ export function screenToGrid(screenX, screenY, canvasWidth, canvasHeight) {
   pointer.y = -(screenY / canvasHeight) * 2 + 1;
   raycaster.setFromCamera(pointer, camera);
 
-  const hitTargets = [...tileObjects.values()].flatMap((t) => [t.raftMesh, t.markerMesh]);
+  const hitTargets = [...tileObjects.values()]
+    .flatMap((t) => [t.raftMesh, t.markerMesh])
+    .filter((mesh) => mesh.visible);
   const intersections = raycaster.intersectObjects(hitTargets, false);
   if (intersections.length === 0) return null;
 
