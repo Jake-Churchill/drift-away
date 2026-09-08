@@ -82,7 +82,7 @@ export function isEligible(tile, state) {
 
 ## 4. Tile data rebalance (`js/tiles.js`)
 
-Positions, names, rates, and families are unchanged from the existing 36-tile roster. Only `unlock` fields change, informed by the ring table in §2: ring 1 costs are driftwood-only (the only resource flowing at the start); ring 2 introduces the first fish/kelp costs now that ring-1 producers give the player driftwood and crops to spend, though most ring-2 tiles still only need driftwood/crops so there's no dependency on unlock order within the ring; ring 3–4 costs draw more freely from all four resources, now that fish and kelp are established. Within a ring, every tile's cost is payable using resources reachable from strictly earlier rings, so there's always a valid unlock order — no tile is stranded behind a resource that's only available by unlocking that same tile's own family first.
+Positions, names, rates, and families are unchanged from the existing 36-tile roster. Only `unlock` fields change, informed by the ring table in §2: ring 1 costs are driftwood-only (the only resource flowing at the start); ring 2 introduces the first fish/kelp costs now that ring-1 producers give the player driftwood and crops to spend, though most ring-2 tiles still only need driftwood/crops; ring 3–4 costs draw more freely from all four resources, now that fish and kelp are established. Every ring-N tile's cost is payable using resources reachable from tiles in rings ≤ N — not strictly earlier rings, since a handful of ring-2 tiles (`fish_grand_fishery`, `kelp_floating_garden`, `kelp_abyssal_forest`) require fish or kelp first produced by other ring-2 tiles (`fish_start`, `kelp_seaweed_raft`), which are themselves payable from rings 0–1. There's always a valid unlock order and no dependency cycle anywhere in the graph — no tile is stranded behind a resource that's only available by unlocking that same tile's own family first.
 
 ### Fish family (8)
 | id | unlock (was → now) |
@@ -168,7 +168,7 @@ This is the only rendering change. `js/ui.js` needs **zero** changes — `showTi
 
 ## 6. Save compatibility
 
-`loadState()` doesn't validate `unlocked` against current unlock rules — it just merges whatever array was saved. An existing player's already-unlocked tiles (which may include all four old `_start` tiles) stay unlocked; nothing gets retroactively re-locked. The new adjacency+cost rules only apply going forward, to tiles that aren't yet in their save's `unlocked` array. This is a deliberate choice, not an oversight: no migration code, no forced resets.
+`loadState()` doesn't validate `unlocked` against current unlock rules — it just merges whatever array was saved. An existing player's already-unlocked tiles (which may include all four old `_start` tiles) stay unlocked; nothing gets retroactively re-locked. The new adjacency+cost rules only apply going forward, to tiles that aren't yet in their save's `unlocked` array. This is a deliberate choice, not an oversight: no migration code, no forced resets. One real consequence of this: a returning player will see fewer tile markers on the board than before, since fog-of-war (§5) only shows markers for tiles adjacent to their unlocked set, and their old four-`_start`-tile save only discovers a fraction of the 36-tile grid — this is an accepted trade-off of the new model, not a bug.
 
 ## 7. Testing
 

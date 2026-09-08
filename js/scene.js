@@ -649,7 +649,7 @@ export function buildScene(canvas) {
     const markerMesh = buildMarkerMesh(tile);
     markerMesh.position.x = x;
     markerMesh.position.z = z;
-    markerMesh.visible = true;
+    markerMesh.visible = false;
     scene.add(markerMesh);
 
     tileObjects.set(tile.id, { raftMesh, markerMesh });

@@ -79,6 +79,47 @@ assert.deepEqual(
 
 console.log('adjacency tests passed');
 
+// --- Geometry-derived adjacency (cross-check against js/scene.js hex layout) ---
+
+// Mirrors js/scene.js's HEX_RADIUS/HEX_WIDTH/ROW_SPACING and hexLocalPosition's odd-r
+// offset layout exactly (minus the whole-grid centering offset, which is a constant
+// translation and doesn't affect pairwise distances). js/tiles.js's neighbor formula
+// and js/scene.js's hex-layout formula independently encode the same convention with
+// no shared constant — if one changes without the other, this catches it even though
+// every other test in this file would still pass.
+const GEOM_HEX_RADIUS = 1.6;
+const GEOM_HEX_WIDTH = Math.sqrt(3) * GEOM_HEX_RADIUS;
+const GEOM_HEX_HEIGHT = 2 * GEOM_HEX_RADIUS;
+const GEOM_ROW_SPACING = 0.75 * GEOM_HEX_HEIGHT;
+const GEOM_NEIGHBOR_DISTANCE = GEOM_HEX_WIDTH; // same-row and diagonal-row neighbors are equidistant in this layout
+const GEOM_DISTANCE_TOLERANCE = 1e-6;
+
+function hexCenter(row, col) {
+  const x = col * GEOM_HEX_WIDTH + (row % 2 === 1 ? GEOM_HEX_WIDTH / 2 : 0);
+  const z = row * GEOM_ROW_SPACING;
+  return { x, z };
+}
+
+for (const tile of TILES) {
+  const center = hexCenter(tile.gridPos.row, tile.gridPos.col);
+  const geometricNeighborIds = TILES.filter((other) => {
+    if (other.id === tile.id) return false;
+    const otherCenter = hexCenter(other.gridPos.row, other.gridPos.col);
+    const dx = otherCenter.x - center.x;
+    const dz = otherCenter.z - center.z;
+    const distance = Math.sqrt(dx * dx + dz * dz);
+    return Math.abs(distance - GEOM_NEIGHBOR_DISTANCE) < GEOM_DISTANCE_TOLERANCE;
+  }).map((t) => t.id);
+
+  assert.deepEqual(
+    geometricNeighborIds.sort(),
+    [...TILE_NEIGHBORS.get(tile.id)].sort(),
+    `geometry-derived neighbors for ${tile.id} must match TILE_NEIGHBORS`
+  );
+}
+
+console.log('geometry-derived adjacency tests passed');
+
 // --- createInitialState ---
 
 {
