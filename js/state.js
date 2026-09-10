@@ -2,9 +2,9 @@ import { TILES, TILE_NEIGHBORS } from './tiles.js';
 
 export const RESOURCES = ['fish', 'kelp', 'driftwood', 'crops'];
 export const SAVE_KEY = 'driftaway_save_v1';
-export const MAX_LEVEL = 3;
 
 const STEP_MULTIPLIER = { 2: 1, 3: 2.5 };
+export const MAX_LEVEL = Math.max(...Object.keys(STEP_MULTIPLIER).map(Number));
 const PRODUCER_UPGRADE_BASE = 30;
 const BOOSTER_UPGRADE_BASE = 6;
 
@@ -15,7 +15,7 @@ export function createInitialState() {
   return { version: 1, resources, lifetime, unlocked, levels: {} };
 }
 
-function levelMultiplier(level) {
+export function levelMultiplier(level) {
   return 1 + (level - 1) * 0.5;
 }
 
@@ -139,6 +139,7 @@ export function loadState() {
       ...parsed,
       resources: { ...base.resources, ...parsed.resources },
       lifetime: { ...base.lifetime, ...parsed.lifetime },
+      levels: { ...base.levels, ...parsed.levels },
     };
   } catch {
     return createInitialState();

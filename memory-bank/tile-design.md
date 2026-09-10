@@ -63,3 +63,5 @@ There is exactly one starting tile, `driftwood_start` (unlock type `start`); eve
 ## If retuning balance
 
 Change the relevant tile's `rate`, `unlock.cost`, or `unlock.target` in `js/tiles.js` directly — `tests/economy.test.mjs`'s family-count and grid-coverage assertions will catch structural mistakes (wrong count, duplicated id/position), but won't catch a balance number that's simply "too slow/fast to feel good." That's a playtesting judgment call, not something to encode as a test.
+
+Note the hidden coupling this introduces: a tile's `rate` (producers) or a booster's `percent` (boosters) is also the input to its level-up cost, via the formula in `js/state.js` (`levelUpCost`). So retuning a tile's `rate`/`percent` for production-balance reasons silently changes what it costs to level up, too — there's no independent cost field to hold steady while you adjust production. The leveling cost constants themselves (`PRODUCER_UPGRADE_BASE = 30`, `BOOSTER_UPGRADE_BASE = 6`, and the level-2/level-3 step multipliers `1`/`2.5`) are, like the rest of the numbers on this page, a first-pass balance — not playtested.

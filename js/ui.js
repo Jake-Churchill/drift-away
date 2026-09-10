@@ -1,4 +1,4 @@
-import { RESOURCES, effectiveTileRate, getLevel, levelUpCost, MAX_LEVEL } from './state.js';
+import { RESOURCES, effectiveTileRate, getLevel, levelMultiplier, levelUpCost, MAX_LEVEL } from './state.js';
 
 const elements = {};
 
@@ -66,9 +66,10 @@ function progressFraction(tile, state) {
 }
 
 function describeProduction(tile, state) {
+  const level = getLevel(state, tile.id);
   return tile.kind === 'producer'
     ? `Produces ${Number(effectiveTileRate(tile, state.unlocked, state.levels).toFixed(2))} ${tile.produces}/s`
-    : tile.boosts.map((b) => `+${b.percent}% ${b.resource}`).join(', ');
+    : tile.boosts.map((b) => `+${Number((b.percent * levelMultiplier(level)).toFixed(2))}% ${b.resource}`).join(', ');
 }
 
 export function showTilePanel(tile, state, eligible, onUnlock, onLevelUp) {

@@ -3,11 +3,11 @@
 ## Modules
 
 - **`js/tiles.js`** — the 36 tile definitions (`TILES`), plus a `neighborGridPositions()` helper that derives the exported `TILE_NEIGHBORS` adjacency map from those positions at module load. No imports.
-- **`js/state.js`** — pure economy math (`effectiveRate`, `isDiscovered`, `isEligible`, `tick`, `unlockTile`, `createInitialState`) plus the only two functions that touch `localStorage` (`saveState`, `loadState`). The pure functions are exercised directly by `tests/economy.test.mjs` in Node — they don't touch the DOM, which is what makes that possible.
-- **`js/scene.js`** — all hex-grid math and Three.js scene *construction*, run once at startup: camera, lights, the water plane, and all 36 tiles' `raftMesh`/`markerMesh` pairs. Exports `buildScene(canvas)`; everything else is module-private. Nothing here runs per-frame.
+- **`js/state.js`** — pure economy math (`effectiveRate`, `isDiscovered`, `isEligible`, `tick`, `unlockTile`, `createInitialState`, `getLevel`, `levelUpCost`, `isLevelUpEligible`, `levelUpTile`, `MAX_LEVEL`) plus the only two functions that touch `localStorage` (`saveState`, `loadState`). The pure functions are exercised directly by `tests/economy.test.mjs` in Node — they don't touch the DOM, which is what makes that possible.
+- **`js/scene.js`** — all hex-grid math and Three.js scene *construction*, run once at startup: camera, lights, the water plane, and all 36 tiles' `raftMesh`/`markerMesh`/`propGroup` triples. Exports `buildScene(canvas)`; everything else is module-private. Nothing here runs per-frame.
 - **`js/render.js`** — the per-frame update loop and `screenToGrid` hit-testing (now via `THREE.Raycaster` against the meshes `scene.js` built, rather than point-in-polygon math). Exports `initScene`, `updateScene`, `screenToGrid`. Both this module and `scene.js` are browser-only — verified visually, not by the Node test suite (see the original spec's §11 for why that split exists; the same reasoning applies to the Three.js version).
 - **`js/ui.js`** — the only module that touches the resource bar / tile panel DOM elements from `index.html`. Exposes `initUI`, `updateResourceBar`, `showTilePanel`, `hideTilePanel`, `getCanvas`.
-- **`js/main.js`** — the only module that imports all the others. Owns the `requestAnimationFrame` loop, canvas resize handling, click → hit-test → panel wiring, the Unlock button's callback, and the three autosave triggers (on unlock, every ~10s, on `beforeunload`).
+- **`js/main.js`** — the only module that imports all the others. Owns the `requestAnimationFrame` loop, canvas resize handling, click → hit-test → panel wiring, the Unlock and Level Up buttons' callbacks, and the four autosave triggers (on unlock, on level-up, every ~10s, on `beforeunload`).
 
 ## Data flow
 

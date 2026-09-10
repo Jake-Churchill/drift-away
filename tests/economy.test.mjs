@@ -256,6 +256,13 @@ console.log('geometry-derived adjacency tests passed');
   assert.equal(state.resources.fish, 0, 'fish does not accrue before fish_start is unlocked');
 }
 
+{
+  const state = createInitialState();
+  state.levels.driftwood_start = 3;
+  tick(state, 2);
+  assert.equal(state.resources.driftwood, 2.0, 'a level-3 producer (2x multiplier) accrues at 2x through tick()');
+}
+
 // --- unlockTile ---
 
 {
@@ -313,6 +320,15 @@ console.log('geometry-derived adjacency tests passed');
     levelUpCost(tile, 3),
     { fish: 300, kelp: 300 },
     'booster level 3 cost: round(20 * 6 * 2.5) per boosted resource'
+  );
+}
+
+{
+  const producer = TILES.find((t) => t.id === 'fish_start'); // rate 1.0
+  const booster = TILES.find((t) => t.id === 'booster_smokehouse'); // +25% fish, comparable tier
+  assert.ok(
+    levelUpCost(booster, 2).fish > levelUpCost(producer, 2).fish,
+    'a booster must cost more to level than a comparable-tier producer, by design'
   );
 }
 

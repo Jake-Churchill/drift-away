@@ -22,6 +22,7 @@ Then open the URL it prints (e.g. `http://localhost:3000` or `http://localhost:8
 
 - Click any tile to see what it produces (or boosts) and, if it's locked, what's needed to unlock it.
 - Once a locked tile's requirement is met, its **Unlock** button becomes active — click it to claim the raft.
+- An unlocked tile's panel also shows its level and, if below level 3, a **Level Up** button to increase its production or boost.
 - Progress saves automatically to your browser's local storage; resources only accrue while the tab is open.
 
 ## Tests
