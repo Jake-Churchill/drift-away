@@ -4,8 +4,12 @@ import {
   createInitialState,
   effectiveRate,
   effectiveTileRate,
+  getLevel,
   isDiscovered,
   isEligible,
+  isLevelUpEligible,
+  levelUpCost,
+  levelUpTile,
   tick,
   unlockTile,
 } from '../js/state.js';
@@ -135,6 +139,7 @@ console.log('geometry-derived adjacency tests passed');
     'lifetime shape must match pre-refactor output exactly'
   );
   assert.deepEqual(state.unlocked, ['driftwood_start'], 'only the single start tile is unlocked');
+  assert.deepEqual(state.levels, {}, 'no tile starts above level 1');
 }
 
 // --- effectiveRate ---
@@ -152,6 +157,22 @@ console.log('geometry-derived adjacency tests passed');
   assert.equal(effectiveRate('fish', unlocked), 1.25, 'smokehouse adds +25% to fish');
 }
 
+{
+  const unlocked = ['fish_start'];
+  const levels = { fish_start: 2 };
+  assert.equal(effectiveRate('fish', unlocked, levels), 1.5, 'level 2 fish_start produces 1.5x base rate');
+}
+
+{
+  const unlocked = ['fish_start', 'booster_smokehouse'];
+  const levels = { booster_smokehouse: 2 };
+  assert.equal(
+    effectiveRate('fish', unlocked, levels),
+    1.375,
+    'level 2 smokehouse boosts by 25% * 1.5x = 37.5%, giving 1.0 * 1.375'
+  );
+}
+
 // --- effectiveTileRate ---
 
 {
@@ -161,6 +182,16 @@ console.log('geometry-derived adjacency tests passed');
     effectiveTileRate(tile, ['fish_start', 'booster_smokehouse']),
     1.25,
     'smokehouse boosts fish_start tile rate by +25%'
+  );
+}
+
+{
+  const tile = TILES.find((t) => t.id === 'fish_start');
+  const levels = { fish_start: 3 };
+  assert.equal(
+    effectiveTileRate(tile, ['fish_start'], levels),
+    2.0,
+    'level 3 fish_start produces 2x base rate'
   );
 }
 
@@ -252,6 +283,80 @@ console.log('geometry-derived adjacency tests passed');
   const tile = TILES.find((t) => t.id === 'fish_start'); // not adjacent to driftwood_start alone
   const ok = unlockTile(state, tile);
   assert.equal(ok, false, 'unlock fails when not adjacent to anything unlocked, however affordable');
+}
+
+// --- getLevel ---
+
+{
+  const state = createInitialState();
+  assert.equal(getLevel(state, 'driftwood_start'), 1, 'untouched tile defaults to level 1');
+  state.levels.driftwood_start = 2;
+  assert.equal(getLevel(state, 'driftwood_start'), 2, 'returns the stored level once set');
+}
+
+// --- levelUpCost ---
+
+{
+  const tile = TILES.find((t) => t.id === 'fish_start'); // rate 1.0
+  assert.deepEqual(levelUpCost(tile, 2), { fish: 30 }, 'producer level 2 cost: round(1.0 * 30 * 1)');
+  assert.deepEqual(levelUpCost(tile, 3), { fish: 75 }, 'producer level 3 cost: round(1.0 * 30 * 2.5)');
+}
+
+{
+  const tile = TILES.find((t) => t.id === 'booster_net_weavers'); // +20% fish, +20% kelp
+  assert.deepEqual(
+    levelUpCost(tile, 2),
+    { fish: 120, kelp: 120 },
+    'booster level 2 cost: round(20 * 6 * 1) per boosted resource'
+  );
+  assert.deepEqual(
+    levelUpCost(tile, 3),
+    { fish: 300, kelp: 300 },
+    'booster level 3 cost: round(20 * 6 * 2.5) per boosted resource'
+  );
+}
+
+// --- levelUpTile ---
+
+{
+  const state = createInitialState(); // driftwood_start (rate 0.5) is already unlocked
+  state.resources.driftwood = 15; // level 2 cost: round(0.5 * 30 * 1)
+  const tile = TILES.find((t) => t.id === 'driftwood_start');
+  const ok = levelUpTile(state, tile);
+  assert.equal(ok, true, 'level-up succeeds when affordable');
+  assert.equal(state.resources.driftwood, 0, 'cost is deducted');
+  assert.equal(getLevel(state, tile.id), 2, 'level incremented');
+}
+
+{
+  const state = createInitialState();
+  const tile = TILES.find((t) => t.id === 'driftwood_start');
+  const ok = levelUpTile(state, tile);
+  assert.equal(ok, false, 'level-up fails when not enough resources');
+  assert.equal(getLevel(state, tile.id), 1, 'level unchanged');
+}
+
+{
+  const state = createInitialState();
+  state.resources.driftwood = 9999;
+  const tile = TILES.find((t) => t.id === 'crops_start'); // not unlocked yet
+  const ok = levelUpTile(state, tile);
+  assert.equal(ok, false, 'level-up fails on a locked tile, however affordable');
+}
+
+{
+  const state = createInitialState();
+  const tile = TILES.find((t) => t.id === 'driftwood_start');
+  state.levels[tile.id] = 3;
+  state.resources.driftwood = 9999;
+  const ok = levelUpTile(state, tile);
+  assert.equal(ok, false, 'level-up fails once already at max level');
+  assert.equal(getLevel(state, tile.id), 3, 'level unchanged at max');
+}
+
+{
+  assert.equal(isLevelUpEligible({ unlocked: [], resources: {}, levels: {} },
+    TILES.find((t) => t.id === 'driftwood_start')), false, 'a locked tile is never level-up eligible');
 }
 
 console.log('economy math tests passed');

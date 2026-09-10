@@ -514,6 +514,7 @@ function addProp(raftMesh, tile) {
   const extraScale = LARGE_BOOSTER_IDS.has(tile.id) ? BOOSTER_PROP_SCALE : 1;
   propGroup.scale.setScalar(PROP_SCALE * extraScale);
   raftMesh.add(propGroup);
+  return propGroup;
 }
 
 function buildRaftMesh(tile) {
@@ -542,8 +543,8 @@ function buildRaftMesh(tile) {
     raftMesh.add(trim);
   }
 
-  addProp(raftMesh, tile);
-  return raftMesh;
+  const propGroup = addProp(raftMesh, tile);
+  return { raftMesh, propGroup };
 }
 
 function buildMarkerMesh(tile) {
@@ -641,7 +642,7 @@ export function buildScene(canvas) {
   for (const tile of TILES) {
     const { x, z } = hexLocalPosition(tile.gridPos.row, tile.gridPos.col);
 
-    const raftMesh = buildRaftMesh(tile);
+    const { raftMesh, propGroup } = buildRaftMesh(tile);
     raftMesh.position.set(x, 0, z);
     raftMesh.visible = false;
     scene.add(raftMesh);
@@ -652,7 +653,7 @@ export function buildScene(canvas) {
     markerMesh.visible = false;
     scene.add(markerMesh);
 
-    tileObjects.set(tile.id, { raftMesh, markerMesh });
+    tileObjects.set(tile.id, { raftMesh, markerMesh, propGroup });
   }
 
   function resize(width, height) {
