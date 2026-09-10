@@ -1,5 +1,5 @@
 import { TILES } from './tiles.js';
-import { loadState, tick, isEligible, unlockTile, saveState } from './state.js';
+import { getLevel, isEligible, isLevelUpEligible, levelUpTile, loadState, MAX_LEVEL, saveState, tick, unlockTile } from './state.js';
 import { initScene, updateScene, screenToGrid } from './render.js';
 import { initUI, getCanvas, updateResourceBar, showTilePanel, hideTilePanel } from './ui.js';
 
@@ -14,11 +14,25 @@ initScene(canvas);
 
 let state = loadState();
 
+function renderTilePanel(tile) {
+  const unlocked = state.unlocked.includes(tile.id);
+  const eligible = unlocked ? isLevelUpEligible(state, tile) : isEligible(tile, state);
+  showTilePanel(tile, state, eligible, handleUnlockClick, handleLevelUpClick);
+}
+
 function handleUnlockClick(tile) {
   const success = unlockTile(state, tile);
   if (success) {
     saveState(state);
-    showTilePanel(tile, state, isEligible(tile, state), handleUnlockClick);
+    renderTilePanel(tile);
+  }
+}
+
+function handleLevelUpClick(tile) {
+  const success = levelUpTile(state, tile);
+  if (success) {
+    saveState(state);
+    renderTilePanel(tile);
   }
 }
 
@@ -38,7 +52,7 @@ canvas.addEventListener('click', (event) => {
   if (!tile) return;
 
   selectedTileId = tile.id;
-  showTilePanel(tile, state, isEligible(tile, state), handleUnlockClick);
+  renderTilePanel(tile);
 });
 
 let lastFrameTime = performance.now();
@@ -53,8 +67,9 @@ function loop(now) {
 
   if (selectedTileId) {
     const tile = TILES.find((t) => t.id === selectedTileId);
-    if (tile && !state.unlocked.includes(tile.id)) {
-      showTilePanel(tile, state, isEligible(tile, state), handleUnlockClick);
+    const stillProgressing = tile && (!state.unlocked.includes(tile.id) || getLevel(state, tile.id) < MAX_LEVEL);
+    if (stillProgressing) {
+      renderTilePanel(tile);
     }
   }
 
