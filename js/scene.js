@@ -118,6 +118,14 @@ const FISH_BODY_DARK = 0x46603a;
 const FISH_SPOT_COLOR = 0x33481f;
 const FISH_OUTLINE = 0x16210f;
 
+// Real fish (koi/goldfish) grow longer, more pointed, more saturated fins as
+// they mature — not more numerous. Tail/dorsal/pectoral fins share one
+// level-colored material so they all mature together; only the tail and
+// dorsal spikes also grow longer (pectorals keep their original size).
+const FISH_FIN_COLOR = { 1: FISH_BODY_DARK, 2: 0xb8752f, 3: 0xffd23d };
+const FISH_FIN_LENGTH_MULT = { 1: 1.0, 2: 1.35, 3: 1.75 };
+const FISH_FIN_EMISSIVE = { 1: 0x000000, 2: 0x000000, 3: 0x664400 };
+
 function buildFishBodyGeometry() {
   // Chubby profile: full round belly shifted toward the head, tapering
   // sharply into a narrow peduncle before the tail.
@@ -154,14 +162,22 @@ function buildFishProp(group, level) {
   addOutline(body, 1.06, FISH_OUTLINE);
   group.add(body);
 
-  const finMat = new THREE.MeshStandardMaterial({ color: FISH_BODY_DARK, roughness: 0.55 });
+  const finLen = FISH_FIN_LENGTH_MULT[level];
+  const finMat = new THREE.MeshStandardMaterial({
+    color: FISH_FIN_COLOR[level],
+    roughness: 0.55,
+    metalness: level >= 2 ? 0.35 : 0.1,
+    emissive: FISH_FIN_EMISSIVE[level],
+    emissiveIntensity: level === 3 ? 0.5 : 0,
+  });
 
-  // Small, modestly-forked tail (subtle, not a dominant feature).
-  const tailA = buildSpikeLobe(finMat, 0.05, 0.15, 75, 0.3);
-  tailA.position.set(-0.42, 0.03, 0);
+  // Small, modestly-forked tail (subtle, not a dominant feature). Length and
+  // color escalate with level.
+  const tailA = buildSpikeLobe(finMat, 0.05, 0.15 * finLen, 75, 0.3);
+  tailA.position.set(-0.42 - 0.02 * (finLen - 1), 0.03, 0);
   group.add(tailA);
-  const tailB = buildSpikeLobe(finMat, 0.05, 0.15, 105, 0.3);
-  tailB.position.set(-0.42, -0.03, 0);
+  const tailB = buildSpikeLobe(finMat, 0.05, 0.15 * finLen, 105, 0.3);
+  tailB.position.set(-0.42 - 0.02 * (finLen - 1), -0.03, 0);
   group.add(tailB);
 
   // Jagged dorsal ridge: a row of spikes rising and falling along the back.
@@ -170,9 +186,20 @@ function buildFishProp(group, level) {
     { x: -0.11, h: 0.12 }, { x: -0.20, h: 0.07 },
   ];
   for (const s of ridgeSpec) {
-    const spike = buildSpikeLobe(finMat, 0.06, s.h, 0, 0.35);
+    const spike = buildSpikeLobe(finMat, 0.06, s.h * finLen, 0, 0.35);
     spike.position.set(s.x, 0.19, 0);
     group.add(spike);
+  }
+
+  // Level 3 only: a pair of long trailing streamer fins, echoing full-grown
+  // koi's more graceful, elongated fin extensions.
+  if (level >= 3) {
+    for (const zSign of [1, -1]) {
+      const streamer = buildSpikeLobe(finMat, 0.035, 0.32, 0, 0.2);
+      streamer.rotation.z += (Math.PI / 180) * (zSign * 20);
+      streamer.position.set(-0.30, -0.05, zSign * 0.08);
+      group.add(streamer);
+    }
   }
 
   // Small pectoral fins, sticking out sideways near the head.
