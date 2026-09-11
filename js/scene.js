@@ -297,13 +297,13 @@ function buildKelpProp(group, level) {
 }
 
 // ---------- DRIFTWOOD ----------
-function buildLog(colorHex, length, radius, x, z, rotY, tilt) {
+function buildLog(colorHex, length, radius, x, z, rotY, tilt, yOffset = 0) {
   const mat = new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.9 });
   const log = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.7, radius, length, 8), mat);
   log.rotation.z = Math.PI / 2;
   log.rotation.y = rotY;
   log.rotation.x = tilt;
-  log.position.set(x, radius + 0.03, z);
+  log.position.set(x, radius + 0.03 + yOffset, z);
   log.castShadow = true;
   return log;
 }
@@ -314,13 +314,28 @@ function buildDriftwoodProp(group, level) {
   group.add(buildLog(0x6b4c2a, 0.42, 0.045, -0.2, -0.15, 1.1, -0.08));
 
   const twigMat = new THREE.MeshStandardMaterial({ color: 0x7a6a52, roughness: 0.9 });
-  for (const t of [{ x: 0.22, z: 0.1, r: 0.3 }, { x: -0.15, z: 0.18, r: -0.4 }]) {
+  const twigSpecs = [{ x: 0.22, z: 0.1, r: 0.3 }, { x: -0.15, z: 0.18, r: -0.4 }];
+  if (level >= 2) twigSpecs.push({ x: 0.28, z: -0.2, r: 0.9 });
+  for (const t of twigSpecs) {
     const twig = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.02, 0.28, 6), twigMat);
     twig.rotation.z = Math.PI / 2.4;
     twig.rotation.y = t.r;
     twig.position.set(t.x, 0.14, t.z);
     twig.castShadow = true;
     group.add(twig);
+  }
+
+  if (level >= 2) {
+    group.add(buildLog(0x4a5c3a, 0.35, 0.04, 0.05, 0.25, -1.3, 0.1)); // small mossy 4th log
+  }
+  if (level >= 3) {
+    group.add(buildLog(0x8a7f6e, 0.95, 0.09, -0.05, 0.02, 0.4, 0, 0.12)); // larger 5th log, stacked on top
+    const barnacleMat = new THREE.MeshStandardMaterial({ color: 0xb8b2a4, roughness: 0.8 });
+    for (const b of [{ x: 0.1, y: 0.12, z: 0.08 }, { x: -0.15, y: 0.16, z: -0.1 }]) {
+      const barnacle = new THREE.Mesh(new THREE.SphereGeometry(0.025, 6, 6), barnacleMat);
+      barnacle.position.set(b.x, b.y, b.z);
+      group.add(barnacle);
+    }
   }
 }
 
