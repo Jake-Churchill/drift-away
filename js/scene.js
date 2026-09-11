@@ -476,6 +476,8 @@ function buildWindmill(group, level) {
   group.add(hub);
 }
 
+const SMOKE_PUFF_COUNT = { 1: 0, 2: 2, 3: 4 };
+
 function buildSmokehouse(group, level) {
   const wallMat = new THREE.MeshStandardMaterial({ color: 0x8a6a45, roughness: 0.8 });
   const roofMat = new THREE.MeshStandardMaterial({ color: BOOSTER_TRIM, roughness: 0.6, metalness: 0.15 });
@@ -492,6 +494,23 @@ function buildSmokehouse(group, level) {
   chimney.position.set(0.1, 0.6, 0.05);
   chimney.castShadow = true;
   group.add(chimney);
+
+  const puffCount = SMOKE_PUFF_COUNT[level];
+  const smokeMat = new THREE.MeshStandardMaterial({ color: 0xcfd6da, roughness: 0.9, transparent: true, opacity: 0.55 });
+  for (let i = 0; i < puffCount; i++) {
+    const t = i / Math.max(puffCount - 1, 1);
+    const puff = new THREE.Mesh(new THREE.SphereGeometry(0.035 + t * 0.03, 8, 8), smokeMat);
+    puff.position.set(0.1 + t * 0.05, 0.78 + t * 0.16, 0.05 - t * 0.03);
+    group.add(puff);
+  }
+  if (level === 3) {
+    const ember = new THREE.Mesh(
+      new THREE.SphereGeometry(0.02, 6, 6),
+      new THREE.MeshStandardMaterial({ color: 0xff8a3d, emissive: 0xff5a1d, emissiveIntensity: 1.2, roughness: 0.4 })
+    );
+    ember.position.set(0.1, 0.74, 0.05);
+    group.add(ember);
+  }
 }
 
 function buildDryingRack(group, level) {
