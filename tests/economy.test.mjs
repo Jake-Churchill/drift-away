@@ -65,20 +65,20 @@ for (const [id, neighbors] of TILE_NEIGHBORS) {
 assert.deepEqual(
   [...TILE_NEIGHBORS.get('driftwood_start')].sort(),
   [
+    'booster_windmill',
     'crops_soil_barge',
-    'crops_start',
-    'crops_vertical_farm',
-    'driftwood_flotsam_dredge',
-    'driftwood_salvage_raft',
-    'driftwood_shipwreck_salvage',
+    'fish_trawling_raft',
+    'kelp_abyssal_forest',
+    'kelp_reef',
+    'kelp_seaweed_raft',
   ],
   'driftwood_start (2,3) has exactly these 6 neighbors'
 );
 
 assert.deepEqual(
-  [...TILE_NEIGHBORS.get('kelp_start')].sort(),
-  ['kelp_abyssal_forest', 'kelp_nursery', 'kelp_open_water_farm', 'kelp_seaweed_raft'],
-  'kelp_start (0,1) has exactly these 4 neighbors (grid-edge tile, fewer than 6)'
+  [...TILE_NEIGHBORS.get('fish_start')].sort(),
+  ['booster_net_weavers', 'crops_floating_orchard', 'kelp_floating_garden', 'kelp_open_water_farm'],
+  'fish_start (0,1) has exactly these 4 neighbors (grid-edge tile, fewer than 6)'
 );
 
 console.log('adjacency tests passed');
@@ -199,8 +199,8 @@ console.log('geometry-derived adjacency tests passed');
 
 {
   const state = { unlocked: ['driftwood_start'] };
-  const adjacent = TILES.find((t) => t.id === 'crops_start');
-  assert.equal(isDiscovered(adjacent, state), true, 'crops_start is adjacent to driftwood_start');
+  const adjacent = TILES.find((t) => t.id === 'crops_soil_barge');
+  assert.equal(isDiscovered(adjacent, state), true, 'crops_soil_barge is adjacent to driftwood_start');
 
   const distant = TILES.find((t) => t.id === 'kelp_start');
   assert.equal(isDiscovered(distant, state), false, 'kelp_start is 3 hops from driftwood_start');
@@ -213,16 +213,16 @@ console.log('geometry-derived adjacency tests passed');
 
 {
   // cost-gated, adjacent to the sole unlocked tile: gated on resources only
-  const tile = TILES.find((t) => t.id === 'crops_start'); // cost: 20 driftwood
+  const tile = TILES.find((t) => t.id === 'crops_soil_barge'); // cost: 35 driftwood
   const state = { unlocked: ['driftwood_start'], resources: { driftwood: 10 }, lifetime: {} };
   assert.equal(isEligible(tile, state), false, 'not enough driftwood yet');
-  state.resources.driftwood = 20;
+  state.resources.driftwood = 35;
   assert.equal(isEligible(tile, state), true, 'discovered and affordable');
 }
 
 {
   // milestone-gated, adjacent to the sole unlocked tile
-  const tile = TILES.find((t) => t.id === 'driftwood_shipwreck_salvage'); // milestone: driftwood >= 60
+  const tile = TILES.find((t) => t.id === 'kelp_reef'); // milestone: driftwood >= 60
   const state = { unlocked: ['driftwood_start'], resources: {}, lifetime: { driftwood: 59 } };
   assert.equal(isEligible(tile, state), false);
   state.lifetime.driftwood = 60;
@@ -268,19 +268,19 @@ console.log('geometry-derived adjacency tests passed');
 {
   const state = createInitialState();
   state.resources.driftwood = 20;
-  const tile = TILES.find((t) => t.id === 'crops_start');
+  const tile = TILES.find((t) => t.id === 'booster_windmill');
   const ok = unlockTile(state, tile);
   assert.equal(ok, true, 'unlock succeeds when adjacent and affordable');
   assert.equal(state.resources.driftwood, 0, 'cost is deducted');
-  assert.ok(state.unlocked.includes('crops_start'), 'tile id added to unlocked');
+  assert.ok(state.unlocked.includes('booster_windmill'), 'tile id added to unlocked');
 }
 
 {
   const state = createInitialState();
-  const tile = TILES.find((t) => t.id === 'crops_start');
+  const tile = TILES.find((t) => t.id === 'booster_windmill');
   const ok = unlockTile(state, tile);
   assert.equal(ok, false, 'unlock fails when not enough resources');
-  assert.ok(!state.unlocked.includes('crops_start'));
+  assert.ok(!state.unlocked.includes('booster_windmill'));
 }
 
 {
