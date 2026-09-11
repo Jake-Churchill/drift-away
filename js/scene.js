@@ -276,11 +276,17 @@ function buildKelpBlade(colorHex, segments, baseHeight) {
   return bladeGroup;
 }
 
+const KELP_LEVEL_BLADES = {
+  2: [{ color: 0x6fbb88, x: -0.44, h: 0.5 }],
+  3: [{ color: 0x6fbb88, x: -0.44, h: 0.5 }, { color: 0x2f7248, x: 0.44, h: 0.68 }],
+};
+
 function buildKelpProp(group, level) {
   const specs = [
     { color: 0x3f8a5c, x: -0.28, h: 0.62 },
     { color: 0x4c9a6a, x: 0, h: 0.75 },
     { color: 0x5aab78, x: 0.28, h: 0.58 },
+    ...(KELP_LEVEL_BLADES[level] || []),
   ];
   for (const s of specs) {
     const blade = buildKelpBlade(s.color, 5, s.h);
