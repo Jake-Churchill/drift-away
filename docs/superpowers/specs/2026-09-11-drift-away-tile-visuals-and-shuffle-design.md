@@ -37,7 +37,7 @@ row 4: b f k c k c
 row 5: b c f d d d
 ```
 
-`driftwood_start` is fixed at (2,3), unchanged from today. Full new `gridPos` per tile id — every other field (`id`, `name`, `family`, `kind`, `produces`, `rate`, `boosts`, `unlock`) is untouched, so each tile keeps its own existing unlock cost exactly as it is today; the slot's cost travels with the slot, not the flavor (e.g. `fish_start`, moving to (0,1), keeps its current `{driftwood:50, crops:40}` cost — it just now sits where `kelp_start` used to be):
+`driftwood_start` is fixed at (2,3), unchanged from today — both its `gridPos` and its `unlock` stay put. For every other tile, `gridPos` **and** `unlock` move together as a slot: a tile's new `unlock` is whatever unlock cost *originally* belonged to the slot (gridPos) it now occupies, not the cost it used to have under its old gridPos. Concretely, `fish_start` moves to (0,1) — the slot `kelp_start` used to occupy — so `fish_start` now carries `kelp_start`'s old cost, `{driftwood:50, crops:40}`, not its own former cost (`{driftwood:35, crops:25}`, which stays behind at fish_start's old gridPos (3,4), now carried by whichever flavor lands there). Only `id`, `name`, `family`, `kind`, `produces`, `rate`, and `boosts` travel with the flavor unchanged; `gridPos` and `unlock` always travel together as the slot. The table below gives each tile's new `gridPos`; because unlock is entirely determined by which slot a tile lands in (never by the tile itself), Task 1 of the implementation plan gives the complete, literal new `TILES` array (gridPos and unlock included) rather than a partial diff, to avoid exactly this kind of ambiguity:
 
 | Tile id | New gridPos (row,col) |
 |---|---|
