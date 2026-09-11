@@ -42,6 +42,8 @@ const BADGE_ANCHOR_HEIGHT = {
 };
 const TRIM_THICKNESS = { 1: 0.03, 2: 0.045, 3: 0.06 };
 const TRIM_COLOR = { 1: BOOSTER_TRIM, 2: 0xf0c94f, 3: 0xfff0a0 };
+const CROPS_HEAD_COLOR = { 1: 0xe9c85a, 2: 0xd9a83a, 3: 0xc98f2a };
+const CROPS_STALK_COUNT = { 1: 14, 2: 17, 3: 20 };
 
 function addLevelBadge(propGroup, level, anchorHeight) {
   if (level === 1) return;
@@ -360,10 +362,10 @@ function buildGrainHead(mat, h) {
 
 function buildCropsProp(group, level) {
   const stalkMat = new THREE.MeshStandardMaterial({ color: 0xac9138, roughness: 0.65 });
-  const headMat = new THREE.MeshStandardMaterial({ color: 0xe9c85a, roughness: 0.5 });
+  const headMat = new THREE.MeshStandardMaterial({ color: CROPS_HEAD_COLOR[level], roughness: 0.5 });
   const leafMat = new THREE.MeshStandardMaterial({ color: 0x8f8a3a, roughness: 0.6, side: THREE.DoubleSide });
 
-  const count = 14;
+  const count = CROPS_STALK_COUNT[level];
   for (let i = 0; i < count; i++) {
     const angle = (i / count) * Math.PI * 2 + (i % 3) * 0.4;
     const radius = 0.10 + (i % 4) * 0.065;
