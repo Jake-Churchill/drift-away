@@ -24,6 +24,48 @@ const LARGE_BOOSTER_IDS = new Set([
   'booster_lighthouse',
 ]);
 
+const LEVEL_SCALE = { 1: 1.0, 2: 1.15, 3: 1.3 };
+const BADGE_COLOR = { 2: 0xb8752f, 3: 0xffd23d };
+const BADGE_EMISSIVE = { 2: 0x000000, 3: 0xffb300 };
+const BADGE_SIZE = { 2: 0.06, 3: 0.08 };
+const BADGE_ANCHOR_HEIGHT = {
+  fish: 0.32,
+  kelp: 0.85,
+  driftwood: 0.25,
+  crops: 0.95,
+  booster_windmill: 1.0,
+  booster_smokehouse: 0.8,
+  booster_drying_rack: 0.55,
+  booster_net_weavers: 0.6,
+  booster_composting_shed: 0.35,
+  booster_lighthouse: 1.05,
+};
+const TRIM_THICKNESS = { 1: 0.03, 2: 0.045, 3: 0.06 };
+const TRIM_COLOR = { 1: BOOSTER_TRIM, 2: 0xf0c94f, 3: 0xfff0a0 };
+
+function addLevelBadge(propGroup, level, anchorHeight) {
+  if (level === 1) return;
+  // Anchor is a per-archetype fixed height, not a computed bounding box: a
+  // live Box3 badge anchor was prototyped and found to run away for tall
+  // archetypes (e.g. the windmill) relative to short ones (fish/kelp).
+  // Must be called before propGroup.scale.setScalar(...) — see addProp
+  // below — so this local offset is the badge's correct final position
+  // once the group's own scale is applied on top of it.
+  const size = BADGE_SIZE[level];
+  const geo = new THREE.OctahedronGeometry(size, 0);
+  const mat = new THREE.MeshStandardMaterial({
+    color: BADGE_COLOR[level],
+    roughness: 0.3,
+    metalness: 0.6,
+    emissive: BADGE_EMISSIVE[level],
+    emissiveIntensity: level === 3 ? 0.7 : 0,
+  });
+  const badge = new THREE.Mesh(geo, mat);
+  badge.position.set(0, anchorHeight + size * 1.4, 0);
+  badge.rotation.y = Math.PI / 6;
+  propGroup.add(badge);
+}
+
 function addOutline(mesh, scale, color) {
   const outline = new THREE.Mesh(
     mesh.geometry,
@@ -105,7 +147,7 @@ function buildSpikeLobe(mat, radius, height, zDegRotation, flattenZ) {
   return mesh;
 }
 
-function buildFishProp(group) {
+function buildFishProp(group, level) {
   const bodyMat = new THREE.MeshStandardMaterial({ color: FISH_BODY_COLOR, roughness: 0.55 });
   const body = new THREE.Mesh(buildFishBodyGeometry(), bodyMat);
   body.castShadow = true;
@@ -207,7 +249,7 @@ function buildKelpBlade(colorHex, segments, baseHeight) {
   return bladeGroup;
 }
 
-function buildKelpProp(group) {
+function buildKelpProp(group, level) {
   const specs = [
     { color: 0x3f8a5c, x: -0.28, h: 0.62 },
     { color: 0x4c9a6a, x: 0, h: 0.75 },
@@ -233,7 +275,7 @@ function buildLog(colorHex, length, radius, x, z, rotY, tilt) {
   return log;
 }
 
-function buildDriftwoodProp(group) {
+function buildDriftwoodProp(group, level) {
   group.add(buildLog(0x5a3f22, 0.85, 0.075, -0.05, 0.05, 0.15, 0));
   group.add(buildLog(0x8a7f6e, 0.65, 0.06, 0.12, -0.08, -0.6, 0.05));
   group.add(buildLog(0x6b4c2a, 0.42, 0.045, -0.2, -0.15, 1.1, -0.08));
@@ -268,7 +310,7 @@ function buildGrainHead(mat, h) {
   return headGroup;
 }
 
-function buildCropsProp(group) {
+function buildCropsProp(group, level) {
   const stalkMat = new THREE.MeshStandardMaterial({ color: 0xac9138, roughness: 0.65 });
   const headMat = new THREE.MeshStandardMaterial({ color: 0xe9c85a, roughness: 0.5 });
   const leafMat = new THREE.MeshStandardMaterial({ color: 0x8f8a3a, roughness: 0.6, side: THREE.DoubleSide });
@@ -323,7 +365,7 @@ function cylinderBetween(p1, p2, radius, mat) {
   return mesh;
 }
 
-function buildWindmill(group) {
+function buildWindmill(group, level) {
   const towerMat = new THREE.MeshStandardMaterial({ color: 0x9c8058, roughness: 0.75 });
   const bladeMat = new THREE.MeshStandardMaterial({ color: 0xdcdcd4, roughness: 0.4, metalness: 0.25, side: THREE.DoubleSide });
 
@@ -384,7 +426,7 @@ function buildWindmill(group) {
   group.add(hub);
 }
 
-function buildSmokehouse(group) {
+function buildSmokehouse(group, level) {
   const wallMat = new THREE.MeshStandardMaterial({ color: 0x8a6a45, roughness: 0.8 });
   const roofMat = new THREE.MeshStandardMaterial({ color: BOOSTER_TRIM, roughness: 0.6, metalness: 0.15 });
   const cabin = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.32, 0.4), wallMat);
@@ -402,7 +444,7 @@ function buildSmokehouse(group) {
   group.add(chimney);
 }
 
-function buildDryingRack(group) {
+function buildDryingRack(group, level) {
   const mat = new THREE.MeshStandardMaterial({ color: 0x6b4c2a, roughness: 0.85 });
   for (const x of [-0.22, 0.22]) {
     const post = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.5, 6), mat);
@@ -424,7 +466,7 @@ function buildDryingRack(group) {
   }
 }
 
-function buildNetWeavers(group) {
+function buildNetWeavers(group, level) {
   const mat = new THREE.MeshStandardMaterial({ color: 0x6b4c2a, roughness: 0.85 });
   const postGeo = new THREE.CylinderGeometry(0.03, 0.03, 0.55, 6);
   const posts = [[-0.24, -0.15], [0.24, -0.15], [-0.24, 0.15], [0.24, 0.15]];
@@ -451,7 +493,7 @@ function buildNetWeavers(group) {
   }
 }
 
-function buildCompostingShed(group) {
+function buildCompostingShed(group, level) {
   const mat = new THREE.MeshStandardMaterial({ color: 0x5a4a34, roughness: 0.85 });
   const lidMat = new THREE.MeshStandardMaterial({ color: BOOSTER_TRIM, roughness: 0.6, metalness: 0.15 });
   const bin = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.26, 0.36), mat);
@@ -465,7 +507,7 @@ function buildCompostingShed(group) {
   group.add(lid);
 }
 
-function buildLighthouse(group) {
+function buildLighthouse(group, level) {
   const mat = new THREE.MeshStandardMaterial({ color: 0xd8d3c8, roughness: 0.6 });
   const stripeMat = new THREE.MeshStandardMaterial({ color: BOOSTER_TRIM, roughness: 0.5 });
   const tower = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.16, 0.7, 10), mat);
@@ -490,31 +532,38 @@ function buildLighthouse(group) {
   group.add(roof);
 }
 
-function buildBoosterProp(group, tileId) {
+function buildBoosterProp(group, tileId, level) {
   switch (tileId) {
-    case 'booster_windmill': buildWindmill(group); break;
-    case 'booster_smokehouse': buildSmokehouse(group); break;
-    case 'booster_drying_rack': buildDryingRack(group); break;
-    case 'booster_net_weavers': buildNetWeavers(group); break;
-    case 'booster_composting_shed': buildCompostingShed(group); break;
-    case 'booster_lighthouse': buildLighthouse(group); break;
+    case 'booster_windmill': buildWindmill(group, level); break;
+    case 'booster_smokehouse': buildSmokehouse(group, level); break;
+    case 'booster_drying_rack': buildDryingRack(group, level); break;
+    case 'booster_net_weavers': buildNetWeavers(group, level); break;
+    case 'booster_composting_shed': buildCompostingShed(group, level); break;
+    case 'booster_lighthouse': buildLighthouse(group, level); break;
   }
 }
 
 function addProp(raftMesh, tile) {
-  const propGroup = new THREE.Group();
-  propGroup.position.y = WALL_HEIGHT;
-  switch (tile.family) {
-    case 'fish': buildFishProp(propGroup); break;
-    case 'kelp': buildKelpProp(propGroup); break;
-    case 'driftwood': buildDriftwoodProp(propGroup); break;
-    case 'crops': buildCropsProp(propGroup); break;
-    case 'booster': buildBoosterProp(propGroup, tile.id); break;
+  const propGroups = {};
+  for (const level of [1, 2, 3]) {
+    const propGroup = new THREE.Group();
+    propGroup.position.y = WALL_HEIGHT;
+    switch (tile.family) {
+      case 'fish': buildFishProp(propGroup, level); break;
+      case 'kelp': buildKelpProp(propGroup, level); break;
+      case 'driftwood': buildDriftwoodProp(propGroup, level); break;
+      case 'crops': buildCropsProp(propGroup, level); break;
+      case 'booster': buildBoosterProp(propGroup, tile.id, level); break;
+    }
+    const anchorKey = tile.family === 'booster' ? tile.id : tile.family;
+    addLevelBadge(propGroup, level, BADGE_ANCHOR_HEIGHT[anchorKey]);
+    const extraScale = LARGE_BOOSTER_IDS.has(tile.id) ? BOOSTER_PROP_SCALE : 1;
+    propGroup.scale.setScalar(PROP_SCALE * extraScale * LEVEL_SCALE[level]);
+    propGroup.visible = level === 1;
+    raftMesh.add(propGroup);
+    propGroups[level] = propGroup;
   }
-  const extraScale = LARGE_BOOSTER_IDS.has(tile.id) ? BOOSTER_PROP_SCALE : 1;
-  propGroup.scale.setScalar(PROP_SCALE * extraScale);
-  raftMesh.add(propGroup);
-  return propGroup;
+  return propGroups;
 }
 
 function buildRaftMesh(tile) {
@@ -533,18 +582,30 @@ function buildRaftMesh(tile) {
   raftMesh.receiveShadow = true;
   raftMesh.userData.tileId = tile.id;
 
+  let trimMeshes = null;
   if (tile.kind === 'booster') {
-    const trimGeometry = new THREE.TorusGeometry(HEX_RADIUS * 0.92, 0.03, 8, 24);
-    const trimMaterial = new THREE.MeshStandardMaterial({ color: BOOSTER_TRIM, roughness: 0.4, metalness: 0.3 });
-    const trim = new THREE.Mesh(trimGeometry, trimMaterial);
-    trim.rotation.x = Math.PI / 2;
-    trim.position.y = WALL_HEIGHT + 0.01;
-    trim.userData.tileId = tile.id;
-    raftMesh.add(trim);
+    trimMeshes = {};
+    for (const level of [1, 2, 3]) {
+      const trimGeometry = new THREE.TorusGeometry(HEX_RADIUS * 0.92, TRIM_THICKNESS[level], 8, 24);
+      const trimMaterial = new THREE.MeshStandardMaterial({
+        color: TRIM_COLOR[level],
+        roughness: 0.4,
+        metalness: 0.3,
+        emissive: level === 3 ? 0x664400 : 0x000000,
+        emissiveIntensity: level === 3 ? 0.4 : 0,
+      });
+      const trim = new THREE.Mesh(trimGeometry, trimMaterial);
+      trim.rotation.x = Math.PI / 2;
+      trim.position.y = WALL_HEIGHT + 0.01;
+      trim.userData.tileId = tile.id;
+      trim.visible = level === 1;
+      raftMesh.add(trim);
+      trimMeshes[level] = trim;
+    }
   }
 
-  const propGroup = addProp(raftMesh, tile);
-  return { raftMesh, propGroup };
+  const propGroups = addProp(raftMesh, tile);
+  return { raftMesh, propGroups, trimMeshes };
 }
 
 function buildMarkerMesh(tile) {
@@ -642,7 +703,7 @@ export function buildScene(canvas) {
   for (const tile of TILES) {
     const { x, z } = hexLocalPosition(tile.gridPos.row, tile.gridPos.col);
 
-    const { raftMesh, propGroup } = buildRaftMesh(tile);
+    const { raftMesh, propGroups, trimMeshes } = buildRaftMesh(tile);
     raftMesh.position.set(x, 0, z);
     raftMesh.visible = false;
     scene.add(raftMesh);
@@ -653,7 +714,7 @@ export function buildScene(canvas) {
     markerMesh.visible = false;
     scene.add(markerMesh);
 
-    tileObjects.set(tile.id, { raftMesh, markerMesh, propGroup });
+    tileObjects.set(tile.id, { raftMesh, markerMesh, propGroups, trimMeshes });
   }
 
   function resize(width, height) {

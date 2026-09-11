@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { TILES } from './tiles.js';
-import { isDiscovered, isEligible } from './state.js';
+import { getLevel, isDiscovered, isEligible } from './state.js';
 import { buildScene } from './scene.js';
 
 let renderer, scene, camera, resizeFn, waterMesh, waterBasePositions, tileObjects;
@@ -50,6 +50,12 @@ export function updateScene(state, time) {
 
     objects.raftMesh.visible = unlocked;
     objects.markerMesh.visible = !unlocked && discovered;
+
+    const level = getLevel(state, tile.id);
+    for (const lvl of [1, 2, 3]) {
+      objects.propGroups[lvl].visible = lvl === level;
+      if (objects.trimMeshes) objects.trimMeshes[lvl].visible = lvl === level;
+    }
 
     if (!unlocked && discovered) {
       const eligible = isEligible(tile, state);
