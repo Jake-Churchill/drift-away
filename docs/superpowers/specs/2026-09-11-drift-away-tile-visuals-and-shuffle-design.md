@@ -84,7 +84,17 @@ row 5: b c f d d d
 
 ### Testing impact
 
-`tests/economy.test.mjs` hardcodes two tiles' neighbor lists by id. `driftwood_start`'s (fixed slot) is unaffected. `kelp_start`'s is not — `kelp_start` moves to (4,2), an interior position with 6 neighbors, not the 4-neighbor edge case that assertion currently documents. That edge-case assertion should move to whichever tile now sits at (0,1) — `fish_start` — with its new neighbor list:
+`tests/economy.test.mjs` hardcodes two tiles' neighbor lists by id, and **both** break — not just `kelp_start`'s. It's tempting to assume `driftwood_start`'s is safe because its own `gridPos` (2,3) is the one fixed point in the whole shuffle, but the assertion is about *which ids* surround it, and every one of its neighboring positions gets reassigned to a different flavor by the shuffle — only the position is pinned, not what's next to it. Its expected neighbor list must be updated in place to the post-shuffle ids:
+
+```js
+assert.deepEqual(
+  [...TILE_NEIGHBORS.get('driftwood_start')].sort(),
+  ['booster_windmill', 'crops_soil_barge', 'fish_trawling_raft', 'kelp_abyssal_forest', 'kelp_reef', 'kelp_seaweed_raft'],
+  'driftwood_start (2,3) has exactly these 6 neighbors'
+);
+```
+
+Separately, `kelp_start` moves to (4,2), an interior position with 6 neighbors, so it no longer serves as the 4-neighbor edge-case example its assertion originally documented. That whole assertion (id, expected list, and message) should be replaced with the tile that now sits at (0,1) instead — `fish_start`:
 
 ```js
 assert.deepEqual(
