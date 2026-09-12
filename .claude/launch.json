@@ -4,7 +4,7 @@
     {
       "name": "drift-away",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["serve", "-l", "4173", "/Users/warmonkeyz/Documents/coding/drift-away/.claude/worktrees/drift-away-tile-visuals-shuffle"],
+      "runtimeArgs": ["serve", "-l", "4173", "."],
       "port": 4173
     }
   ]
