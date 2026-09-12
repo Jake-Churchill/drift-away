@@ -513,11 +513,18 @@ function buildSmokehouse(group, level) {
   }
 }
 
+const DRYING_RACK_HANGS = {
+  1: [-0.14, 0.02, 0.16],
+  2: [-0.18, -0.06, 0.06, 0.18, -0.02],
+  3: [-0.18, -0.06, 0.06, 0.18, -0.02],
+};
+
 function buildDryingRack(group, level) {
   const mat = new THREE.MeshStandardMaterial({ color: 0x6b4c2a, roughness: 0.85 });
+  const postHeight = level === 3 ? 0.62 : 0.5;
   for (const x of [-0.22, 0.22]) {
-    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.5, 6), mat);
-    post.position.set(x, 0.25, 0);
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, postHeight, 6), mat);
+    post.position.set(x, postHeight / 2, 0);
     post.castShadow = true;
     group.add(post);
   }
@@ -526,12 +533,25 @@ function buildDryingRack(group, level) {
   bar.position.y = 0.46;
   bar.castShadow = true;
   group.add(bar);
+
   const hangMat = new THREE.MeshStandardMaterial({ color: 0xb08a55, roughness: 0.7 });
-  for (const x of [-0.14, 0.02, 0.16]) {
-    const hang = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 8), hangMat);
-    hang.scale.set(0.7, 1.3, 0.7);
-    hang.position.set(x, 0.34, 0);
-    group.add(hang);
+  function addHangsOnBar(barY, xs) {
+    for (const x of xs) {
+      const hang = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 8), hangMat);
+      hang.scale.set(0.7, 1.3, 0.7);
+      hang.position.set(x, barY - 0.12, 0);
+      group.add(hang);
+    }
+  }
+  addHangsOnBar(0.46, DRYING_RACK_HANGS[level]);
+
+  if (level === 3) {
+    const bar2 = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.5, 6), mat);
+    bar2.rotation.z = Math.PI / 2;
+    bar2.position.y = 0.58;
+    bar2.castShadow = true;
+    group.add(bar2);
+    addHangsOnBar(0.58, [-0.14, 0.02, 0.16]);
   }
 }
 
