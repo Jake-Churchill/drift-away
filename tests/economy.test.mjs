@@ -203,7 +203,7 @@ console.log('geometry-derived adjacency tests passed');
   assert.equal(isDiscovered(adjacent, state), true, 'crops_soil_barge is adjacent to driftwood_start');
 
   const distant = TILES.find((t) => t.id === 'kelp_start');
-  assert.equal(isDiscovered(distant, state), false, 'kelp_start is 3 hops from driftwood_start');
+  assert.equal(isDiscovered(distant, state), false, 'kelp_start is 2 hops from driftwood_start');
 
   const start = TILES.find((t) => t.id === 'driftwood_start');
   assert.equal(isDiscovered(start, state), true, 'an already-unlocked tile is always discovered');
@@ -231,7 +231,7 @@ console.log('geometry-derived adjacency tests passed');
 
 {
   // not discovered: plenty of resources, but not adjacent to anything unlocked
-  const tile = TILES.find((t) => t.id === 'kelp_start'); // cost: 50 driftwood + 40 crops
+  const tile = TILES.find((t) => t.id === 'kelp_start'); // cost: 70 driftwood + 60 crops
   const state = {
     unlocked: ['driftwood_start'],
     resources: { driftwood: 9999, crops: 9999 },
