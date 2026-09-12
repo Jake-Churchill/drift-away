@@ -611,11 +611,11 @@ function buildCompostingShed(group, level) {
 
   if (level === 3) {
     const bin2 = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.3, 0.42), mat);
-    bin2.position.set(0.32, 0.15, 0.02);
+    bin2.position.set(0.5, 0.15, 0.02);
     bin2.castShadow = true;
     group.add(bin2);
     const lid2 = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.03, 0.46), lidMat);
-    lid2.position.set(0.29, 0.31, 0.02);
+    lid2.position.set(0.47, 0.31, 0.02);
     lid2.rotation.z = 0.2;
     lid2.castShadow = true;
     group.add(lid2);
