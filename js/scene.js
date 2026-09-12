@@ -31,19 +31,17 @@ const BADGE_SIZE = { 2: 0.06, 3: 0.08 };
 const BADGE_ANCHOR_HEIGHT = {
   fish: 0.32,
   kelp: 0.85,
-  driftwood: 0.25,
+  driftwood: 0.35,
   crops: 0.95,
-  booster_windmill: 1.0,
+  booster_windmill: 1.18,
   booster_smokehouse: 0.8,
-  booster_drying_rack: 0.55,
+  booster_drying_rack: 0.8,
   booster_net_weavers: 0.6,
   booster_composting_shed: 0.35,
   booster_lighthouse: 1.05,
 };
 const TRIM_THICKNESS = { 1: 0.03, 2: 0.045, 3: 0.06 };
 const TRIM_COLOR = { 1: BOOSTER_TRIM, 2: 0xf0c94f, 3: 0xfff0a0 };
-const CROPS_HEAD_COLOR = { 1: 0xe9c85a, 2: 0xd9a83a, 3: 0xc98f2a };
-const CROPS_STALK_COUNT = { 1: 14, 2: 17, 3: 20 };
 
 function addLevelBadge(propGroup, level, anchorHeight) {
   if (level === 1) return;
@@ -332,8 +330,13 @@ function buildDriftwoodProp(group, level) {
   }
   if (level >= 3) {
     group.add(buildLog(0x8a7f6e, 0.95, 0.09, -0.05, 0.02, 0.4, 0, 0.12)); // larger 5th log, stacked on top
+    // Barnacle cluster resting on top of the 5th log's own cylindrical
+    // surface: that log is centered at (-0.05, 0.24, 0.02) with radius 0.09
+    // and its length runs along (cos(0.4), 0, -sin(0.4)) after its rotY;
+    // these two points sit on top of the log (center Y + radius), offset
+    // along that length direction so they read as two barnacles side by side.
     const barnacleMat = new THREE.MeshStandardMaterial({ color: 0xb8b2a4, roughness: 0.8 });
-    for (const b of [{ x: 0.1, y: 0.12, z: 0.08 }, { x: -0.15, y: 0.16, z: -0.1 }]) {
+    for (const b of [{ x: 0.088, y: 0.33, z: -0.038 }, { x: -0.188, y: 0.33, z: 0.078 }]) {
       const barnacle = new THREE.Mesh(new THREE.SphereGeometry(0.025, 6, 6), barnacleMat);
       barnacle.position.set(b.x, b.y, b.z);
       group.add(barnacle);
@@ -359,6 +362,9 @@ function buildGrainHead(mat, h) {
   headGroup.position.y = h;
   return headGroup;
 }
+
+const CROPS_HEAD_COLOR = { 1: 0xe9c85a, 2: 0xd9a83a, 3: 0xc98f2a };
+const CROPS_STALK_COUNT = { 1: 14, 2: 17, 3: 20 };
 
 function buildCropsProp(group, level) {
   const stalkMat = new THREE.MeshStandardMaterial({ color: 0xac9138, roughness: 0.65 });
@@ -424,8 +430,8 @@ function buildWindmill(group, level) {
   const topRadius = 0.045;
   const baseRadius = 0.30;
   const legAngle = (i) => i * (Math.PI / 2) + Math.PI / 4;
-  const ringPoint = (level, i) => {
-    const t = level / 4;
+  const ringPoint = (ring, i) => {
+    const t = ring / 4;
     const r = baseRadius + (topRadius - baseRadius) * t;
     const a = legAngle(i);
     return new THREE.Vector3(r * Math.cos(a), towerHeight * t, r * Math.sin(a));
@@ -434,14 +440,14 @@ function buildWindmill(group, level) {
   for (let i = 0; i < 4; i++) {
     group.add(cylinderBetween(ringPoint(0, i), ringPoint(4, i), 0.022, towerMat));
   }
-  for (let level = 0; level <= 4; level++) {
+  for (let ring = 0; ring <= 4; ring++) {
     for (let i = 0; i < 4; i++) {
-      group.add(cylinderBetween(ringPoint(level, i), ringPoint(level, (i + 1) % 4), 0.012, towerMat));
+      group.add(cylinderBetween(ringPoint(ring, i), ringPoint(ring, (i + 1) % 4), 0.012, towerMat));
     }
-    if (level < 4) {
+    if (ring < 4) {
       for (let i = 0; i < 4; i++) {
-        group.add(cylinderBetween(ringPoint(level, i), ringPoint(level + 1, (i + 1) % 4), 0.01, towerMat));
-        group.add(cylinderBetween(ringPoint(level, (i + 1) % 4), ringPoint(level + 1, i), 0.01, towerMat));
+        group.add(cylinderBetween(ringPoint(ring, i), ringPoint(ring + 1, (i + 1) % 4), 0.01, towerMat));
+        group.add(cylinderBetween(ringPoint(ring, (i + 1) % 4), ringPoint(ring + 1, i), 0.01, towerMat));
       }
     }
   }
@@ -521,7 +527,11 @@ const DRYING_RACK_HANGS = {
 
 function buildDryingRack(group, level) {
   const mat = new THREE.MeshStandardMaterial({ color: 0x6b4c2a, roughness: 0.85 });
-  const postHeight = level === 3 ? 0.62 : 0.5;
+  // Level 3's postHeight/bar2 Y must stay in this relation: bar2Y - 0.12 (the
+  // tier-2 hang drop, see addHangsOnBar below) must clear bar's own Y (0.46)
+  // with a visible gap, and postHeight must clear bar2Y so the posts still
+  // visibly support both bars.
+  const postHeight = level === 3 ? 0.75 : 0.5;
   for (const x of [-0.22, 0.22]) {
     const post = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, postHeight, 6), mat);
     post.position.set(x, postHeight / 2, 0);
@@ -548,10 +558,10 @@ function buildDryingRack(group, level) {
   if (level === 3) {
     const bar2 = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.5, 6), mat);
     bar2.rotation.z = Math.PI / 2;
-    bar2.position.y = 0.58;
+    bar2.position.y = 0.7;
     bar2.castShadow = true;
     group.add(bar2);
-    addHangsOnBar(0.58, [-0.14, 0.02, 0.16]);
+    addHangsOnBar(0.7, [-0.14, 0.02, 0.16]);
   }
 }
 
@@ -610,12 +620,16 @@ function buildCompostingShed(group, level) {
   group.add(lid);
 
   if (level === 3) {
-    const bin2 = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.3, 0.42), mat);
-    bin2.position.set(0.5, 0.15, 0.02);
+    // Sized and placed to stay within this LARGE_BOOSTER tile's raft (scale
+    // 1.8*1.5*1.3=3.51x) without overlapping bin1/lid1 above: offset mostly
+    // in +Z (bin1/lid1 only reach z<=0.18/0.2) rather than +X, since the
+    // hex's flat edge caps safe X reach much more tightly than Z here.
+    const bin2 = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.1), mat);
+    bin2.position.set(0.03, 0.1, 0.285);
     bin2.castShadow = true;
     group.add(bin2);
-    const lid2 = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.03, 0.46), lidMat);
-    lid2.position.set(0.47, 0.31, 0.02);
+    const lid2 = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.03, 0.14), lidMat);
+    lid2.position.set(bin2.position.x - 0.03, 0.21, 0.285);
     lid2.rotation.z = 0.2;
     lid2.castShadow = true;
     group.add(lid2);
