@@ -594,6 +594,8 @@ function buildNetWeavers(group, level) {
   }
 }
 
+const COMPOST_STEAM_COUNT = { 1: 0, 2: 3, 3: 5 };
+
 function buildCompostingShed(group, level) {
   const mat = new THREE.MeshStandardMaterial({ color: 0x5a4a34, roughness: 0.85 });
   const lidMat = new THREE.MeshStandardMaterial({ color: BOOSTER_TRIM, roughness: 0.6, metalness: 0.15 });
@@ -606,6 +608,27 @@ function buildCompostingShed(group, level) {
   lid.rotation.z = 0.25;
   lid.castShadow = true;
   group.add(lid);
+
+  if (level === 3) {
+    const bin2 = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.3, 0.42), mat);
+    bin2.position.set(0.32, 0.15, 0.02);
+    bin2.castShadow = true;
+    group.add(bin2);
+    const lid2 = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.03, 0.46), lidMat);
+    lid2.position.set(0.29, 0.31, 0.02);
+    lid2.rotation.z = 0.2;
+    lid2.castShadow = true;
+    group.add(lid2);
+  }
+
+  const steamCount = COMPOST_STEAM_COUNT[level];
+  const steamMat = new THREE.MeshStandardMaterial({ color: 0x8fae86, roughness: 0.9, transparent: true, opacity: 0.45 });
+  for (let i = 0; i < steamCount; i++) {
+    const t = i / Math.max(steamCount - 1, 1);
+    const steam = new THREE.Mesh(new THREE.SphereGeometry(0.03 + t * 0.02, 6, 6), steamMat);
+    steam.position.set(-0.1 + t * 0.4, 0.36 + t * 0.14, -0.05 + t * 0.1);
+    group.add(steam);
+  }
 }
 
 function buildLighthouse(group, level) {
