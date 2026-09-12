@@ -631,6 +631,10 @@ function buildCompostingShed(group, level) {
   }
 }
 
+const LIGHTHOUSE_LIGHT_SIZE = { 1: 0.06, 2: 0.07, 3: 0.08 };
+const LIGHTHOUSE_LIGHT_INTENSITY = { 1: 1.2, 2: 1.8, 3: 2.4 };
+const LIGHTHOUSE_LIGHT_COLOR = { 1: 0xfff2c0, 2: 0xffe9a0, 3: 0xffd23d };
+
 function buildLighthouse(group, level) {
   const mat = new THREE.MeshStandardMaterial({ color: 0xd8d3c8, roughness: 0.6 });
   const stripeMat = new THREE.MeshStandardMaterial({ color: BOOSTER_TRIM, roughness: 0.5 });
@@ -645,8 +649,13 @@ function buildLighthouse(group, level) {
   lantern.position.y = 0.77;
   group.add(lantern);
   const light = new THREE.Mesh(
-    new THREE.SphereGeometry(0.06, 10, 10),
-    new THREE.MeshStandardMaterial({ color: 0xfff2c0, emissive: 0xfff2c0, emissiveIntensity: 1.2, roughness: 0.3 })
+    new THREE.SphereGeometry(LIGHTHOUSE_LIGHT_SIZE[level], 10, 10),
+    new THREE.MeshStandardMaterial({
+      color: LIGHTHOUSE_LIGHT_COLOR[level],
+      emissive: LIGHTHOUSE_LIGHT_COLOR[level],
+      emissiveIntensity: LIGHTHOUSE_LIGHT_INTENSITY[level],
+      roughness: 0.3,
+    })
   );
   light.position.y = 0.77;
   group.add(light);
@@ -654,6 +663,20 @@ function buildLighthouse(group, level) {
   roof.position.y = 0.9;
   roof.castShadow = true;
   group.add(roof);
+
+  if (level >= 2) {
+    const haloMat = new THREE.MeshBasicMaterial({
+      color: LIGHTHOUSE_LIGHT_COLOR[level],
+      transparent: true,
+      opacity: level === 3 ? 0.35 : 0.25,
+    });
+    const halo = new THREE.Mesh(
+      new THREE.SphereGeometry(LIGHTHOUSE_LIGHT_SIZE[level] * (level === 3 ? 2.2 : 1.8), 12, 12),
+      haloMat
+    );
+    halo.position.y = 0.77;
+    group.add(halo);
+  }
 }
 
 function buildBoosterProp(group, tileId, level) {
