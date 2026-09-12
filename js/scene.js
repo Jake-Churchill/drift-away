@@ -555,6 +555,8 @@ function buildDryingRack(group, level) {
   }
 }
 
+const NET_DIVISIONS = { 1: { x: 4, z: 3 }, 2: { x: 8, z: 6 }, 3: { x: 8, z: 6 } };
+
 function buildNetWeavers(group, level) {
   const mat = new THREE.MeshStandardMaterial({ color: 0x6b4c2a, roughness: 0.85 });
   const postGeo = new THREE.CylinderGeometry(0.03, 0.03, 0.55, 6);
@@ -566,19 +568,29 @@ function buildNetWeavers(group, level) {
     group.add(post);
   }
   const netMat = new THREE.LineBasicMaterial({ color: 0xdfe9ee, transparent: true, opacity: 0.8 });
-  for (let i = 0; i <= 4; i++) {
-    const t = i / 4;
+  const divisions = NET_DIVISIONS[level];
+  for (let i = 0; i <= divisions.x; i++) {
+    const t = i / divisions.x;
     const a = new THREE.Vector3(-0.24 + t * 0.48, 0.45, -0.15);
     const b = new THREE.Vector3(-0.24 + t * 0.48, 0.45, 0.15);
     const geo = new THREE.BufferGeometry().setFromPoints([a, b]);
     group.add(new THREE.Line(geo, netMat));
   }
-  for (let i = 0; i <= 3; i++) {
-    const t = i / 3;
+  for (let i = 0; i <= divisions.z; i++) {
+    const t = i / divisions.z;
     const a = new THREE.Vector3(-0.24, 0.45, -0.15 + t * 0.3);
     const b = new THREE.Vector3(0.24, 0.45, -0.15 + t * 0.3);
     const geo = new THREE.BufferGeometry().setFromPoints([a, b]);
     group.add(new THREE.Line(geo, netMat));
+  }
+
+  if (level === 3) {
+    const bundleMat = new THREE.MeshStandardMaterial({ color: 0xc9b98a, roughness: 0.8 });
+    const bundle = new THREE.Mesh(new THREE.TorusGeometry(0.09, 0.03, 8, 16), bundleMat);
+    bundle.rotation.x = Math.PI / 2;
+    bundle.position.set(0, 0.04, 0.22);
+    bundle.castShadow = true;
+    group.add(bundle);
   }
 }
 
