@@ -112,3 +112,43 @@ export function showTilePanel(tile, state, eligible, onUnlock, onLevelUp) {
 export function hideTilePanel() {
   elements.panel.classList.add('hidden');
 }
+
+export function initMenu(onRestart) {
+  elements.menuBtn = document.getElementById('menu-btn');
+  elements.menuOverlay = document.getElementById('menu-overlay');
+  elements.menuMain = document.getElementById('menu-main');
+  elements.menuConfirm = document.getElementById('menu-confirm');
+  elements.menuResumeBtn = document.getElementById('menu-resume-btn');
+  elements.menuRestartBtn = document.getElementById('menu-restart-btn');
+  elements.menuConfirmYesBtn = document.getElementById('menu-confirm-yes-btn');
+  elements.menuConfirmNoBtn = document.getElementById('menu-confirm-no-btn');
+
+  function showConfirm() {
+    elements.menuMain.classList.add('hidden');
+    elements.menuConfirm.classList.remove('hidden');
+  }
+
+  function hideConfirm() {
+    elements.menuConfirm.classList.add('hidden');
+    elements.menuMain.classList.remove('hidden');
+  }
+
+  elements.menuBtn.addEventListener('click', () => {
+    elements.menuOverlay.classList.remove('hidden');
+  });
+  elements.menuResumeBtn.addEventListener('click', hideMenu);
+  elements.menuOverlay.addEventListener('click', (event) => {
+    if (event.target === elements.menuOverlay) hideMenu();
+  });
+  elements.menuRestartBtn.addEventListener('click', showConfirm);
+  elements.menuConfirmNoBtn.addEventListener('click', hideConfirm);
+  elements.menuConfirmYesBtn.addEventListener('click', () => {
+    hideConfirm();
+    hideMenu();
+    onRestart();
+  });
+}
+
+export function hideMenu() {
+  elements.menuOverlay.classList.add('hidden');
+}

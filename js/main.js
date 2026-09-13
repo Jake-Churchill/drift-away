@@ -1,12 +1,19 @@
 import { TILES } from './tiles.js';
-import { getLevel, isEligible, isLevelUpEligible, levelUpTile, loadState, MAX_LEVEL, saveState, tick, unlockTile } from './state.js';
+import { createInitialState, getLevel, isEligible, isLevelUpEligible, levelUpTile, loadState, MAX_LEVEL, saveState, tick, unlockTile } from './state.js';
 import { initScene, updateScene, screenToGrid } from './render.js';
-import { initUI, getCanvas, updateResourceBar, showTilePanel, hideTilePanel } from './ui.js';
+import { initUI, getCanvas, updateResourceBar, showTilePanel, hideTilePanel, initMenu } from './ui.js';
 
 let selectedTileId = null;
 
 initUI(() => {
   selectedTileId = null;
+});
+
+initMenu(() => {
+  state = createInitialState();
+  selectedTileId = null;
+  hideTilePanel();
+  saveState(state);
 });
 
 const canvas = getCanvas();

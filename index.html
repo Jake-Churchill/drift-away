@@ -22,6 +22,25 @@
     <div id="tile-panel-progress"></div>
     <button id="tile-panel-unlock-btn" class="hidden">Unlock</button>
   </div>
+  <button id="menu-btn" aria-label="Menu">☰</button>
+  <div id="menu-overlay" class="hidden">
+    <div id="menu-panel">
+      <h2>Drift Away</h2>
+      <div id="menu-main">
+        <button id="menu-resume-btn">Resume</button>
+        <button id="menu-restart-btn">Restart</button>
+        <div id="menu-credits">
+          <p>Made by <a href="mailto:warmonkey@jakechurchill.com">warmonkey@jakechurchill.com</a></p>
+          <p>🐍 Check out <a href="https://python.jakechurchill.com" target="_blank" rel="noopener">python.jakechurchill.com</a></p>
+        </div>
+      </div>
+      <div id="menu-confirm" class="hidden">
+        <p>This will erase all progress. Are you sure?</p>
+        <button id="menu-confirm-yes-btn">Yes, restart</button>
+        <button id="menu-confirm-no-btn">Cancel</button>
+      </div>
+    </div>
+  </div>
   <script type="importmap">
   {
     "imports": {
