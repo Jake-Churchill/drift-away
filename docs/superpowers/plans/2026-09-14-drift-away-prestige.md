@@ -647,8 +647,8 @@ Expected: PASS, all suites green — including every pre-existing `effectiveRate
 
 - [ ] **Step 5: Manually verify the tile panel reflects prestige upgrades**
 
-1. `preview_start` the `drift-away` dev server and open it.
-2. Inject a save with a prestige upgrade already purchased and reload:
+1. `preview_start` the `drift-away` dev server and open it in a first tab (tab A).
+2. In tab A, inject a save with a prestige upgrade already purchased:
    ```js
    const state = JSON.parse(localStorage.getItem('driftaway_save_v1')) || {};
    state.prestige = { tokens: 0, upgrades: { fish: 0, kelp: 0, driftwood: 2, crops: 0 } };
@@ -656,8 +656,9 @@ Expected: PASS, all suites green — including every pre-existing `effectiveRate
    state.levels = {};
    localStorage.setItem('driftaway_save_v1', JSON.stringify(state));
    ```
-3. Reload the page, click the driftwood tile (the raft in the middle), and confirm the tile panel's "Produces ... driftwood/s" line reads `0.5 * 1.2 = 0.6` (two +10% upgrades), not the un-boosted `0.5`.
-4. Stop the preview server.
+3. Open a **second tab** (tab B) at the same URL rather than reloading tab A — per the Global Constraints caveat, reloading tab A would fire its `beforeunload` handler, which calls `saveState` with tab A's still-stale in-memory state and overwrites the injected save before a same-tab reload could ever pick it up.
+4. In tab B, click the driftwood tile (the raft in the middle), and confirm the tile panel's "Produces ... driftwood/s" line reads `0.5 * 1.2 = 0.6` (two +10% upgrades), not the un-boosted `0.5`.
+5. Close both tabs and stop the preview server.
 
 - [ ] **Step 6: Commit**
 
