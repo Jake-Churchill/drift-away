@@ -8,11 +8,15 @@ export const MAX_LEVEL = Math.max(...Object.keys(STEP_MULTIPLIER).map(Number));
 const PRODUCER_UPGRADE_BASE = 30;
 const BOOSTER_UPGRADE_BASE = 6;
 
+export function createInitialPrestige() {
+  return { tokens: 0, upgrades: { fish: 0, kelp: 0, driftwood: 0, crops: 0 } };
+}
+
 export function createInitialState() {
   const resources = Object.fromEntries(RESOURCES.map((r) => [r, 0]));
   const lifetime = Object.fromEntries(RESOURCES.map((r) => [r, 0]));
   const unlocked = TILES.filter((t) => t.unlock.type === 'start').map((t) => t.id);
-  return { version: 1, resources, lifetime, unlocked, levels: {} };
+  return { version: 1, resources, lifetime, unlocked, levels: {}, prestige: createInitialPrestige() };
 }
 
 export function levelMultiplier(level) {
@@ -158,6 +162,11 @@ export function loadState() {
       resources: { ...base.resources, ...parsed.resources },
       lifetime: { ...base.lifetime, ...parsed.lifetime },
       levels: { ...base.levels, ...parsed.levels },
+      prestige: {
+        ...base.prestige,
+        ...(parsed.prestige || {}),
+        upgrades: { ...base.prestige.upgrades, ...(parsed.prestige || {}).upgrades },
+      },
     };
     const elapsedSeconds = parsed.lastSaved ? Math.max(0, (Date.now() - parsed.lastSaved) / 1000) : 0;
     const offline = applyOfflineProgress(state, elapsedSeconds);

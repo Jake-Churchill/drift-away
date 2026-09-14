@@ -143,6 +143,15 @@ console.log('geometry-derived adjacency tests passed');
   assert.deepEqual(state.levels, {}, 'no tile starts above level 1');
 }
 
+{
+  const state = createInitialState();
+  assert.deepEqual(
+    state.prestige,
+    { tokens: 0, upgrades: { fish: 0, kelp: 0, driftwood: 0, crops: 0 } },
+    'a fresh game starts with zero prestige tokens and no upgrades purchased'
+  );
+}
+
 // --- effectiveRate ---
 
 {
