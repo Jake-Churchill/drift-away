@@ -94,6 +94,22 @@ export function doPrestige(state) {
   return { state: nextState, tokensEarned };
 }
 
+export const PRESTIGE_UPGRADE_BASE_COST = 5; // first-pass constant, not playtested
+export const PRESTIGE_UPGRADE_PERCENT = 10; // +10% production per purchase, first-pass
+
+export function prestigeUpgradeCost(currentCount) {
+  return PRESTIGE_UPGRADE_BASE_COST * (currentCount + 1);
+}
+
+export function buyPrestigeUpgrade(state, resource) {
+  const count = state.prestige.upgrades[resource];
+  const cost = prestigeUpgradeCost(count);
+  if (state.prestige.tokens < cost) return false;
+  state.prestige.tokens -= cost;
+  state.prestige.upgrades[resource] += 1;
+  return true;
+}
+
 export function levelUpCost(tile, targetLevel) {
   const stepMult = STEP_MULTIPLIER[targetLevel];
   if (tile.kind === 'producer') {

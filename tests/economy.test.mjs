@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { TILES, TILE_NEIGHBORS } from '../js/tiles.js';
 import {
   applyOfflineProgress,
+  buyPrestigeUpgrade,
   completionCount,
   createInitialState,
   doPrestige,
@@ -16,6 +17,7 @@ import {
   levelUpTile,
   MAX_LEVEL,
   prestigeTokensEarned,
+  prestigeUpgradeCost,
   RESOURCES,
   tick,
   unlockTile,
@@ -389,6 +391,34 @@ console.log('completion tracking tests passed');
 }
 
 console.log('prestige reset tests passed');
+
+// --- prestigeUpgradeCost / buyPrestigeUpgrade ---
+
+{
+  assert.equal(prestigeUpgradeCost(0), 5, 'first purchase costs the base amount');
+  assert.equal(prestigeUpgradeCost(1), 10, 'second purchase costs 2x base');
+  assert.equal(prestigeUpgradeCost(4), 25, 'fifth purchase costs 5x base');
+}
+
+{
+  const state = createInitialState();
+  state.prestige.tokens = 5;
+  const ok = buyPrestigeUpgrade(state, 'fish');
+  assert.equal(ok, true, 'purchase succeeds when affordable');
+  assert.equal(state.prestige.tokens, 0, 'cost is deducted');
+  assert.equal(state.prestige.upgrades.fish, 1, 'purchase count incremented');
+}
+
+{
+  const state = createInitialState();
+  state.prestige.tokens = 4; // one short of the base cost of 5
+  const ok = buyPrestigeUpgrade(state, 'fish');
+  assert.equal(ok, false, 'purchase fails when not affordable');
+  assert.equal(state.prestige.tokens, 4, 'tokens unchanged on failure');
+  assert.equal(state.prestige.upgrades.fish, 0, 'purchase count unchanged on failure');
+}
+
+console.log('prestige store tests passed');
 
 // --- unlockTile ---
 
