@@ -98,7 +98,7 @@ function progressFraction(tile, state) {
 function describeProduction(tile, state) {
   const level = getLevel(state, tile.id);
   return tile.kind === 'producer'
-    ? `Produces ${Number(effectiveTileRate(tile, state.unlocked, state.levels).toFixed(2))} ${tile.produces}/s`
+    ? `Produces ${Number(effectiveTileRate(tile, state.unlocked, state.levels, state.prestige.upgrades).toFixed(2))} ${tile.produces}/s`
     : tile.boosts.map((b) => `+${Number((b.percent * levelMultiplier(level)).toFixed(2))}% ${b.resource}`).join(', ');
 }
 

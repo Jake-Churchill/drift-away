@@ -316,6 +316,7 @@ console.log('geometry-derived adjacency tests passed');
     resources: { fish: 0, kelp: 0, driftwood: 0, crops: 0 },
     lifetime: { fish: 0, kelp: 0, driftwood: 0, crops: 0 },
     levels: {},
+    prestige: { tokens: 0, upgrades: { fish: 0, kelp: 0, driftwood: 0, crops: 0 } },
   };
   const result = applyOfflineProgress(state, 100);
   assert.equal(result.gains.fish, 62.5, 'smokehouse-boosted rate (1.25) * 100s * 50% offline rate');
@@ -419,6 +420,64 @@ console.log('prestige reset tests passed');
 }
 
 console.log('prestige store tests passed');
+
+// --- prestige upgrades feeding effectiveRate / effectiveTileRate / tick / applyOfflineProgress ---
+
+{
+  const unlocked = ['fish_start'];
+  const prestigeUpgrades = { fish: 2 }; // +20%
+  assert.equal(
+    effectiveRate('fish', unlocked, {}, prestigeUpgrades),
+    1.2,
+    'two fish upgrades add +20% on top of the base rate'
+  );
+}
+
+{
+  const unlocked = ['fish_start', 'booster_smokehouse'];
+  const levels = { fish_start: 2 };
+  const prestigeUpgrades = { fish: 1 }; // +10%
+  assert.equal(
+    effectiveRate('fish', unlocked, levels, prestigeUpgrades),
+    1.5 * 1.25 * 1.1,
+    'level, booster, and prestige multipliers all stack multiplicatively'
+  );
+}
+
+{
+  const tile = TILES.find((t) => t.id === 'fish_start');
+  assert.equal(
+    effectiveTileRate(tile, ['fish_start'], {}, { fish: 3 }),
+    1.3,
+    "three fish upgrades add +30% to the tile's own effective rate"
+  );
+}
+
+{
+  const state = {
+    unlocked: ['fish_start'],
+    resources: { fish: 0, kelp: 0, driftwood: 0, crops: 0 },
+    lifetime: { fish: 0, kelp: 0, driftwood: 0, crops: 0 },
+    levels: {},
+    prestige: { tokens: 0, upgrades: { fish: 2, kelp: 0, driftwood: 0, crops: 0 } },
+  };
+  tick(state, 10);
+  assert.equal(state.resources.fish, 12, 'tick applies the prestige-boosted rate: 1.0 * 1.2 * 10s');
+}
+
+{
+  const state = {
+    unlocked: ['fish_start'],
+    resources: { fish: 0, kelp: 0, driftwood: 0, crops: 0 },
+    lifetime: { fish: 0, kelp: 0, driftwood: 0, crops: 0 },
+    levels: {},
+    prestige: { tokens: 0, upgrades: { fish: 2, kelp: 0, driftwood: 0, crops: 0 } },
+  };
+  const result = applyOfflineProgress(state, 100);
+  assert.equal(result.gains.fish, 1.2 * 100 * 0.5, 'offline progress applies the prestige-boosted rate too');
+}
+
+console.log('prestige production integration tests passed');
 
 // --- unlockTile ---
 

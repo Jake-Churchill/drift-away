@@ -31,16 +31,20 @@ function boostPercentFor(resource, unlockedIds, levels = {}) {
     .reduce((sum, b) => sum + b.percent * levelMultiplier(b.level), 0);
 }
 
-export function effectiveRate(resource, unlockedIds, levels = {}) {
+export function effectiveRate(resource, unlockedIds, levels = {}, prestigeUpgrades = {}) {
   const baseSum = TILES
     .filter((t) => unlockedIds.includes(t.id) && t.kind === 'producer' && t.produces === resource)
     .reduce((sum, t) => sum + t.rate * levelMultiplier(levels[t.id] || 1), 0);
-  return baseSum * (1 + boostPercentFor(resource, unlockedIds, levels) / 100);
+  const boosterMultiplier = 1 + boostPercentFor(resource, unlockedIds, levels) / 100;
+  const prestigeMultiplier = 1 + (PRESTIGE_UPGRADE_PERCENT * (prestigeUpgrades[resource] || 0)) / 100;
+  return baseSum * boosterMultiplier * prestigeMultiplier;
 }
 
-export function effectiveTileRate(tile, unlockedIds, levels = {}) {
+export function effectiveTileRate(tile, unlockedIds, levels = {}, prestigeUpgrades = {}) {
   const level = levels[tile.id] || 1;
-  return tile.rate * levelMultiplier(level) * (1 + boostPercentFor(tile.produces, unlockedIds, levels) / 100);
+  const boosterMultiplier = 1 + boostPercentFor(tile.produces, unlockedIds, levels) / 100;
+  const prestigeMultiplier = 1 + (PRESTIGE_UPGRADE_PERCENT * (prestigeUpgrades[tile.produces] || 0)) / 100;
+  return tile.rate * levelMultiplier(level) * boosterMultiplier * prestigeMultiplier;
 }
 
 export function isDiscovered(tile, state) {
@@ -147,7 +151,7 @@ export function applyOfflineProgress(state, elapsedSeconds) {
   const seconds = Math.min(elapsedSeconds, MAX_OFFLINE_SECONDS);
   const gains = {};
   for (const resource of RESOURCES) {
-    const amount = effectiveRate(resource, state.unlocked, state.levels) * seconds * OFFLINE_RATE;
+    const amount = effectiveRate(resource, state.unlocked, state.levels, state.prestige.upgrades) * seconds * OFFLINE_RATE;
     state.resources[resource] += amount;
     state.lifetime[resource] += amount;
     gains[resource] = amount;
@@ -157,7 +161,7 @@ export function applyOfflineProgress(state, elapsedSeconds) {
 
 export function tick(state, dt) {
   for (const resource of RESOURCES) {
-    const amount = effectiveRate(resource, state.unlocked, state.levels) * dt;
+    const amount = effectiveRate(resource, state.unlocked, state.levels, state.prestige.upgrades) * dt;
     state.resources[resource] += amount;
     state.lifetime[resource] += amount;
   }
