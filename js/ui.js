@@ -156,7 +156,7 @@ export function hideTilePanel() {
   elements.panel.classList.add('hidden');
 }
 
-export function initMenu(onRestart, onPrestige, onBuyUpgrade, onOpen) {
+export function initMenu(onRestart, onPrestige, onBuyUpgrade, onOpen, onPrestigeBtnClick) {
   elements.menuBtn = document.getElementById('menu-btn');
   elements.menuOverlay = document.getElementById('menu-overlay');
   elements.menuMain = document.getElementById('menu-main');
@@ -222,7 +222,15 @@ export function initMenu(onRestart, onPrestige, onBuyUpgrade, onOpen) {
     elements.menuMain.classList.remove('hidden');
   }
 
+  function showMain() {
+    elements.menuConfirm.classList.add('hidden');
+    elements.menuPrestigeConfirm.classList.add('hidden');
+    elements.menuStore.classList.add('hidden');
+    elements.menuMain.classList.remove('hidden');
+  }
+
   elements.menuBtn.addEventListener('click', () => {
+    showMain();
     if (onOpen) onOpen();
     elements.menuOverlay.classList.remove('hidden');
   });
@@ -238,14 +246,22 @@ export function initMenu(onRestart, onPrestige, onBuyUpgrade, onOpen) {
     onRestart();
   });
 
-  elements.menuPrestigeBtn.addEventListener('click', showPrestigeConfirm);
+  elements.menuPrestigeBtn.addEventListener('click', () => {
+    if (onPrestigeBtnClick) onPrestigeBtnClick();
+    showPrestigeConfirm();
+  });
   elements.menuPrestigeNoBtn.addEventListener('click', hidePrestigeConfirm);
   elements.menuPrestigeYesBtn.addEventListener('click', () => {
     // Calls onPrestige() (which updates state and refreshes the store's displayed
     // token balance via updateMenuDisplay) before showStore() reveals it, per the
-    // spec's "confirming lands the player directly in the Store" flow.
-    onPrestige();
-    showStore();
+    // spec's "confirming lands the player directly in the Store" flow. Only shows
+    // the store if the prestige actually happened.
+    const succeeded = onPrestige();
+    if (succeeded) {
+      showStore();
+    } else {
+      hidePrestigeConfirm();
+    }
   });
   elements.menuStoreBtn.addEventListener('click', showStore);
   elements.menuStoreBackBtn.addEventListener('click', hideStore);
@@ -270,7 +286,8 @@ export function updateMenuDisplay(state) {
     const purchaseCount = state.prestige.upgrades[resource];
     const cost = prestigeUpgradeCost(purchaseCount);
     // The icon itself is already the static `.store-icon` span in the HTML — this
-    // text is just the count, so it doesn't duplicate it.
+    // text is the cumulative bonus percentage, not a raw purchase count, and it
+    // doesn't duplicate the icon.
     row.count.textContent = `+${purchaseCount * PRESTIGE_UPGRADE_PERCENT}%`;
     row.cost.textContent = `${cost} tokens`;
     row.buyBtn.disabled = state.prestige.tokens < cost;

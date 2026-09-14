@@ -18,7 +18,6 @@ import {
   MAX_LEVEL,
   prestigeTokensEarned,
   prestigeUpgradeCost,
-  RESOURCES,
   tick,
   unlockTile,
 } from '../js/state.js';

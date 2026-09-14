@@ -47,13 +47,21 @@ initMenu(
       saveState(state);
       updateMenuDisplay(state);
     }
+    return !!result;
   },
   (resource) => {
     const success = buyPrestigeUpgrade(state, resource);
     if (success) {
       saveState(state);
       updateMenuDisplay(state);
+      if (selectedTileId) {
+        const tile = TILES.find((t) => t.id === selectedTileId);
+        if (tile) renderTilePanel(tile);
+      }
     }
+  },
+  () => {
+    updateMenuDisplay(state);
   },
   () => {
     updateMenuDisplay(state);
