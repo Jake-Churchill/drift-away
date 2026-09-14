@@ -225,7 +225,7 @@ html, body {
   border: none;
 }
 
-#menu-confirm-no-btn {
+#menu-panel #menu-confirm-no-btn {
   background: transparent;
   color: #f4ead2;
   border: 1px solid rgba(244, 234, 210, 0.4);
@@ -301,7 +301,7 @@ html, body {
   cursor: not-allowed;
 }
 
-#menu-store-btn {
+#menu-panel #menu-store-btn {
   background: transparent;
   color: #f4ead2;
   border: 1px solid rgba(244, 234, 210, 0.4);
@@ -329,7 +329,7 @@ html, body {
   border: none;
 }
 
-#menu-prestige-confirm-no-btn {
+#menu-panel #menu-prestige-confirm-no-btn {
   background: transparent;
   color: #f4ead2;
   border: 1px solid rgba(244, 234, 210, 0.4);
@@ -380,7 +380,7 @@ html, body {
   cursor: not-allowed;
 }
 
-#menu-store-back-btn {
+#menu-panel #menu-store-back-btn {
   display: block;
   width: 100%;
   border: 1px solid rgba(244, 234, 210, 0.4);
