@@ -29,6 +29,8 @@
       <div id="menu-main">
         <button id="menu-resume-btn">Resume</button>
         <button id="menu-restart-btn">Restart</button>
+        <button id="menu-prestige-btn" disabled>Prestige</button>
+        <button id="menu-store-btn">Prestige Store</button>
         <div id="menu-credits">
           <p>Made by <a href="mailto:warmonkey@jakechurchill.com">warmonkey@jakechurchill.com</a></p>
           <p>🐍 Check out <a href="https://python.jakechurchill.com" target="_blank" rel="noopener">python.jakechurchill.com</a></p>
@@ -38,6 +40,39 @@
         <p>This will erase all progress. Are you sure?</p>
         <button id="menu-confirm-yes-btn">Yes, restart</button>
         <button id="menu-confirm-no-btn">Cancel</button>
+      </div>
+      <div id="menu-prestige-confirm" class="hidden">
+        <p id="menu-prestige-confirm-text"></p>
+        <button id="menu-prestige-confirm-yes-btn">Yes, prestige</button>
+        <button id="menu-prestige-confirm-no-btn">Cancel</button>
+      </div>
+      <div id="menu-store" class="hidden">
+        <p id="menu-store-tokens"></p>
+        <div class="store-row">
+          <span class="store-icon">🐟</span>
+          <span id="store-fish-count"></span>
+          <span id="store-fish-cost"></span>
+          <button id="store-fish-buy-btn">Buy</button>
+        </div>
+        <div class="store-row">
+          <span class="store-icon">🌿</span>
+          <span id="store-kelp-count"></span>
+          <span id="store-kelp-cost"></span>
+          <button id="store-kelp-buy-btn">Buy</button>
+        </div>
+        <div class="store-row">
+          <span class="store-icon">🪵</span>
+          <span id="store-driftwood-count"></span>
+          <span id="store-driftwood-cost"></span>
+          <button id="store-driftwood-buy-btn">Buy</button>
+        </div>
+        <div class="store-row">
+          <span class="store-icon">🌾</span>
+          <span id="store-crops-count"></span>
+          <span id="store-crops-cost"></span>
+          <button id="store-crops-buy-btn">Buy</button>
+        </div>
+        <button id="menu-store-back-btn">Back</button>
       </div>
     </div>
   </div>

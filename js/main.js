@@ -1,7 +1,29 @@
 import { TILES } from './tiles.js';
-import { createInitialState, getLevel, isEligible, isLevelUpEligible, levelUpTile, loadState, MAX_LEVEL, saveState, tick, unlockTile } from './state.js';
+import {
+  buyPrestigeUpgrade,
+  createInitialState,
+  doPrestige,
+  getLevel,
+  isEligible,
+  isLevelUpEligible,
+  levelUpTile,
+  loadState,
+  MAX_LEVEL,
+  saveState,
+  tick,
+  unlockTile,
+} from './state.js';
 import { initScene, updateScene, screenToGrid } from './render.js';
-import { initUI, getCanvas, updateResourceBar, showTilePanel, hideTilePanel, initMenu, showOfflineModal } from './ui.js';
+import {
+  initUI,
+  getCanvas,
+  updateResourceBar,
+  showTilePanel,
+  hideTilePanel,
+  initMenu,
+  showOfflineModal,
+  updateMenuDisplay,
+} from './ui.js';
 
 let selectedTileId = null;
 
@@ -9,12 +31,34 @@ initUI(() => {
   selectedTileId = null;
 });
 
-initMenu(() => {
-  state = createInitialState();
-  selectedTileId = null;
-  hideTilePanel();
-  saveState(state);
-});
+initMenu(
+  () => {
+    state = createInitialState();
+    selectedTileId = null;
+    hideTilePanel();
+    saveState(state);
+  },
+  () => {
+    const result = doPrestige(state);
+    if (result) {
+      state = result.state;
+      selectedTileId = null;
+      hideTilePanel();
+      saveState(state);
+      updateMenuDisplay(state);
+    }
+  },
+  (resource) => {
+    const success = buyPrestigeUpgrade(state, resource);
+    if (success) {
+      saveState(state);
+      updateMenuDisplay(state);
+    }
+  },
+  () => {
+    updateMenuDisplay(state);
+  }
+);
 
 const canvas = getCanvas();
 initScene(canvas);

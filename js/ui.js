@@ -1,4 +1,17 @@
-import { RESOURCES, effectiveTileRate, getLevel, levelMultiplier, levelUpCost, MAX_LEVEL } from './state.js';
+import {
+  RESOURCES,
+  effectiveTileRate,
+  getLevel,
+  levelMultiplier,
+  levelUpCost,
+  MAX_LEVEL,
+  completionCount,
+  isFullyComplete,
+  prestigeTokensEarned,
+  prestigeUpgradeCost,
+  PRESTIGE_UPGRADE_PERCENT,
+  TOTAL_TILE_COUNT,
+} from './state.js';
 
 const elements = {};
 
@@ -143,7 +156,7 @@ export function hideTilePanel() {
   elements.panel.classList.add('hidden');
 }
 
-export function initMenu(onRestart) {
+export function initMenu(onRestart, onPrestige, onBuyUpgrade, onOpen) {
   elements.menuBtn = document.getElementById('menu-btn');
   elements.menuOverlay = document.getElementById('menu-overlay');
   elements.menuMain = document.getElementById('menu-main');
@@ -152,6 +165,25 @@ export function initMenu(onRestart) {
   elements.menuRestartBtn = document.getElementById('menu-restart-btn');
   elements.menuConfirmYesBtn = document.getElementById('menu-confirm-yes-btn');
   elements.menuConfirmNoBtn = document.getElementById('menu-confirm-no-btn');
+
+  elements.menuPrestigeBtn = document.getElementById('menu-prestige-btn');
+  elements.menuStoreBtn = document.getElementById('menu-store-btn');
+  elements.menuPrestigeConfirm = document.getElementById('menu-prestige-confirm');
+  elements.menuPrestigeConfirmText = document.getElementById('menu-prestige-confirm-text');
+  elements.menuPrestigeYesBtn = document.getElementById('menu-prestige-confirm-yes-btn');
+  elements.menuPrestigeNoBtn = document.getElementById('menu-prestige-confirm-no-btn');
+  elements.menuStore = document.getElementById('menu-store');
+  elements.menuStoreTokens = document.getElementById('menu-store-tokens');
+  elements.menuStoreBackBtn = document.getElementById('menu-store-back-btn');
+  elements.storeRows = {};
+  for (const resource of RESOURCES) {
+    elements.storeRows[resource] = {
+      count: document.getElementById(`store-${resource}-count`),
+      cost: document.getElementById(`store-${resource}-cost`),
+      buyBtn: document.getElementById(`store-${resource}-buy-btn`),
+    };
+    elements.storeRows[resource].buyBtn.addEventListener('click', () => onBuyUpgrade(resource));
+  }
 
   function showConfirm() {
     elements.menuMain.classList.add('hidden');
@@ -163,7 +195,35 @@ export function initMenu(onRestart) {
     elements.menuMain.classList.remove('hidden');
   }
 
+  function showPrestigeConfirm() {
+    elements.menuPrestigeConfirmText.textContent =
+      `Prestige for ${elements.pendingPrestigeTokens} tokens? This resets your farm but keeps your permanent upgrades.`;
+    elements.menuMain.classList.add('hidden');
+    elements.menuPrestigeConfirm.classList.remove('hidden');
+  }
+
+  function hidePrestigeConfirm() {
+    elements.menuPrestigeConfirm.classList.add('hidden');
+    elements.menuMain.classList.remove('hidden');
+  }
+
+  function showStore() {
+    // Hides every sub-view, not just menu-main: this is called both from menu-main
+    // (via the Store button) and directly from the prestige-confirm sub-view (right
+    // after a successful prestige), so it can't assume which one is currently visible.
+    elements.menuMain.classList.add('hidden');
+    elements.menuConfirm.classList.add('hidden');
+    elements.menuPrestigeConfirm.classList.add('hidden');
+    elements.menuStore.classList.remove('hidden');
+  }
+
+  function hideStore() {
+    elements.menuStore.classList.add('hidden');
+    elements.menuMain.classList.remove('hidden');
+  }
+
   elements.menuBtn.addEventListener('click', () => {
+    if (onOpen) onOpen();
     elements.menuOverlay.classList.remove('hidden');
   });
   elements.menuResumeBtn.addEventListener('click', hideMenu);
@@ -177,8 +237,42 @@ export function initMenu(onRestart) {
     hideMenu();
     onRestart();
   });
+
+  elements.menuPrestigeBtn.addEventListener('click', showPrestigeConfirm);
+  elements.menuPrestigeNoBtn.addEventListener('click', hidePrestigeConfirm);
+  elements.menuPrestigeYesBtn.addEventListener('click', () => {
+    // Calls onPrestige() (which updates state and refreshes the store's displayed
+    // token balance via updateMenuDisplay) before showStore() reveals it, per the
+    // spec's "confirming lands the player directly in the Store" flow.
+    onPrestige();
+    showStore();
+  });
+  elements.menuStoreBtn.addEventListener('click', showStore);
+  elements.menuStoreBackBtn.addEventListener('click', hideStore);
 }
 
 export function hideMenu() {
   elements.menuOverlay.classList.add('hidden');
+}
+
+export function updateMenuDisplay(state) {
+  const complete = isFullyComplete(state);
+  const count = completionCount(state);
+  elements.pendingPrestigeTokens = complete ? prestigeTokensEarned(state) : 0;
+  elements.menuPrestigeBtn.disabled = !complete;
+  elements.menuPrestigeBtn.textContent = complete
+    ? `Prestige (+${elements.pendingPrestigeTokens} tokens)`
+    : `Prestige (${count}/${TOTAL_TILE_COUNT} maxed)`;
+
+  elements.menuStoreTokens.textContent = `Tokens: ${state.prestige.tokens}`;
+  for (const resource of RESOURCES) {
+    const row = elements.storeRows[resource];
+    const purchaseCount = state.prestige.upgrades[resource];
+    const cost = prestigeUpgradeCost(purchaseCount);
+    // The icon itself is already the static `.store-icon` span in the HTML — this
+    // text is just the count, so it doesn't duplicate it.
+    row.count.textContent = `+${purchaseCount * PRESTIGE_UPGRADE_PERCENT}%`;
+    row.cost.textContent = `${cost} tokens`;
+    row.buyBtn.disabled = state.prestige.tokens < cost;
+  }
 }

@@ -197,7 +197,9 @@ html, body {
 }
 
 #menu-main.hidden,
-#menu-confirm.hidden {
+#menu-confirm.hidden,
+#menu-prestige-confirm.hidden,
+#menu-store.hidden {
   display: none;
 }
 
@@ -286,4 +288,108 @@ html, body {
   padding: 10px 16px;
   background: #d9b545;
   color: #10263a;
+}
+
+#menu-prestige-btn {
+  background: #d9b545;
+  color: #10263a;
+}
+
+#menu-prestige-btn:disabled {
+  background: #6b6b6b;
+  color: #ccc;
+  cursor: not-allowed;
+}
+
+#menu-store-btn {
+  background: transparent;
+  color: #f4ead2;
+  border: 1px solid rgba(244, 234, 210, 0.4);
+}
+
+#menu-prestige-confirm p {
+  margin: 0 0 14px;
+  font-size: 14px;
+}
+
+#menu-prestige-confirm button {
+  display: block;
+  width: 100%;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: bold;
+  font-size: 14px;
+  padding: 10px 16px;
+  margin-bottom: 10px;
+}
+
+#menu-prestige-confirm-yes-btn {
+  background: #d9b545;
+  color: #10263a;
+  border: none;
+}
+
+#menu-prestige-confirm-no-btn {
+  background: transparent;
+  color: #f4ead2;
+  border: 1px solid rgba(244, 234, 210, 0.4);
+  margin-bottom: 0;
+}
+
+#menu-store-tokens {
+  margin: 0 0 14px;
+  font-size: 16px;
+  font-weight: bold;
+}
+
+.store-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 14px;
+}
+
+.store-icon {
+  font-size: 18px;
+}
+
+.store-row span:nth-child(2) {
+  flex: 1;
+  text-align: left;
+}
+
+.store-row span:nth-child(3) {
+  opacity: 0.85;
+}
+
+.store-row button {
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: bold;
+  font-size: 13px;
+  padding: 6px 12px;
+  background: #d9b545;
+  color: #10263a;
+}
+
+.store-row button:disabled {
+  background: #6b6b6b;
+  color: #ccc;
+  cursor: not-allowed;
+}
+
+#menu-store-back-btn {
+  display: block;
+  width: 100%;
+  border: 1px solid rgba(244, 234, 210, 0.4);
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: bold;
+  font-size: 14px;
+  padding: 10px 16px;
+  background: transparent;
+  color: #f4ead2;
+  margin-top: 4px;
 }
