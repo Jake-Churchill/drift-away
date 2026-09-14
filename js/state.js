@@ -66,6 +66,16 @@ export function getLevel(state, tileId) {
   return state.levels[tileId] || 1;
 }
 
+export const TOTAL_TILE_COUNT = TILES.length;
+
+export function completionCount(state) {
+  return TILES.filter((t) => state.unlocked.includes(t.id) && getLevel(state, t.id) >= MAX_LEVEL).length;
+}
+
+export function isFullyComplete(state) {
+  return completionCount(state) === TOTAL_TILE_COUNT;
+}
+
 export function levelUpCost(tile, targetLevel) {
   const stepMult = STEP_MULTIPLIER[targetLevel];
   if (tile.kind === 'producer') {

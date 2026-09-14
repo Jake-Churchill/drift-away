@@ -2,15 +2,18 @@ import assert from 'node:assert/strict';
 import { TILES, TILE_NEIGHBORS } from '../js/tiles.js';
 import {
   applyOfflineProgress,
+  completionCount,
   createInitialState,
   effectiveRate,
   effectiveTileRate,
   getLevel,
   isDiscovered,
   isEligible,
+  isFullyComplete,
   isLevelUpEligible,
   levelUpCost,
   levelUpTile,
+  MAX_LEVEL,
   tick,
   unlockTile,
 } from '../js/state.js';
@@ -314,6 +317,33 @@ console.log('geometry-derived adjacency tests passed');
 }
 
 console.log('offline progress tests passed');
+
+// --- completionCount / isFullyComplete ---
+
+{
+  const state = createInitialState();
+  assert.equal(completionCount(state), 0, 'a fresh game has zero maxed tiles');
+  assert.equal(isFullyComplete(state), false, 'a fresh game is not fully complete');
+}
+
+{
+  const state = createInitialState();
+  state.unlocked = TILES.map((t) => t.id);
+  for (const t of TILES) state.levels[t.id] = MAX_LEVEL;
+  assert.equal(completionCount(state), 36, 'every tile unlocked and maxed counts as complete');
+  assert.equal(isFullyComplete(state), true, 'fully complete once every tile is unlocked and maxed');
+}
+
+{
+  const state = createInitialState();
+  state.unlocked = TILES.map((t) => t.id);
+  for (const t of TILES) state.levels[t.id] = MAX_LEVEL;
+  state.levels[TILES[0].id] = 1;
+  assert.equal(completionCount(state), 35, 'one non-maxed tile is excluded from the count');
+  assert.equal(isFullyComplete(state), false, 'not fully complete until every tile is maxed');
+}
+
+console.log('completion tracking tests passed');
 
 // --- unlockTile ---
 
