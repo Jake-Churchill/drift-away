@@ -4,6 +4,7 @@ import {
   applyOfflineProgress,
   completionCount,
   createInitialState,
+  doPrestige,
   effectiveRate,
   effectiveTileRate,
   getLevel,
@@ -14,6 +15,8 @@ import {
   levelUpCost,
   levelUpTile,
   MAX_LEVEL,
+  prestigeTokensEarned,
+  RESOURCES,
   tick,
   unlockTile,
 } from '../js/state.js';
@@ -344,6 +347,48 @@ console.log('offline progress tests passed');
 }
 
 console.log('completion tracking tests passed');
+
+// --- prestigeTokensEarned / doPrestige ---
+
+{
+  const state = createInitialState();
+  state.lifetime = { fish: 500, kelp: 500, driftwood: 1000, crops: 1000 };
+  assert.equal(prestigeTokensEarned(state), 3, 'floor((500+500+1000+1000) / 1000) = 3');
+}
+
+{
+  const state = createInitialState(); // not fully complete
+  const result = doPrestige(state);
+  assert.equal(result, null, 'prestige is refused before full completion');
+}
+
+{
+  const state = createInitialState();
+  state.unlocked = TILES.map((t) => t.id);
+  for (const t of TILES) state.levels[t.id] = MAX_LEVEL;
+  state.lifetime = { fish: 1000, kelp: 1000, driftwood: 1000, crops: 1000 };
+  state.prestige.tokens = 7; // simulate a prior prestige
+  state.prestige.upgrades.fish = 2;
+  const resourcesBefore = { ...state.resources };
+
+  const result = doPrestige(state);
+
+  assert.ok(result, 'prestige succeeds once fully complete');
+  assert.equal(result.tokensEarned, 4, 'floor(4000 / 1000) = 4');
+  assert.equal(result.state.prestige.tokens, 11, 'earned tokens add to the carried-over balance (7 + 4)');
+  assert.deepEqual(
+    result.state.prestige.upgrades,
+    { fish: 2, kelp: 0, driftwood: 0, crops: 0 },
+    'purchased upgrades carry over unchanged'
+  );
+  assert.deepEqual(result.state.resources, { fish: 0, kelp: 0, driftwood: 0, crops: 0 }, 'resources reset');
+  assert.deepEqual(result.state.lifetime, { fish: 0, kelp: 0, driftwood: 0, crops: 0 }, 'lifetime totals reset');
+  assert.deepEqual(result.state.unlocked, ['driftwood_start'], 'unlocked tiles reset to just the start tile');
+  assert.deepEqual(result.state.levels, {}, 'levels reset');
+  assert.deepEqual(state.resources, resourcesBefore, 'the input state object is not mutated');
+}
+
+console.log('prestige reset tests passed');
 
 // --- unlockTile ---
 

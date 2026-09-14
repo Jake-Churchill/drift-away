@@ -76,6 +76,24 @@ export function isFullyComplete(state) {
   return completionCount(state) === TOTAL_TILE_COUNT;
 }
 
+export const PRESTIGE_TOKEN_DIVISOR = 1000; // first-pass constant, not playtested
+
+export function prestigeTokensEarned(state) {
+  const total = RESOURCES.reduce((sum, r) => sum + state.lifetime[r], 0);
+  return Math.floor(total / PRESTIGE_TOKEN_DIVISOR);
+}
+
+export function doPrestige(state) {
+  if (!isFullyComplete(state)) return null;
+  const tokensEarned = prestigeTokensEarned(state);
+  const nextState = createInitialState();
+  nextState.prestige = {
+    tokens: state.prestige.tokens + tokensEarned,
+    upgrades: { ...state.prestige.upgrades },
+  };
+  return { state: nextState, tokensEarned };
+}
+
 export function levelUpCost(tile, targetLevel) {
   const stepMult = STEP_MULTIPLIER[targetLevel];
   if (tile.kind === 'producer') {
