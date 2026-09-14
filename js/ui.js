@@ -26,6 +26,36 @@ export function initUI(onClose) {
     hideTilePanel();
     if (onClose) onClose();
   });
+
+  elements.offlineOverlay = document.getElementById('offline-overlay');
+  elements.offlineDuration = document.getElementById('offline-duration');
+  elements.offlineGains = document.getElementById('offline-gains');
+  elements.offlineCollectBtn = document.getElementById('offline-collect-btn');
+  elements.offlineCollectBtn.addEventListener('click', hideOfflineModal);
+}
+
+function formatDuration(seconds) {
+  const totalMinutes = Math.round(seconds / 60);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return hours === 0 ? `${minutes}m` : `${hours}h ${minutes}m`;
+}
+
+export function showOfflineModal(seconds, gains) {
+  elements.offlineDuration.textContent = `While you were away for ${formatDuration(seconds)}, you earned:`;
+  elements.offlineGains.innerHTML = '';
+  for (const resource of RESOURCES) {
+    const amount = gains[resource];
+    if (amount <= 0) continue;
+    const item = document.createElement('li');
+    item.textContent = `${RESOURCE_ICONS[resource]} +${Math.floor(amount).toLocaleString()}`;
+    elements.offlineGains.appendChild(item);
+  }
+  elements.offlineOverlay.classList.remove('hidden');
+}
+
+export function hideOfflineModal() {
+  elements.offlineOverlay.classList.add('hidden');
 }
 
 export function getCanvas() {

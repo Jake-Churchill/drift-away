@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { TILES, TILE_NEIGHBORS } from '../js/tiles.js';
 import {
+  applyOfflineProgress,
   createInitialState,
   effectiveRate,
   effectiveTileRate,
@@ -262,6 +263,48 @@ console.log('geometry-derived adjacency tests passed');
   tick(state, 2);
   assert.equal(state.resources.driftwood, 2.0, 'a level-3 producer (2x multiplier) accrues at 2x through tick()');
 }
+
+// --- applyOfflineProgress ---
+
+{
+  const state = createInitialState(); // driftwood_start unlocked, rate 0.5/s
+  const before = { ...state.resources };
+  const result = applyOfflineProgress(state, 30);
+  assert.equal(result, null, 'below the 60s minimum returns null');
+  assert.deepEqual(state.resources, before, 'no resources granted below threshold');
+}
+
+{
+  const state = createInitialState();
+  const result = applyOfflineProgress(state, 100);
+  assert.ok(result, 'returns a result at or above the 60s threshold');
+  assert.equal(result.seconds, 100, 'credited seconds equals elapsed when under the cap');
+  assert.equal(result.gains.driftwood, 25, '0.5 rate * 100s * 50% offline rate = 25');
+  assert.equal(result.gains.fish, 0, 'no fish producer unlocked, so zero gain');
+  assert.equal(state.resources.driftwood, 25, 'resources increased by the gain');
+  assert.equal(state.lifetime.driftwood, 25, 'lifetime increased by the same amount');
+}
+
+{
+  const state = createInitialState();
+  const result = applyOfflineProgress(state, 100000); // far beyond the 8-hour cap
+  assert.equal(result.seconds, 28800, 'credited seconds clamped to the 8-hour cap');
+  assert.equal(result.gains.driftwood, 0.5 * 28800 * 0.5, 'gain computed from the capped duration, not raw elapsed time');
+}
+
+{
+  // boosters and levels feed into offline gains the same way they feed effectiveRate
+  const state = {
+    unlocked: ['fish_start', 'booster_smokehouse'],
+    resources: { fish: 0, kelp: 0, driftwood: 0, crops: 0 },
+    lifetime: { fish: 0, kelp: 0, driftwood: 0, crops: 0 },
+    levels: {},
+  };
+  const result = applyOfflineProgress(state, 100);
+  assert.equal(result.gains.fish, 62.5, 'smokehouse-boosted rate (1.25) * 100s * 50% offline rate');
+}
+
+console.log('offline progress tests passed');
 
 // --- unlockTile ---
 

@@ -90,6 +90,23 @@ export function levelUpTile(state, tile) {
   return true;
 }
 
+export const OFFLINE_RATE = 0.5;
+export const MAX_OFFLINE_SECONDS = 8 * 60 * 60;
+const MIN_OFFLINE_SECONDS = 60;
+
+export function applyOfflineProgress(state, elapsedSeconds) {
+  if (elapsedSeconds < MIN_OFFLINE_SECONDS) return null;
+  const seconds = Math.min(elapsedSeconds, MAX_OFFLINE_SECONDS);
+  const gains = {};
+  for (const resource of RESOURCES) {
+    const amount = effectiveRate(resource, state.unlocked, state.levels) * seconds * OFFLINE_RATE;
+    state.resources[resource] += amount;
+    state.lifetime[resource] += amount;
+    gains[resource] = amount;
+  }
+  return { gains, seconds };
+}
+
 export function tick(state, dt) {
   for (const resource of RESOURCES) {
     const amount = effectiveRate(resource, state.unlocked, state.levels) * dt;
@@ -114,6 +131,7 @@ export function unlockTile(state, tile) {
 }
 
 export function saveState(state) {
+  state.lastSaved = Date.now();
   try {
     localStorage.setItem(SAVE_KEY, JSON.stringify(state));
   } catch {
@@ -124,7 +142,7 @@ export function saveState(state) {
 export function loadState() {
   try {
     const raw = localStorage.getItem(SAVE_KEY);
-    if (!raw) return createInitialState();
+    if (!raw) return { state: createInitialState(), offline: null };
     const parsed = JSON.parse(raw);
     const looksValid =
       parsed &&
@@ -132,16 +150,19 @@ export function loadState() {
       parsed.resources &&
       parsed.lifetime &&
       Array.isArray(parsed.unlocked);
-    if (!looksValid) return createInitialState();
+    if (!looksValid) return { state: createInitialState(), offline: null };
     const base = createInitialState();
-    return {
+    const state = {
       ...base,
       ...parsed,
       resources: { ...base.resources, ...parsed.resources },
       lifetime: { ...base.lifetime, ...parsed.lifetime },
       levels: { ...base.levels, ...parsed.levels },
     };
+    const elapsedSeconds = parsed.lastSaved ? Math.max(0, (Date.now() - parsed.lastSaved) / 1000) : 0;
+    const offline = applyOfflineProgress(state, elapsedSeconds);
+    return { state, offline };
   } catch {
-    return createInitialState();
+    return { state: createInitialState(), offline: null };
   }
 }

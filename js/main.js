@@ -1,7 +1,7 @@
 import { TILES } from './tiles.js';
 import { createInitialState, getLevel, isEligible, isLevelUpEligible, levelUpTile, loadState, MAX_LEVEL, saveState, tick, unlockTile } from './state.js';
 import { initScene, updateScene, screenToGrid } from './render.js';
-import { initUI, getCanvas, updateResourceBar, showTilePanel, hideTilePanel, initMenu } from './ui.js';
+import { initUI, getCanvas, updateResourceBar, showTilePanel, hideTilePanel, initMenu, showOfflineModal } from './ui.js';
 
 let selectedTileId = null;
 
@@ -19,7 +19,10 @@ initMenu(() => {
 const canvas = getCanvas();
 initScene(canvas);
 
-let state = loadState();
+let { state, offline } = loadState();
+if (offline) {
+  showOfflineModal(offline.seconds, offline.gains);
+}
 
 function renderTilePanel(tile) {
   const unlocked = state.unlocked.includes(tile.id);

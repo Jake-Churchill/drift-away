@@ -229,3 +229,61 @@ html, body {
   border: 1px solid rgba(244, 234, 210, 0.4);
   margin-bottom: 0;
 }
+
+#offline-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(9, 20, 31, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#offline-overlay.hidden {
+  display: none;
+}
+
+#offline-panel {
+  background: rgba(16, 38, 58, 0.95);
+  color: #f4ead2;
+  padding: 28px 36px;
+  border-radius: 10px;
+  min-width: 280px;
+  max-width: 340px;
+  text-align: center;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+#offline-panel h2 {
+  margin: 0 0 14px;
+  font-size: 22px;
+  letter-spacing: 0.5px;
+}
+
+#offline-duration {
+  margin: 0 0 12px;
+  font-size: 14px;
+  opacity: 0.9;
+}
+
+#offline-gains {
+  list-style: none;
+  margin: 0 0 18px;
+  padding: 0;
+  font-size: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+#offline-collect-btn {
+  width: 100%;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: bold;
+  font-size: 14px;
+  padding: 10px 16px;
+  background: #d9b545;
+  color: #10263a;
+}
