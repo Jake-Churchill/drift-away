@@ -16,7 +16,11 @@ import {
 
 const elements = {};
 
-const RESOURCE_ICONS = { fish: '🐟', kelp: '🌿', driftwood: '🪵', crops: '🌾' };
+// Gold isn't one of the produced RESOURCES, so nothing that iterates RESOURCES
+// picks it up — it's here only so the feedback popups can look up its icon the
+// same way they look up the four resource icons.
+const RESOURCE_ICONS = { fish: '🐟', kelp: '🌿', driftwood: '🪵', crops: '🌾', gold: '🪙' };
+const TOKEN_ICON = '⭐';
 
 function tileIcon(tile) {
   if (tile.kind === 'producer') return RESOURCE_ICONS[tile.produces];
@@ -48,7 +52,12 @@ export function initUI(onClose) {
   elements.offlineDuration = document.getElementById('offline-duration');
   elements.offlineGains = document.getElementById('offline-gains');
   elements.offlineCollectBtn = document.getElementById('offline-collect-btn');
-  elements.offlineCollectBtn.addEventListener('click', hideOfflineModal);
+  elements.offlineCollectBtn.addEventListener('click', () => {
+    hideOfflineModal();
+    if (elements.onOfflineCollect) elements.onOfflineCollect();
+  });
+
+  elements.feedbackLayer = document.getElementById('feedback-layer');
 }
 
 function formatDuration(seconds) {
@@ -58,7 +67,8 @@ function formatDuration(seconds) {
   return hours === 0 ? `${minutes}m` : `${hours}h ${minutes}m`;
 }
 
-export function showOfflineModal(seconds, gains) {
+export function showOfflineModal(seconds, gains, onCollect) {
+  elements.onOfflineCollect = onCollect;
   elements.offlineDuration.textContent = `While you were away for ${formatDuration(seconds)}, you earned:`;
   elements.offlineGains.innerHTML = '';
   for (const resource of RESOURCES) {
@@ -373,5 +383,74 @@ export function updatePrestigeDisplay(state) {
     row.count.textContent = `+${purchaseCount * PRESTIGE_UPGRADE_PERCENT}%`;
     row.cost.textContent = `${cost} tokens`;
     row.buyBtn.disabled = state.prestige.tokens < cost;
+  }
+}
+
+const POPUP_DURATION_MS = 1200;
+const POPUP_STAGGER_PX = 22;
+const MAX_STAGGER_STEPS = 4;
+const BURST_PARTICLE_COUNT = 8;
+const BURST_DURATION_MS = 700;
+
+// Two popups landing in the same frame would otherwise animate exactly on top of
+// each other, so each one starts a notch lower than the ones still in flight and
+// rises past them. The counter decays as popups retire, and the offset is capped
+// so a long burst of them can't march off the bottom of the screen.
+let activePopups = 0;
+
+function spawnPopup(popup) {
+  popup.style.top = `${Math.min(activePopups, MAX_STAGGER_STEPS) * POPUP_STAGGER_PX}px`;
+  activePopups += 1;
+  elements.feedbackLayer.appendChild(popup);
+  setTimeout(() => {
+    popup.remove();
+    activePopups -= 1;
+  }, POPUP_DURATION_MS);
+}
+
+function popupEntry(amount, icon) {
+  const entry = document.createElement('span');
+  entry.className = amount > 0 ? 'gain' : 'loss';
+  entry.textContent = `${amount > 0 ? '+' : ''}${amount} ${icon}`;
+  return entry;
+}
+
+// `deltas` is e.g. { fish: -50, kelp: -20 } — negative spent, positive gained.
+// Every non-zero entry shares one popup line so a multi-resource cost reads as a
+// single "-50 🐟 -20 🌿" rather than a stack of overlapping elements.
+export function showResourcePopup(deltas) {
+  const entries = Object.entries(deltas)
+    .map(([resource, amount]) => [resource, Math.round(amount)])
+    .filter(([, amount]) => amount !== 0);
+  if (entries.length === 0) return;
+
+  const popup = document.createElement('div');
+  popup.className = 'feedback-popup';
+  for (const [resource, amount] of entries) {
+    popup.appendChild(popupEntry(amount, RESOURCE_ICONS[resource]));
+  }
+  spawnPopup(popup);
+}
+
+export function showTokenPopup(amount) {
+  if (amount === 0) return;
+  const popup = document.createElement('div');
+  popup.className = 'feedback-popup';
+  popup.appendChild(popupEntry(amount, TOKEN_ICON));
+  spawnPopup(popup);
+}
+
+export function spawnUnlockBurst() {
+  for (let i = 0; i < BURST_PARTICLE_COUNT; i += 1) {
+    // Evenly spaced around the circle, then jittered, so the burst stays visually
+    // balanced instead of clumping the way fully random angles would.
+    const angle = ((i + Math.random() * 0.6) / BURST_PARTICLE_COUNT) * Math.PI * 2;
+    const distance = 40 + Math.random() * 30;
+    const particle = document.createElement('div');
+    particle.className = 'feedback-particle';
+    particle.style.setProperty('--dx', `${Math.cos(angle) * distance}px`);
+    particle.style.setProperty('--dy', `${Math.sin(angle) * distance}px`);
+    elements.feedbackLayer.appendChild(particle);
+    setTimeout(() => particle.remove(), BURST_DURATION_MS);
   }
 }

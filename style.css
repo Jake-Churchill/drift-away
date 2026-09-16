@@ -531,3 +531,73 @@ html, body {
   color: #f4ead2;
   margin-top: 4px;
 }
+
+/* A zero-size anchor point just below #resource-bar (which is 12px from the top
+   and ~32px tall). Popups and burst particles are absolutely positioned against
+   it and centre themselves on it with their own translateX(-50%). The z-index
+   deliberately lifts it above the menu/prestige/offline overlays, so the token
+   popups fired from inside the prestige store stay visible. */
+#feedback-layer {
+  position: fixed;
+  top: 56px;
+  left: 50%;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  z-index: 20;
+}
+
+.feedback-popup {
+  position: absolute;
+  left: 0;
+  display: flex;
+  gap: 8px;
+  white-space: nowrap;
+  font-size: 18px;
+  font-weight: bold;
+  text-shadow: 0 2px 4px rgba(9, 20, 31, 0.7);
+  transform: translateX(-50%);
+  animation: float-up 1.2s ease-out forwards;
+}
+
+.feedback-popup .gain {
+  color: #d9b545;
+}
+
+.feedback-popup .loss {
+  color: rgba(217, 88, 66, 0.85);
+}
+
+@keyframes float-up {
+  from {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -50px);
+  }
+}
+
+.feedback-particle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 6px;
+  height: 6px;
+  margin: -3px;
+  border-radius: 50%;
+  background: #d9b545;
+  animation: burst-out 0.7s ease-out forwards;
+}
+
+@keyframes burst-out {
+  from {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate(var(--dx), var(--dy)) scale(0.4);
+  }
+}

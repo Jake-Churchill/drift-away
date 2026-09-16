@@ -6,6 +6,7 @@ import {
   getLevel,
   isEligible,
   isLevelUpEligible,
+  levelUpCost,
   levelUpTile,
   loadState,
   MAX_LEVEL,
@@ -23,11 +24,20 @@ import {
   initMenu,
   initPrestige,
   showOfflineModal,
+  showResourcePopup,
+  showTokenPopup,
+  spawnUnlockBurst,
   updateAchievementsDisplay,
   updatePrestigeDisplay,
 } from './ui.js';
+import { playLevelUpSound, playPrestigeSound, playUnlockSound } from './sound.js';
 
 let selectedTileId = null;
+
+// showResourcePopup takes signed deltas, and a cost is always something spent.
+function spent(cost) {
+  return Object.fromEntries(Object.entries(cost).map(([resource, amount]) => [resource, -amount]));
+}
 
 initUI(() => {
   selectedTileId = null;
@@ -56,14 +66,19 @@ initPrestige(
       saveState(state);
       updatePrestigeDisplay(state);
       updateAchievementsDisplay(state);
+      showTokenPopup(result.tokensEarned);
+      playPrestigeSound();
     }
     return !!result;
   },
   (resource) => {
+    const tokensBefore = state.prestige.tokens;
     const success = buyPrestigeUpgrade(state, resource);
     if (success) {
       saveState(state);
       updatePrestigeDisplay(state);
+      showTokenPopup(-(tokensBefore - state.prestige.tokens));
+      playLevelUpSound();
       if (selectedTileId) {
         const tile = TILES.find((t) => t.id === selectedTileId);
         if (tile) renderTilePanel(tile);
@@ -81,7 +96,10 @@ initScene(canvas);
 let { state, offline } = loadState();
 updateAchievementsDisplay(state);
 if (offline) {
-  showOfflineModal(offline.seconds, offline.gains);
+  showOfflineModal(offline.seconds, offline.gains, () => {
+    showResourcePopup(offline.gains);
+    playUnlockSound();
+  });
 }
 
 function renderTilePanel(tile) {
@@ -90,21 +108,38 @@ function renderTilePanel(tile) {
   showTilePanel(tile, state, eligible, handleUnlockClick, handleLevelUpClick);
 }
 
+// unlockTile/levelUpTile call checkAchievements internally, so the awarded list is
+// already consumed by the time they return. Diffing state.gold across the call is
+// the simplest signal that an achievement fired, and needs nothing from state.js.
 function handleUnlockClick(tile) {
+  const cost = tile.unlock.type === 'cost' ? tile.unlock.cost : null;
+  const goldBefore = state.gold;
   const success = unlockTile(state, tile);
   if (success) {
     saveState(state);
     renderTilePanel(tile);
     updateAchievementsDisplay(state);
+    if (cost) showResourcePopup(spent(cost));
+    spawnUnlockBurst();
+    playUnlockSound();
+    if (state.gold > goldBefore) showResourcePopup({ gold: state.gold - goldBefore });
   }
 }
 
 function handleLevelUpClick(tile) {
+  // Captured before the call, because a successful level-up changes the level the
+  // cost is derived from.
+  const level = getLevel(state, tile.id);
+  const cost = levelUpCost(tile, level + 1);
+  const goldBefore = state.gold;
   const success = levelUpTile(state, tile);
   if (success) {
     saveState(state);
     renderTilePanel(tile);
     updateAchievementsDisplay(state);
+    showResourcePopup(spent(cost));
+    playLevelUpSound();
+    if (state.gold > goldBefore) showResourcePopup({ gold: state.gold - goldBefore });
   }
 }
 
@@ -134,7 +169,14 @@ function loop(now) {
   const dt = Math.min(0.25, (now - lastFrameTime) / 1000);
   lastFrameTime = now;
 
+  // The one path where an achievement can fire with no click behind it (passive
+  // production crossing a lifetime threshold), so it gets its own sound.
+  const goldBefore = state.gold;
   tick(state, dt);
+  if (state.gold > goldBefore) {
+    showResourcePopup({ gold: state.gold - goldBefore });
+    playUnlockSound();
+  }
   updateResourceBar(state);
   // tick() can award achievements mid-play, so this is refreshed every frame rather
   // than tracking whether the sub-view happens to be open; ui.js skips the rebuild
