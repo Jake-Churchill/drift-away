@@ -13,6 +13,7 @@
     <div class="resource"><span class="icon">🌿</span><span class="count" id="count-kelp">0</span></div>
     <div class="resource"><span class="icon">🪵</span><span class="count" id="count-driftwood">0</span></div>
     <div class="resource"><span class="icon">🌾</span><span class="count" id="count-crops">0</span></div>
+    <div class="resource"><span class="icon">🪙</span><span class="count" id="count-gold">0</span></div>
   </div>
   <div id="tile-panel" class="hidden">
     <button id="tile-panel-close-btn" aria-label="Close">×</button>
@@ -30,6 +31,7 @@
       <div id="menu-main">
         <button id="menu-resume-btn">Resume</button>
         <button id="menu-restart-btn">Restart</button>
+        <button id="menu-achievements-btn">Achievements</button>
         <div id="menu-credits">
           <p>Made by <a href="mailto:warmonkey@jakechurchill.com">warmonkey@jakechurchill.com</a></p>
           <p>🐍 Check out <a href="https://python.jakechurchill.com" target="_blank" rel="noopener">python.jakechurchill.com</a></p>
@@ -39,6 +41,10 @@
         <p>This will erase all progress. Are you sure?</p>
         <button id="menu-confirm-yes-btn">Yes, restart</button>
         <button id="menu-confirm-no-btn">Cancel</button>
+      </div>
+      <div id="menu-achievements" class="hidden">
+        <div id="menu-achievements-list"></div>
+        <button id="menu-achievements-back-btn">Back</button>
       </div>
     </div>
   </div>

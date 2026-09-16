@@ -1,4 +1,5 @@
 import {
+  ACHIEVEMENTS,
   RESOURCES,
   effectiveTileRate,
   getLevel,
@@ -28,6 +29,9 @@ export function initUI(onClose) {
   for (const resource of RESOURCES) {
     elements.counts[resource] = document.getElementById(`count-${resource}`);
   }
+  // Gold is a reward counter, not one of the produced RESOURCES, so it sits
+  // outside the loop above even though it shares the resource bar's markup.
+  elements.goldCount = document.getElementById('count-gold');
   elements.panel = document.getElementById('tile-panel');
   elements.panelIcon = document.getElementById('tile-panel-icon');
   elements.panelName = document.getElementById('tile-panel-name');
@@ -79,6 +83,7 @@ export function updateResourceBar(state) {
   for (const resource of RESOURCES) {
     elements.counts[resource].textContent = Math.floor(state.resources[resource]).toLocaleString();
   }
+  elements.goldCount.textContent = state.gold.toLocaleString();
 }
 
 function describeCost(cost) {
@@ -156,7 +161,7 @@ export function hideTilePanel() {
   elements.panel.classList.add('hidden');
 }
 
-export function initMenu(onRestart) {
+export function initMenu(onRestart, onRefresh) {
   elements.menuBtn = document.getElementById('menu-btn');
   elements.menuOverlay = document.getElementById('menu-overlay');
   elements.menuMain = document.getElementById('menu-main');
@@ -165,19 +170,30 @@ export function initMenu(onRestart) {
   elements.menuRestartBtn = document.getElementById('menu-restart-btn');
   elements.menuConfirmYesBtn = document.getElementById('menu-confirm-yes-btn');
   elements.menuConfirmNoBtn = document.getElementById('menu-confirm-no-btn');
+  elements.menuAchievementsBtn = document.getElementById('menu-achievements-btn');
+  elements.menuAchievements = document.getElementById('menu-achievements');
+  elements.menuAchievementsList = document.getElementById('menu-achievements-list');
+  elements.menuAchievementsBackBtn = document.getElementById('menu-achievements-back-btn');
+
+  function showMain() {
+    elements.menuConfirm.classList.add('hidden');
+    elements.menuAchievements.classList.add('hidden');
+    elements.menuMain.classList.remove('hidden');
+  }
 
   function showConfirm() {
     elements.menuMain.classList.add('hidden');
     elements.menuConfirm.classList.remove('hidden');
   }
 
-  function hideConfirm() {
-    elements.menuConfirm.classList.add('hidden');
-    elements.menuMain.classList.remove('hidden');
+  function showAchievements() {
+    if (onRefresh) onRefresh();
+    elements.menuMain.classList.add('hidden');
+    elements.menuAchievements.classList.remove('hidden');
   }
 
   elements.menuBtn.addEventListener('click', () => {
-    hideConfirm();
+    showMain();
     elements.menuOverlay.classList.remove('hidden');
   });
   elements.menuResumeBtn.addEventListener('click', hideMenu);
@@ -185,12 +201,64 @@ export function initMenu(onRestart) {
     if (event.target === elements.menuOverlay) hideMenu();
   });
   elements.menuRestartBtn.addEventListener('click', showConfirm);
-  elements.menuConfirmNoBtn.addEventListener('click', hideConfirm);
+  elements.menuConfirmNoBtn.addEventListener('click', showMain);
   elements.menuConfirmYesBtn.addEventListener('click', () => {
-    hideConfirm();
+    showMain();
     hideMenu();
     onRestart();
   });
+  elements.menuAchievementsBtn.addEventListener('click', showAchievements);
+  elements.menuAchievementsBackBtn.addEventListener('click', showMain);
+}
+
+export function updateAchievementsDisplay(state) {
+  // main.js calls this every frame, so rebuild only when the rendered content
+  // would actually differ: wiping the list each frame would clamp the scrollable
+  // container's scroll position back to 0 and make the lower rows unreachable.
+  const signature = `${state.gold}|${state.achievements.join(',')}`;
+  if (elements.achievementsSignature === signature) return;
+  elements.achievementsSignature = signature;
+
+  elements.menuAchievementsList.innerHTML = '';
+
+  const total = document.createElement('p');
+  total.className = 'achievements-gold';
+  total.textContent = `🪙 ${state.gold.toLocaleString()} gold earned`;
+  elements.menuAchievementsList.appendChild(total);
+
+  for (const achievement of ACHIEVEMENTS) {
+    const achieved = state.achievements.includes(achievement.id);
+
+    const row = document.createElement('div');
+    row.className = `achievement-row ${achieved ? 'achieved' : 'locked'}`;
+
+    const status = document.createElement('span');
+    status.className = 'achievement-status';
+    status.textContent = achieved ? '✓' : '🔒';
+
+    const body = document.createElement('div');
+    body.className = 'achievement-body';
+
+    const name = document.createElement('span');
+    name.className = 'achievement-name';
+    name.textContent = achievement.name;
+
+    const description = document.createElement('span');
+    description.className = 'achievement-desc';
+    description.textContent = achievement.description;
+
+    body.appendChild(name);
+    body.appendChild(description);
+
+    const reward = document.createElement('span');
+    reward.className = 'achievement-reward';
+    reward.textContent = `🪙 ${achievement.reward}`;
+
+    row.appendChild(status);
+    row.appendChild(body);
+    row.appendChild(reward);
+    elements.menuAchievementsList.appendChild(row);
+  }
 }
 
 export function hideMenu() {

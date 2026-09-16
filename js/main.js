@@ -23,6 +23,7 @@ import {
   initMenu,
   initPrestige,
   showOfflineModal,
+  updateAchievementsDisplay,
   updatePrestigeDisplay,
 } from './ui.js';
 
@@ -32,12 +33,18 @@ initUI(() => {
   selectedTileId = null;
 });
 
-initMenu(() => {
-  state = createInitialState();
-  selectedTileId = null;
-  hideTilePanel();
-  saveState(state);
-});
+initMenu(
+  () => {
+    state = createInitialState();
+    selectedTileId = null;
+    hideTilePanel();
+    saveState(state);
+    updateAchievementsDisplay(state);
+  },
+  () => {
+    updateAchievementsDisplay(state);
+  }
+);
 
 initPrestige(
   () => {
@@ -48,6 +55,7 @@ initPrestige(
       hideTilePanel();
       saveState(state);
       updatePrestigeDisplay(state);
+      updateAchievementsDisplay(state);
     }
     return !!result;
   },
@@ -71,6 +79,7 @@ const canvas = getCanvas();
 initScene(canvas);
 
 let { state, offline } = loadState();
+updateAchievementsDisplay(state);
 if (offline) {
   showOfflineModal(offline.seconds, offline.gains);
 }
@@ -86,6 +95,7 @@ function handleUnlockClick(tile) {
   if (success) {
     saveState(state);
     renderTilePanel(tile);
+    updateAchievementsDisplay(state);
   }
 }
 
@@ -94,6 +104,7 @@ function handleLevelUpClick(tile) {
   if (success) {
     saveState(state);
     renderTilePanel(tile);
+    updateAchievementsDisplay(state);
   }
 }
 
@@ -125,6 +136,10 @@ function loop(now) {
 
   tick(state, dt);
   updateResourceBar(state);
+  // tick() can award achievements mid-play, so this is refreshed every frame rather
+  // than tracking whether the sub-view happens to be open; ui.js skips the rebuild
+  // when nothing changed.
+  updateAchievementsDisplay(state);
 
   if (selectedTileId) {
     const tile = TILES.find((t) => t.id === selectedTileId);

@@ -211,7 +211,8 @@ html, body {
 }
 
 #menu-main.hidden,
-#menu-confirm.hidden {
+#menu-confirm.hidden,
+#menu-achievements.hidden {
   display: none;
 }
 
@@ -238,6 +239,91 @@ html, body {
 }
 
 #menu-panel #menu-confirm-no-btn {
+  background: transparent;
+  color: #f4ead2;
+  border: 1px solid rgba(244, 234, 210, 0.4);
+  margin-bottom: 0;
+}
+
+/* Written as ID + ID rather than a bare `#menu-achievements-btn`, because the
+   generic `#menu-panel button` rule above is more specific than a lone id and
+   would otherwise win on `border`. Same reason as #menu-confirm-no-btn. */
+#menu-panel #menu-achievements-btn {
+  background: transparent;
+  color: #f4ead2;
+  border: 1px solid rgba(244, 234, 210, 0.4);
+}
+
+#menu-achievements-list {
+  text-align: left;
+  max-height: 320px;
+  overflow-y: auto;
+  padding-right: 8px;
+  margin-bottom: 14px;
+}
+
+.achievements-gold {
+  margin: 0 0 12px;
+  text-align: center;
+  font-size: 15px;
+  font-weight: bold;
+  color: #d9b545;
+}
+
+.achievement-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-top: 1px solid rgba(244, 234, 210, 0.15);
+}
+
+.achievement-row.achieved {
+  opacity: 1;
+}
+
+.achievement-row.locked {
+  opacity: 0.45;
+}
+
+.achievement-status {
+  width: 18px;
+  flex: none;
+  text-align: center;
+  font-size: 14px;
+}
+
+.achievement-row.achieved .achievement-status {
+  color: #d9b545;
+  font-weight: bold;
+}
+
+.achievement-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.achievement-name {
+  font-size: 13px;
+  font-weight: bold;
+}
+
+.achievement-desc {
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+.achievement-reward {
+  flex: none;
+  font-size: 12px;
+  font-weight: bold;
+  color: #d9b545;
+}
+
+#menu-panel #menu-achievements-back-btn {
   background: transparent;
   color: #f4ead2;
   border: 1px solid rgba(244, 234, 210, 0.4);

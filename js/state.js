@@ -16,7 +16,16 @@ export function createInitialState() {
   const resources = Object.fromEntries(RESOURCES.map((r) => [r, 0]));
   const lifetime = Object.fromEntries(RESOURCES.map((r) => [r, 0]));
   const unlocked = TILES.filter((t) => t.unlock.type === 'start').map((t) => t.id);
-  return { version: 1, resources, lifetime, unlocked, levels: {}, prestige: createInitialPrestige() };
+  return {
+    version: 1,
+    resources,
+    lifetime,
+    unlocked,
+    levels: {},
+    prestige: createInitialPrestige(),
+    gold: 0,
+    achievements: [],
+  };
 }
 
 export function levelMultiplier(level) {
@@ -80,6 +89,82 @@ export function isFullyComplete(state) {
   return completionCount(state) === TOTAL_TILE_COUNT;
 }
 
+const START_TILE_COUNT = TILES.filter((t) => t.unlock.type === 'start').length;
+const TYCOON_TARGET = 5000;
+
+// Gold is a plain reward counter: nothing in the production, unlock, level-up or
+// prestige-store math reads it. It only ever grows, via these rewards.
+export const ACHIEVEMENTS = [
+  {
+    id: 'first-steps',
+    name: 'First Steps',
+    description: 'Unlock a tile beyond your starting ones',
+    reward: 1,
+    condition: (state) => state.unlocked.length > START_TILE_COUNT,
+  },
+  {
+    id: 'maxed-out',
+    name: 'Maxed Out',
+    description: 'Bring any tile to max level',
+    reward: 1,
+    condition: (state) => Object.values(state.levels).some((level) => level >= MAX_LEVEL),
+  },
+  {
+    id: 'fish-tycoon',
+    name: 'Fish Tycoon',
+    description: 'Earn 5,000 lifetime fish',
+    reward: 1,
+    condition: (state) => state.lifetime.fish >= TYCOON_TARGET,
+  },
+  {
+    id: 'kelp-tycoon',
+    name: 'Kelp Tycoon',
+    description: 'Earn 5,000 lifetime kelp',
+    reward: 1,
+    condition: (state) => state.lifetime.kelp >= TYCOON_TARGET,
+  },
+  {
+    id: 'driftwood-tycoon',
+    name: 'Driftwood Tycoon',
+    description: 'Earn 5,000 lifetime driftwood',
+    reward: 1,
+    condition: (state) => state.lifetime.driftwood >= TYCOON_TARGET,
+  },
+  {
+    id: 'crops-tycoon',
+    name: 'Crops Tycoon',
+    description: 'Earn 5,000 lifetime crops',
+    reward: 1,
+    condition: (state) => state.lifetime.crops >= TYCOON_TARGET,
+  },
+  {
+    id: 'halfway-there',
+    name: 'Halfway There',
+    description: 'Max out half of all tiles',
+    reward: 2,
+    condition: (state) => completionCount(state) >= Math.ceil(TOTAL_TILE_COUNT / 2),
+  },
+  {
+    id: 'drift-away-complete',
+    name: 'Drift Away Complete',
+    description: 'Max out every tile',
+    reward: 5,
+    condition: (state) => isFullyComplete(state),
+  },
+];
+
+export function checkAchievements(state) {
+  const awarded = [];
+  for (const achievement of ACHIEVEMENTS) {
+    if (state.achievements.includes(achievement.id)) continue;
+    if (!achievement.condition(state)) continue;
+    state.achievements.push(achievement.id);
+    state.gold += achievement.reward;
+    awarded.push(achievement);
+  }
+  return awarded;
+}
+
 export const PRESTIGE_TOKEN_DIVISOR = 1000; // first-pass constant, not playtested
 
 export function prestigeTokensEarned(state) {
@@ -95,6 +180,8 @@ export function doPrestige(state) {
     tokens: state.prestige.tokens + tokensEarned,
     upgrades: { ...state.prestige.upgrades },
   };
+  nextState.gold = state.gold;
+  nextState.achievements = [...state.achievements];
   return { state: nextState, tokensEarned };
 }
 
@@ -139,6 +226,7 @@ export function levelUpTile(state, tile) {
     state.resources[resource] -= amount;
   }
   state.levels[tile.id] = level + 1;
+  checkAchievements(state);
   return true;
 }
 
@@ -156,6 +244,7 @@ export function applyOfflineProgress(state, elapsedSeconds) {
     state.lifetime[resource] += amount;
     gains[resource] = amount;
   }
+  checkAchievements(state);
   return { gains, seconds };
 }
 
@@ -165,6 +254,7 @@ export function tick(state, dt) {
     state.resources[resource] += amount;
     state.lifetime[resource] += amount;
   }
+  checkAchievements(state);
   return state;
 }
 
@@ -179,6 +269,7 @@ export function unlockTile(state, tile) {
   }
 
   state.unlocked.push(tile.id);
+  checkAchievements(state);
   return true;
 }
 
@@ -215,9 +306,14 @@ export function loadState() {
         ...(parsed.prestige || {}),
         upgrades: { ...base.prestige.upgrades, ...(parsed.prestige || {}).upgrades },
       },
+      gold: parsed.gold ?? base.gold,
+      achievements: [...(parsed.achievements || base.achievements)],
     };
     const elapsedSeconds = parsed.lastSaved ? Math.max(0, (Date.now() - parsed.lastSaved) / 1000) : 0;
     const offline = applyOfflineProgress(state, elapsedSeconds);
+    // A save migrated from before achievements existed may already meet several
+    // conditions; credit them now rather than on the next frame's tick.
+    checkAchievements(state);
     return { state, offline };
   } catch {
     return { state: createInitialState(), offline: null };

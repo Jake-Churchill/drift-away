@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import { TILES, TILE_NEIGHBORS } from '../js/tiles.js';
 import {
+  ACHIEVEMENTS,
   applyOfflineProgress,
   buyPrestigeUpgrade,
+  checkAchievements,
   completionCount,
   createInitialState,
   doPrestige,
@@ -15,10 +17,13 @@ import {
   isLevelUpEligible,
   levelUpCost,
   levelUpTile,
+  loadState,
   MAX_LEVEL,
   prestigeTokensEarned,
   prestigeUpgradeCost,
+  SAVE_KEY,
   tick,
+  TOTAL_TILE_COUNT,
   unlockTile,
 } from '../js/state.js';
 
@@ -148,6 +153,8 @@ console.log('geometry-derived adjacency tests passed');
   );
   assert.deepEqual(state.unlocked, ['driftwood_start'], 'only the single start tile is unlocked');
   assert.deepEqual(state.levels, {}, 'no tile starts above level 1');
+  assert.equal(state.gold, 0, 'a fresh game starts with no gold');
+  assert.deepEqual(state.achievements, [], 'a fresh game has earned no achievements');
 }
 
 {
@@ -316,6 +323,8 @@ console.log('geometry-derived adjacency tests passed');
     lifetime: { fish: 0, kelp: 0, driftwood: 0, crops: 0 },
     levels: {},
     prestige: { tokens: 0, upgrades: { fish: 0, kelp: 0, driftwood: 0, crops: 0 } },
+    gold: 0,
+    achievements: [],
   };
   const result = applyOfflineProgress(state, 100);
   assert.equal(result.gains.fish, 62.5, 'smokehouse-boosted rate (1.25) * 100s * 50% offline rate');
@@ -459,6 +468,8 @@ console.log('prestige store tests passed');
     lifetime: { fish: 0, kelp: 0, driftwood: 0, crops: 0 },
     levels: {},
     prestige: { tokens: 0, upgrades: { fish: 2, kelp: 0, driftwood: 0, crops: 0 } },
+    gold: 0,
+    achievements: [],
   };
   tick(state, 10);
   assert.equal(state.resources.fish, 12, 'tick applies the prestige-boosted rate: 1.0 * 1.2 * 10s');
@@ -471,6 +482,8 @@ console.log('prestige store tests passed');
     lifetime: { fish: 0, kelp: 0, driftwood: 0, crops: 0 },
     levels: {},
     prestige: { tokens: 0, upgrades: { fish: 2, kelp: 0, driftwood: 0, crops: 0 } },
+    gold: 0,
+    achievements: [],
   };
   const result = applyOfflineProgress(state, 100);
   assert.equal(result.gains.fish, 1.2 * 100 * 0.5, 'offline progress applies the prestige-boosted rate too');
@@ -591,3 +604,219 @@ console.log('prestige production integration tests passed');
 }
 
 console.log('economy math tests passed');
+
+// --- ACHIEVEMENTS data integrity ---
+
+{
+  assert.equal(ACHIEVEMENTS.length, 8, 'expected exactly 8 achievements');
+  assert.equal(
+    new Set(ACHIEVEMENTS.map((a) => a.id)).size,
+    8,
+    'achievement ids must be unique'
+  );
+  for (const achievement of ACHIEVEMENTS) {
+    assert.equal(typeof achievement.name, 'string', `${achievement.id} needs a name`);
+    assert.equal(typeof achievement.description, 'string', `${achievement.id} needs a description`);
+    assert.ok(achievement.reward > 0, `${achievement.id} must pay out some gold`);
+    assert.equal(typeof achievement.condition, 'function', `${achievement.id} needs a condition`);
+  }
+}
+
+// --- checkAchievements ---
+
+{
+  const state = createInitialState();
+  assert.deepEqual(checkAchievements(state), [], 'a fresh game has earned nothing');
+  assert.equal(state.gold, 0, 'no gold awarded when nothing is earned');
+  assert.deepEqual(state.achievements, [], 'nothing recorded when nothing is earned');
+}
+
+{
+  // first-steps: only the single start tile is unlocked to begin with
+  const state = createInitialState();
+  assert.deepEqual(checkAchievements(state).map((a) => a.id), [], 'the start tile alone is not a first step');
+
+  state.unlocked.push('booster_windmill');
+  const awarded = checkAchievements(state);
+  assert.deepEqual(awarded.map((a) => a.id), ['first-steps'], 'unlocking beyond the start set earns first-steps');
+  assert.deepEqual(state.achievements, ['first-steps'], 'the id is recorded on the state');
+  assert.equal(state.gold, 1, 'first-steps pays 1 gold');
+}
+
+{
+  // first-steps is also awarded through unlockTile's own check
+  const state = createInitialState();
+  state.resources.driftwood = 20;
+  unlockTile(state, TILES.find((t) => t.id === 'booster_windmill'));
+  assert.deepEqual(state.achievements, ['first-steps'], 'unlockTile checks achievements after a successful unlock');
+  assert.equal(state.gold, 1);
+}
+
+{
+  // maxed-out
+  const state = createInitialState();
+  state.levels.driftwood_start = MAX_LEVEL - 1;
+  assert.deepEqual(checkAchievements(state).map((a) => a.id), [], 'one level short of max earns nothing');
+
+  state.levels.driftwood_start = MAX_LEVEL;
+  const awarded = checkAchievements(state);
+  assert.deepEqual(awarded.map((a) => a.id), ['maxed-out'], 'a tile at max level earns maxed-out');
+  assert.equal(state.gold, 1, 'maxed-out pays 1 gold');
+}
+
+{
+  // *-tycoon thresholds key off lifetime, not current resources
+  const state = createInitialState();
+  state.lifetime.kelp = 4999;
+  assert.deepEqual(checkAchievements(state).map((a) => a.id), [], 'one short of 5,000 lifetime kelp earns nothing');
+
+  state.lifetime.kelp = 5000;
+  const awarded = checkAchievements(state);
+  assert.deepEqual(awarded.map((a) => a.id), ['kelp-tycoon'], '5,000 lifetime kelp earns kelp-tycoon');
+  assert.equal(state.gold, 1, 'kelp-tycoon pays 1 gold');
+  assert.equal(state.resources.kelp, 0, 'gold is a separate counter and does not touch resources');
+}
+
+{
+  // idempotent: the same met condition is never paid out twice
+  const state = createInitialState();
+  state.lifetime.fish = 5000;
+  checkAchievements(state);
+  assert.deepEqual(state.achievements, ['fish-tycoon']);
+  assert.equal(state.gold, 1);
+
+  const second = checkAchievements(state);
+  assert.deepEqual(second, [], 'a second call with no state change awards nothing');
+  assert.deepEqual(state.achievements, ['fish-tycoon'], 'no duplicate ids');
+  assert.equal(state.gold, 1, 'gold does not double');
+}
+
+{
+  // halfway-there fires at ceil(TOTAL_TILE_COUNT / 2) maxed tiles
+  const half = Math.ceil(TOTAL_TILE_COUNT / 2);
+  const state = createInitialState();
+  const maxed = TILES.slice(0, half - 1);
+  state.unlocked = maxed.map((t) => t.id);
+  for (const t of maxed) state.levels[t.id] = MAX_LEVEL;
+
+  checkAchievements(state);
+  assert.equal(completionCount(state), half - 1, 'one tile short of half');
+  assert.ok(!state.achievements.includes('halfway-there'), 'one tile short of half earns nothing');
+
+  const goldBefore = state.gold;
+  const nextTile = TILES[half - 1];
+  state.unlocked.push(nextTile.id);
+  state.levels[nextTile.id] = MAX_LEVEL;
+  const awarded = checkAchievements(state);
+  assert.deepEqual(awarded.map((a) => a.id), ['halfway-there'], 'half the tiles maxed earns halfway-there');
+  assert.equal(state.gold, goldBefore + 2, 'halfway-there pays 2 gold');
+}
+
+{
+  // drift-away-complete fires only on full completion
+  const state = createInitialState();
+  state.unlocked = TILES.map((t) => t.id);
+  for (const t of TILES) state.levels[t.id] = MAX_LEVEL;
+  state.levels[TILES[0].id] = 1;
+
+  checkAchievements(state);
+  assert.ok(!state.achievements.includes('drift-away-complete'), 'one un-maxed tile is not complete');
+
+  const goldBefore = state.gold;
+  state.levels[TILES[0].id] = MAX_LEVEL;
+  const awarded = checkAchievements(state);
+  assert.deepEqual(awarded.map((a) => a.id), ['drift-away-complete'], 'every tile maxed earns drift-away-complete');
+  assert.equal(state.gold, goldBefore + 5, 'drift-away-complete pays 5 gold');
+}
+
+console.log('achievement award tests passed');
+
+// --- gold + achievements survive prestige ---
+
+{
+  const state = createInitialState();
+  state.unlocked = TILES.map((t) => t.id);
+  for (const t of TILES) state.levels[t.id] = MAX_LEVEL;
+  state.lifetime = { fish: 1000, kelp: 1000, driftwood: 1000, crops: 1000 };
+  state.gold = 9;
+  state.achievements = ['first-steps', 'maxed-out'];
+
+  const result = doPrestige(state);
+
+  assert.equal(result.state.gold, 9, 'gold is permanent currency and survives prestige');
+  assert.deepEqual(
+    result.state.achievements,
+    ['first-steps', 'maxed-out'],
+    'already-earned achievements carry over unchanged'
+  );
+  assert.notEqual(
+    result.state.achievements,
+    state.achievements,
+    'the carried-over list is a copy, not a shared reference to the old state'
+  );
+  assert.deepEqual(result.state.resources, { fish: 0, kelp: 0, driftwood: 0, crops: 0 }, 'resources still reset');
+  assert.deepEqual(result.state.lifetime, { fish: 0, kelp: 0, driftwood: 0, crops: 0 }, 'lifetime totals still reset');
+  assert.deepEqual(result.state.unlocked, ['driftwood_start'], 'unlocked tiles still reset');
+  assert.deepEqual(result.state.levels, {}, 'levels still reset');
+}
+
+console.log('achievement prestige carry-over tests passed');
+
+// --- loadState migration ---
+
+// state.js reads `localStorage` off the global at call time, so this minimal
+// Map-backed stub is enough to exercise loadState() from Node. No prior test
+// needed it, so this is the first stub in the file.
+globalThis.localStorage = {
+  store: new Map(),
+  getItem(key) {
+    return this.store.has(key) ? this.store.get(key) : null;
+  },
+  setItem(key, value) {
+    this.store.set(key, String(value));
+  },
+  removeItem(key) {
+    this.store.delete(key);
+  },
+};
+
+// Saves written before this feature existed have no `lastSaved` handling concerns
+// here: omitting it makes loadState's elapsed time 0, so offline progress is skipped
+// and only the defensive merge is under test.
+function seedSave(save) {
+  localStorage.setItem(SAVE_KEY, JSON.stringify(save));
+}
+
+{
+  // a save from before gold/achievements existed
+  seedSave({
+    version: 1,
+    resources: { fish: 1, kelp: 2, driftwood: 3, crops: 4 },
+    lifetime: { fish: 1, kelp: 2, driftwood: 3, crops: 4 },
+    unlocked: ['driftwood_start'],
+    levels: {},
+    prestige: { tokens: 3, upgrades: { fish: 1, kelp: 0, driftwood: 0, crops: 0 } },
+  });
+  const { state } = loadState();
+  assert.equal(state.gold, 0, 'a save missing gold defaults to 0 rather than undefined');
+  assert.deepEqual(state.achievements, [], 'a save missing achievements defaults to an empty list');
+  assert.equal(state.prestige.tokens, 3, 'existing fields still load unchanged');
+  assert.equal(state.resources.driftwood, 3, 'existing fields still load unchanged');
+}
+
+{
+  // a migrated save already past a threshold is credited on load, not on the next tick
+  seedSave({
+    version: 1,
+    resources: { fish: 0, kelp: 0, driftwood: 0, crops: 0 },
+    lifetime: { fish: 6000, kelp: 0, driftwood: 0, crops: 0 },
+    unlocked: ['driftwood_start'],
+    levels: {},
+    prestige: { tokens: 0, upgrades: { fish: 0, kelp: 0, driftwood: 0, crops: 0 } },
+  });
+  const { state } = loadState();
+  assert.deepEqual(state.achievements, ['fish-tycoon'], 'an already-met condition is credited on load');
+  assert.equal(state.gold, 1, 'the reward is granted on load');
+}
+
+console.log('achievement save migration tests passed');
