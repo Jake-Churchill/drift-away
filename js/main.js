@@ -21,8 +21,9 @@ import {
   showTilePanel,
   hideTilePanel,
   initMenu,
+  initPrestige,
   showOfflineModal,
-  updateMenuDisplay,
+  updatePrestigeDisplay,
 } from './ui.js';
 
 let selectedTileId = null;
@@ -31,13 +32,14 @@ initUI(() => {
   selectedTileId = null;
 });
 
-initMenu(
-  () => {
-    state = createInitialState();
-    selectedTileId = null;
-    hideTilePanel();
-    saveState(state);
-  },
+initMenu(() => {
+  state = createInitialState();
+  selectedTileId = null;
+  hideTilePanel();
+  saveState(state);
+});
+
+initPrestige(
   () => {
     const result = doPrestige(state);
     if (result) {
@@ -45,7 +47,7 @@ initMenu(
       selectedTileId = null;
       hideTilePanel();
       saveState(state);
-      updateMenuDisplay(state);
+      updatePrestigeDisplay(state);
     }
     return !!result;
   },
@@ -53,7 +55,7 @@ initMenu(
     const success = buyPrestigeUpgrade(state, resource);
     if (success) {
       saveState(state);
-      updateMenuDisplay(state);
+      updatePrestigeDisplay(state);
       if (selectedTileId) {
         const tile = TILES.find((t) => t.id === selectedTileId);
         if (tile) renderTilePanel(tile);
@@ -61,10 +63,7 @@ initMenu(
     }
   },
   () => {
-    updateMenuDisplay(state);
-  },
-  () => {
-    updateMenuDisplay(state);
+    updatePrestigeDisplay(state);
   }
 );
 
