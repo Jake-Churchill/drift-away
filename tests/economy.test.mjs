@@ -611,10 +611,10 @@ console.log('economy math tests passed');
 // --- ACHIEVEMENTS data integrity ---
 
 {
-  assert.equal(ACHIEVEMENTS.length, 8, 'expected exactly 8 achievements');
+  assert.equal(ACHIEVEMENTS.length, 10, 'expected exactly 10 achievements');
   assert.equal(
     new Set(ACHIEVEMENTS.map((a) => a.id)).size,
-    8,
+    10,
     'achievement ids must be unique'
   );
   for (const achievement of ACHIEVEMENTS) {
@@ -839,4 +839,47 @@ console.log('achievement save migration tests passed');
   assert.strictEqual(zone1Count, 36, 'zone 1 should still have exactly 36 tiles');
 
   console.log('zone border adjacency tests passed');
+}
+
+// --- zone-2 achievement tests ---
+{
+  const state = createInitialState();
+  // First unlock a non-start zone-1 tile to trigger first-steps and establish a baseline
+  state.unlocked.push(TILES.find((t) => t.id === 'booster_windmill').id);
+  checkAchievements(state); // triggers first-steps
+  const goldBefore = state.gold; // now goldBefore = 1
+
+  const frozenTile = TILES.find((t) => t.id === 'frozen_fish_start');
+  state.unlocked.push(frozenTile.id); // directly unlock for the test, bypassing cost
+  const awarded = checkAchievements(state);
+  assert(awarded.some((a) => a.id === 'frozen-reach-discovered'), 'unlocking a zone-2 tile awards frozen-reach-discovered');
+  assert.strictEqual(state.gold, goldBefore + 2, 'frozen-reach-discovered pays 2 gold');
+
+  // Idempotent: calling again with no state change awards nothing more.
+  const secondCall = checkAchievements(state);
+  assert.strictEqual(secondCall.some((a) => a.id === 'frozen-reach-discovered'), false, 'frozen-reach-discovered does not re-award');
+
+  // frozen-reach-complete requires every zone-2 tile unlocked AND maxed — check it
+  // does NOT fire on full zone-1 completion alone.
+  const zone1OnlyState = createInitialState();
+  for (const tile of TILES.filter((t) => t.zone === 'zone1')) {
+    zone1OnlyState.unlocked.push(tile.id);
+    zone1OnlyState.levels[tile.id] = MAX_LEVEL;
+  }
+  const zone1OnlyAwarded = checkAchievements(zone1OnlyState);
+  assert.strictEqual(
+    zone1OnlyAwarded.some((a) => a.id === 'frozen-reach-complete'),
+    false,
+    'frozen-reach-complete does not fire from zone-1 completion alone'
+  );
+
+  // Now also fully complete zone 2 — it should fire.
+  for (const tile of TILES.filter((t) => t.zone === 'zone2')) {
+    zone1OnlyState.unlocked.push(tile.id);
+    zone1OnlyState.levels[tile.id] = MAX_LEVEL;
+  }
+  const bothZonesAwarded = checkAchievements(zone1OnlyState);
+  assert(bothZonesAwarded.some((a) => a.id === 'frozen-reach-complete'), 'frozen-reach-complete fires once every zone-2 tile is maxed');
+
+  console.log('zone-2 achievement tests passed');
 }

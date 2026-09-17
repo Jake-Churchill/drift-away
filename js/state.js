@@ -151,6 +151,23 @@ export const ACHIEVEMENTS = [
     reward: 5,
     condition: (state) => isFullyComplete(state),
   },
+  {
+    id: 'frozen-reach-discovered',
+    name: 'Frozen Reach',
+    description: 'Unlock your first tile in the Frozen Reach',
+    reward: 2,
+    condition: (state) => state.unlocked.some((id) => TILES.find((t) => t.id === id)?.zone === 'zone2'),
+  },
+  {
+    id: 'frozen-reach-complete',
+    name: 'Master of the Frozen Reach',
+    description: 'Max out every tile in the Frozen Reach',
+    reward: 8,
+    condition: (state) =>
+      TILES.filter((t) => t.zone === 'zone2').every(
+        (t) => state.unlocked.includes(t.id) && getLevel(state, t.id) >= MAX_LEVEL
+      ),
+  },
 ];
 
 export function checkAchievements(state) {
