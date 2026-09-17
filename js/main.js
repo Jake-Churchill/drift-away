@@ -14,7 +14,7 @@ import {
   tick,
   unlockTile,
 } from './state.js';
-import { initScene, updateScene, screenToGrid } from './render.js';
+import { initScene, updateScene, screenToGrid, sailToZone, getCurrentZone } from './render.js';
 import {
   initUI,
   getCanvas,
@@ -157,6 +157,11 @@ canvas.addEventListener('click', (event) => {
 
   const tile = TILES.find((t) => t.gridPos.row === gridPos.row && t.gridPos.col === gridPos.col);
   if (!tile) return;
+
+  if (tile.zone !== getCurrentZone()) {
+    sailToZone(tile.zone);
+    return;
+  }
 
   selectedTileId = tile.id;
   renderTilePanel(tile);
