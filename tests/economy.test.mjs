@@ -29,15 +29,18 @@ import {
 
 // --- Tile data integrity ---
 
-assert.equal(TILES.length, 36, 'expected exactly 36 tiles');
+assert.equal(TILES.length, 72, 'expected exactly 72 tiles (36 zone-1 + 36 zone-2)');
 
 const ids = TILES.map((t) => t.id);
-assert.equal(new Set(ids).size, 36, 'tile ids must be unique');
+assert.equal(new Set(ids).size, TILES.length, 'tile ids must be unique');
 
 const positions = TILES.map((t) => `${t.gridPos.row},${t.gridPos.col}`);
-assert.equal(new Set(positions).size, 36, 'grid positions must be unique');
+assert.equal(new Set(positions).size, TILES.length, 'grid positions must be unique');
 for (let row = 0; row < 6; row++) {
   for (let col = 0; col < 6; col++) {
+    assert.ok(positions.includes(`${row},${col}`), `missing tile at (${row},${col})`);
+  }
+  for (let col = 6; col < 12; col++) {
     assert.ok(positions.includes(`${row},${col}`), `missing tile at (${row},${col})`);
   }
 }
@@ -56,15 +59,15 @@ const familyCounts = TILES.reduce((counts, t) => {
 }, {});
 assert.deepEqual(
   familyCounts,
-  { fish: 8, kelp: 8, driftwood: 7, crops: 7, booster: 6 },
-  'family counts are unchanged by the rebalance'
+  { fish: 16, kelp: 16, driftwood: 14, crops: 14, booster: 12 },
+  'family counts doubled with zone 2 (8*2=16 fish/kelp, 7*2=14 driftwood/crops, 6*2=12 booster)'
 );
 
 console.log('tile data tests passed');
 
 // --- TILE_NEIGHBORS ---
 
-assert.equal(TILE_NEIGHBORS.size, 36, 'every tile has a neighbor-list entry');
+assert.equal(TILE_NEIGHBORS.size, TILES.length, 'every tile has a neighbor-list entry');
 
 for (const [id, neighbors] of TILE_NEIGHBORS) {
   for (const neighborId of neighbors) {
@@ -344,7 +347,7 @@ console.log('offline progress tests passed');
   const state = createInitialState();
   state.unlocked = TILES.map((t) => t.id);
   for (const t of TILES) state.levels[t.id] = MAX_LEVEL;
-  assert.equal(completionCount(state), 36, 'every tile unlocked and maxed counts as complete');
+  assert.equal(completionCount(state), TILES.length, 'every tile unlocked and maxed counts as complete');
   assert.equal(isFullyComplete(state), true, 'fully complete once every tile is unlocked and maxed');
 }
 
@@ -353,7 +356,7 @@ console.log('offline progress tests passed');
   state.unlocked = TILES.map((t) => t.id);
   for (const t of TILES) state.levels[t.id] = MAX_LEVEL;
   state.levels[TILES[0].id] = 1;
-  assert.equal(completionCount(state), 35, 'one non-maxed tile is excluded from the count');
+  assert.equal(completionCount(state), TILES.length - 1, 'one non-maxed tile is excluded from the count');
   assert.equal(isFullyComplete(state), false, 'not fully complete until every tile is maxed');
 }
 
@@ -820,3 +823,20 @@ function seedSave(save) {
 }
 
 console.log('achievement save migration tests passed');
+
+// --- zone border adjacency tests ---
+{
+  const neighbors = TILE_NEIGHBORS.get('crops_terraced_planter'); // zone-1, row 0, col 5
+  assert(
+    neighbors.includes('frozen_booster_net_weavers'), // zone-2, row 0, col 6
+    'zone-1 col-5 tile should be hex-adjacent to its zone-2 col-6 neighbor'
+  );
+
+  const zone2Count = TILES.filter((t) => t.zone === 'zone2').length;
+  assert.strictEqual(zone2Count, 36, 'zone 2 should have exactly 36 tiles');
+
+  const zone1Count = TILES.filter((t) => t.zone === 'zone1').length;
+  assert.strictEqual(zone1Count, 36, 'zone 1 should still have exactly 36 tiles');
+
+  console.log('zone border adjacency tests passed');
+}
