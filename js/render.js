@@ -3,7 +3,10 @@ import { TILES } from './tiles.js';
 import { getLevel, isDiscovered, isEligible } from './state.js';
 import { buildScene } from './scene.js';
 
-let renderer, scene, camera, resizeFn, waterMesh, waterBasePositions, tileObjects;
+let renderer, scene, camera, resizeFn, waterMesh, waterBasePositions, tileObjects, cameraPositions;
+let currentZone = 'zone1';
+let cameraLookTarget = new THREE.Vector3(0, 0, 0);
+let sailAnimation = null;
 
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
@@ -17,12 +20,50 @@ export function initScene(canvas) {
   waterMesh = built.waterMesh;
   waterBasePositions = built.waterBasePositions;
   tileObjects = built.tileObjects;
+  cameraPositions = built.cameraPositions;
 
   function handleResize() {
     resizeFn(window.innerWidth, window.innerHeight);
   }
   window.addEventListener('resize', handleResize);
   handleResize();
+}
+
+const SAIL_DURATION_MS = 1200;
+
+function easeInOutCubic(t) {
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+
+export function getCurrentZone() {
+  return currentZone;
+}
+
+export function sailToZone(zoneId) {
+  if (sailAnimation || zoneId === currentZone) return;
+  const dest = cameraPositions.get(zoneId);
+  if (!dest) return;
+  sailAnimation = {
+    fromPos: camera.position.clone(),
+    fromTarget: cameraLookTarget.clone(),
+    toPos: dest.position.clone(),
+    toTarget: dest.target.clone(),
+    startTime: performance.now(),
+    destZone: zoneId,
+  };
+}
+
+function advanceSail() {
+  if (!sailAnimation) return;
+  const t = Math.min(1, (performance.now() - sailAnimation.startTime) / SAIL_DURATION_MS);
+  const e = easeInOutCubic(t);
+  camera.position.lerpVectors(sailAnimation.fromPos, sailAnimation.toPos, e);
+  cameraLookTarget.lerpVectors(sailAnimation.fromTarget, sailAnimation.toTarget, e);
+  camera.lookAt(cameraLookTarget);
+  if (t >= 1) {
+    currentZone = sailAnimation.destZone;
+    sailAnimation = null;
+  }
 }
 
 function updateWater(elapsedSeconds) {
@@ -41,6 +82,7 @@ function updateWater(elapsedSeconds) {
 }
 
 export function updateScene(state, time) {
+  advanceSail();
   updateWater(time / 1000);
 
   for (const tile of TILES) {

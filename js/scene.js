@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { TILES } from './tiles.js';
+import { ZONES } from './zones.js';
 
 export const GRID_ROWS = 6;
 export const GRID_COLS = 6;
@@ -878,10 +879,31 @@ export function buildScene(canvas) {
     tileObjects.set(tile.id, { raftMesh, markerMesh, propGroups, trimMeshes });
   }
 
+  const CAMERA_OFFSET = new THREE.Vector3(14, 16, 14);
+  const cameraPositions = new Map();
+  for (const zone of ZONES) {
+    if (zone.id === 'zone1') {
+      // Keep zone 1's camera exactly as it is today — an averaged centroid
+      // would land very close to (0,0,0) but not exactly, and there's no
+      // reason to risk a tiny shift to the one framing players already know.
+      cameraPositions.set('zone1', { position: new THREE.Vector3(14, 16, 14), target: new THREE.Vector3(0, 0, 0) });
+      continue;
+    }
+    const zoneTiles = TILES.filter((t) => t.zone === zone.id);
+    const center = new THREE.Vector3();
+    for (const tile of zoneTiles) {
+      const { x, z } = hexLocalPosition(tile.gridPos.row, tile.gridPos.col);
+      center.x += x;
+      center.z += z;
+    }
+    center.divideScalar(zoneTiles.length);
+    cameraPositions.set(zone.id, { position: center.clone().add(CAMERA_OFFSET), target: center });
+  }
+
   function resize(width, height) {
     updateCameraFrustum(camera, width, height);
     renderer.setSize(width, height, false);
   }
 
-  return { renderer, scene, camera, resize, waterMesh, waterBasePositions, tileObjects };
+  return { renderer, scene, camera, resize, waterMesh, waterBasePositions, tileObjects, cameraPositions };
 }
