@@ -505,7 +505,7 @@
         group.add(shard);
       }
 
-      const specs = [...RIMED_KELP_BLADES[1], ...(RIMED_KELP_BLADES[level] || [])];
+      const specs = [...RIMED_KELP_BLADES[1], ...(level >= 2 ? RIMED_KELP_BLADES[level] : [])];
       for (const s of specs) {
         const blade = buildRimedBlade(s.c, 6, s.h);
         blade.position.set(s.x, 0.06, s.x * -0.28);
