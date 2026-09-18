@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { TILES } from './tiles.js';
 import { ZONES } from './zones.js';
+import { buildZone2Prop } from './zone2-props.js';
 
 export const GRID_ROWS = 6;
 export const GRID_COLS = 6;
@@ -23,6 +24,11 @@ const LARGE_BOOSTER_IDS = new Set([
   'booster_drying_rack',
   'booster_composting_shed',
   'booster_lighthouse',
+  'frozen_booster_windmill',
+  'frozen_booster_smokehouse',
+  'frozen_booster_drying_rack',
+  'frozen_booster_composting_shed',
+  'frozen_booster_lighthouse',
 ]);
 
 const LEVEL_SCALE = { 1: 1.0, 2: 1.15, 3: 1.3 };
@@ -40,6 +46,12 @@ const BADGE_ANCHOR_HEIGHT = {
   booster_net_weavers: 0.6,
   booster_composting_shed: 0.35,
   booster_lighthouse: 1.05,
+  frozen_booster_windmill: 1.18,
+  frozen_booster_smokehouse: 0.8,
+  frozen_booster_drying_rack: 0.8,
+  frozen_booster_net_weavers: 0.6,
+  frozen_booster_composting_shed: 0.35,
+  frozen_booster_lighthouse: 1.05,
 };
 const TRIM_THICKNESS = { 1: 0.03, 2: 0.045, 3: 0.06 };
 const TRIM_COLOR = { 1: BOOSTER_TRIM, 2: 0xf0c94f, 3: 0xfff0a0 };
@@ -710,12 +722,16 @@ function addProp(raftMesh, tile) {
   for (const level of [1, 2, 3]) {
     const propGroup = new THREE.Group();
     propGroup.position.y = WALL_HEIGHT;
-    switch (tile.family) {
-      case 'fish': buildFishProp(propGroup, level); break;
-      case 'kelp': buildKelpProp(propGroup, level); break;
-      case 'driftwood': buildDriftwoodProp(propGroup, level); break;
-      case 'crops': buildCropsProp(propGroup, level); break;
-      case 'booster': buildBoosterProp(propGroup, tile.id, level); break;
+    if (tile.zone === 'zone2') {
+      buildZone2Prop(propGroup, tile, level);
+    } else {
+      switch (tile.family) {
+        case 'fish': buildFishProp(propGroup, level); break;
+        case 'kelp': buildKelpProp(propGroup, level); break;
+        case 'driftwood': buildDriftwoodProp(propGroup, level); break;
+        case 'crops': buildCropsProp(propGroup, level); break;
+        case 'booster': buildBoosterProp(propGroup, tile.id, level); break;
+      }
     }
     const anchorKey = tile.family === 'booster' ? tile.id : tile.family;
     addLevelBadge(propGroup, level, BADGE_ANCHOR_HEIGHT[anchorKey]);
