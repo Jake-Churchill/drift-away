@@ -841,6 +841,125 @@ console.log('achievement save migration tests passed');
   console.log('zone border adjacency tests passed');
 }
 
+// --- zone-2 economy multiplier tests ---
+// Locks in the spec's mirrored-economy invariant: every zone-1 tile has a
+// zone-2 mirror 6 columns over (same row, family, kind) whose unlock cost is
+// 15x and whose production (rate / boost percent) is 4x. This documents the
+// currently-shipped numbers — it does not judge whether 15x/4x is the right
+// call (that's a separate, open balance question).
+{
+  const zone1Tiles = TILES.filter((t) => t.zone === 'zone1');
+  const zone2Tiles = TILES.filter((t) => t.zone === 'zone2');
+
+  const UNLOCK_MULTIPLIER = 15;
+  const PRODUCTION_MULTIPLIER = 4;
+
+  for (const t1 of zone1Tiles) {
+    const mirror = zone2Tiles.find(
+      (t2) => t2.gridPos.row === t1.gridPos.row && t2.gridPos.col === t1.gridPos.col + 6
+    );
+    assert.ok(mirror, `${t1.id} (zone1, col ${t1.gridPos.col}) must have a zone-2 mirror at col ${t1.gridPos.col + 6}`);
+    assert.equal(mirror.family, t1.family, `${t1.id}/${mirror.id} must share the same family`);
+    assert.equal(mirror.kind, t1.kind, `${t1.id}/${mirror.id} must share the same kind`);
+
+    if (t1.id === 'driftwood_start') continue; // special-cased below: can't mirror a 'start' unlock
+
+    if (t1.unlock.type === 'cost') {
+      assert.equal(mirror.unlock.type, 'cost', `${mirror.id} must also be cost-gated`);
+      assert.deepEqual(
+        Object.keys(mirror.unlock.cost).sort(),
+        Object.keys(t1.unlock.cost).sort(),
+        `${t1.id}/${mirror.id} unlock cost must use the same resource keys`
+      );
+      for (const [resource, amount] of Object.entries(t1.unlock.cost)) {
+        assert.equal(
+          mirror.unlock.cost[resource],
+          amount * UNLOCK_MULTIPLIER,
+          `${mirror.id}.unlock.cost.${resource} must be exactly ${UNLOCK_MULTIPLIER}x ${t1.id}'s`
+        );
+      }
+    } else if (t1.unlock.type === 'milestone') {
+      assert.equal(mirror.unlock.type, 'milestone', `${mirror.id} must also be milestone-gated`);
+      assert.equal(
+        mirror.unlock.resource,
+        t1.unlock.resource,
+        `${t1.id}/${mirror.id} milestone must key off the same resource`
+      );
+      assert.equal(
+        mirror.unlock.target,
+        t1.unlock.target * UNLOCK_MULTIPLIER,
+        `${mirror.id}.unlock.target must be exactly ${UNLOCK_MULTIPLIER}x ${t1.id}'s`
+      );
+    }
+
+    if (typeof t1.rate === 'number') {
+      assert.equal(
+        mirror.rate,
+        t1.rate * PRODUCTION_MULTIPLIER,
+        `${mirror.id}.rate must be exactly ${PRODUCTION_MULTIPLIER}x ${t1.id}'s`
+      );
+    }
+    if (t1.boosts) {
+      assert.equal(mirror.boosts.length, t1.boosts.length, `${t1.id}/${mirror.id} must have the same number of boosts`);
+      t1.boosts.forEach((boost, i) => {
+        assert.equal(mirror.boosts[i].resource, boost.resource, `${t1.id}/${mirror.id} boost[${i}] resource must match`);
+        assert.equal(
+          mirror.boosts[i].percent,
+          boost.percent * PRODUCTION_MULTIPLIER,
+          `${mirror.id}.boosts[${i}].percent must be exactly ${PRODUCTION_MULTIPLIER}x ${t1.id}'s`
+        );
+      });
+    }
+  }
+
+  // The special-cased pair: frozen_driftwood_start can't be a 'start' tile (only
+  // one 'start' tile exists total), so it carries an explicit unlock cost instead
+  // of mirroring driftwood_start's free start — but production still follows the
+  // same 4x rule as every other mirror pair.
+  const driftwoodStart = TILES.find((t) => t.id === 'driftwood_start');
+  const frozenDriftwoodStart = TILES.find((t) => t.id === 'frozen_driftwood_start');
+  assert.equal(driftwoodStart.unlock.type, 'start', 'driftwood_start is the one true start tile');
+  assert.deepEqual(
+    frozenDriftwoodStart.unlock,
+    { type: 'cost', cost: { crops: 600 } },
+    'frozen_driftwood_start has its own explicit unlock cost since it cannot mirror a start tile'
+  );
+  assert.equal(
+    frozenDriftwoodStart.rate,
+    driftwoodStart.rate * PRODUCTION_MULTIPLIER,
+    'frozen_driftwood_start production still follows the 4x rule despite the special-cased unlock'
+  );
+
+  console.log('zone-2 economy multiplier tests passed');
+}
+
+// --- zone-2 tile ineligible until its zone-1 border neighbor unlocks ---
+{
+  // Same col-5/col-6 border pair the zone-border-adjacency test above uses.
+  const frozenTile = TILES.find((t) => t.id === 'frozen_booster_net_weavers'); // zone-2, row 0, col 6
+  const borderNeighborId = 'crops_terraced_planter'; // zone-1, row 0, col 5
+
+  const state = {
+    unlocked: [],
+    resources: { fish: 99999, kelp: 99999, driftwood: 99999, crops: 99999 },
+    lifetime: {},
+  };
+  assert.equal(
+    isEligible(frozenTile, state),
+    false,
+    'a zone-2 tile is not eligible while its zone-1 border neighbor is locked, however affordable'
+  );
+
+  state.unlocked.push(borderNeighborId);
+  assert.equal(
+    isEligible(frozenTile, state),
+    true,
+    'unlocking the bordering zone-1 tile makes the zone-2 tile eligible once affordable'
+  );
+
+  console.log('zone-2 border eligibility tests passed');
+}
+
 // --- zone-2 achievement tests ---
 {
   const state = createInitialState();

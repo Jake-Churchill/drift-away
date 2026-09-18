@@ -14,7 +14,7 @@ import {
   tick,
   unlockTile,
 } from './state.js';
-import { initScene, updateScene, screenToGrid, sailToZone, getCurrentZone } from './render.js';
+import { initScene, updateScene, screenToGrid, sailToZone, getCurrentZone, resetCamera } from './render.js';
 import {
   initUI,
   getCanvas,
@@ -46,6 +46,7 @@ initUI(() => {
 initMenu(
   () => {
     state = createInitialState();
+    resetCamera();
     selectedTileId = null;
     hideTilePanel();
     saveState(state);
@@ -61,6 +62,7 @@ initPrestige(
     const result = doPrestige(state);
     if (result) {
       state = result.state;
+      resetCamera();
       selectedTileId = null;
       hideTilePanel();
       saveState(state);

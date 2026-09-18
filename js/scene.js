@@ -46,12 +46,20 @@ const BADGE_ANCHOR_HEIGHT = {
   booster_net_weavers: 0.6,
   booster_composting_shed: 0.35,
   booster_lighthouse: 1.05,
-  frozen_booster_windmill: 1.18,
-  frozen_booster_smokehouse: 0.8,
-  frozen_booster_drying_rack: 0.8,
-  frozen_booster_net_weavers: 0.6,
-  frozen_booster_composting_shed: 0.35,
-  frozen_booster_lighthouse: 1.05,
+  // Zone 2's re-skinned props are taller/differently-proportioned than zone
+  // 1's for several archetypes, so they need their own anchors rather than
+  // falling back to the zone-1 values above (measured live per-archetype at
+  // level 3, the tallest case — see addProp's zone-qualified lookup).
+  'zone2:fish': 0.80,
+  'zone2:kelp': 1.44,
+  'zone2:driftwood': 0.60,
+  'zone2:crops': 0.95,
+  'zone2:frozen_booster_windmill': 1.55,
+  'zone2:frozen_booster_smokehouse': 0.8,
+  'zone2:frozen_booster_drying_rack': 0.95,
+  'zone2:frozen_booster_net_weavers': 0.6,
+  'zone2:frozen_booster_composting_shed': 0.5,
+  'zone2:frozen_booster_lighthouse': 1.75,
 };
 const TRIM_THICKNESS = { 1: 0.03, 2: 0.045, 3: 0.06 };
 const TRIM_COLOR = { 1: BOOSTER_TRIM, 2: 0xf0c94f, 3: 0xfff0a0 };
@@ -734,7 +742,9 @@ function addProp(raftMesh, tile) {
       }
     }
     const anchorKey = tile.family === 'booster' ? tile.id : tile.family;
-    addLevelBadge(propGroup, level, BADGE_ANCHOR_HEIGHT[anchorKey]);
+    const zoneAnchorKey = `${tile.zone}:${anchorKey}`;
+    const anchorHeight = BADGE_ANCHOR_HEIGHT[zoneAnchorKey] ?? BADGE_ANCHOR_HEIGHT[anchorKey];
+    addLevelBadge(propGroup, level, anchorHeight);
     const extraScale = LARGE_BOOSTER_IDS.has(tile.id) ? BOOSTER_PROP_SCALE : 1;
     propGroup.scale.setScalar(PROP_SCALE * extraScale * LEVEL_SCALE[level]);
     propGroup.visible = level === 1;

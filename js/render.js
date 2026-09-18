@@ -58,6 +58,15 @@ export function sailToZone(zoneId) {
   };
 }
 
+export function resetCamera() {
+  sailAnimation = null;
+  currentZone = 'zone1';
+  const dest = cameraPositions.get('zone1');
+  camera.position.copy(dest.position);
+  cameraLookTarget.copy(dest.target);
+  camera.lookAt(cameraLookTarget);
+}
+
 function advanceSail() {
   if (!sailAnimation) return;
   const t = Math.min(1, (performance.now() - sailAnimation.startTime) / SAIL_DURATION_MS);
