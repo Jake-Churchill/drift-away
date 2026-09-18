@@ -2,16 +2,16 @@ import * as THREE from 'three';
 import { TILES } from './tiles.js';
 import { getLevel, isDiscovered, isEligible } from './state.js';
 import { buildScene } from './scene.js';
+import { updateCloudField, renderCloudField } from './clouds.js';
 
 let renderer, scene, camera, resizeFn, waterMesh, waterBasePositions, tileObjects, cameraPositions;
-let cloudSprite, cloudMaterial, cloudShadowMesh;
+let cloudField;
 let currentZone = 'zone1';
 let cameraLookTarget = new THREE.Vector3(0, 0, 0);
 let sailAnimation = null;
 
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
-const ZONE2_TILES = TILES.filter((t) => t.zone === 'zone2');
 
 export function initScene(canvas) {
   const built = buildScene(canvas);
@@ -23,9 +23,7 @@ export function initScene(canvas) {
   waterBasePositions = built.waterBasePositions;
   tileObjects = built.tileObjects;
   cameraPositions = built.cameraPositions;
-  cloudSprite = built.cloudSprite;
-  cloudMaterial = built.cloudMaterial;
-  cloudShadowMesh = built.cloudShadowMesh;
+  cloudField = built.cloudField;
 
   function handleResize() {
     resizeFn(window.innerWidth, window.innerHeight);
@@ -80,18 +78,6 @@ function advanceSail() {
   }
 }
 
-function updateCloudCover(state) {
-  const unlockedCount = ZONE2_TILES.filter((t) => state.unlocked.includes(t.id)).length;
-  const progress = unlockedCount / ZONE2_TILES.length;
-  const remaining = 1 - progress;
-  cloudShadowMesh.material.opacity = remaining;
-  const shadowScale = 0.4 + 0.6 * remaining;
-  cloudShadowMesh.scale.set(shadowScale, shadowScale, 1);
-  cloudShadowMesh.visible = remaining > 0.02;
-  cloudMaterial.opacity = remaining;
-  cloudSprite.position.y = 6 + progress * 4;
-}
-
 function updateWater(elapsedSeconds) {
   const positions = waterMesh.geometry.attributes.position;
   for (let i = 0; i < positions.count; i++) {
@@ -109,7 +95,7 @@ function updateWater(elapsedSeconds) {
 
 export function updateScene(state, time) {
   advanceSail();
-  updateCloudCover(state);
+  updateCloudField(cloudField, state.unlocked, time);
   updateWater(time / 1000);
 
   for (const tile of TILES) {
@@ -134,6 +120,7 @@ export function updateScene(state, time) {
   }
 
   renderer.render(scene, camera);
+  renderCloudField(renderer, cloudField, camera);
 }
 
 export function screenToGrid(screenX, screenY, canvasWidth, canvasHeight) {

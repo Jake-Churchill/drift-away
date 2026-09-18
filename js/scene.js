@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { TILES } from './tiles.js';
 import { ZONES } from './zones.js';
 import { buildZone2Prop } from './zone2-props.js';
+import { buildCloudField, resizeCloudField } from './clouds.js';
 
 export const GRID_ROWS = 6;
 export const GRID_COLS = 6;
@@ -926,62 +927,28 @@ export function buildScene(canvas) {
     cameraPositions.set(zone.id, { position: center.clone().add(CAMERA_OFFSET), target: center });
   }
 
-  const zone2Target = cameraPositions.get('zone2').target;
-  const CLOUD_CENTER_X = zone2Target.x + 8; // offset further east than zone 2's own
-  // center — a cloud sized to meaningfully cover the zone is bigger than the zone's
-  // own footprint, and centering it exactly on zone 2 would spill its west edge back
-  // over zone-1 tiles players can already see clearly.
-
-  function softRadialTexture() {
-    const size = 256;
-    const c = document.createElement('canvas');
-    c.width = c.height = size;
-    const ctx = c.getContext('2d');
-    const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
-    g.addColorStop(0, 'rgba(20,30,38,0.55)');
-    g.addColorStop(0.55, 'rgba(20,30,38,0.32)');
-    g.addColorStop(1, 'rgba(20,30,38,0)');
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, size, size);
-    return new THREE.CanvasTexture(c);
-  }
-
-  const cloudShadowMesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(30, 22, 1, 1),
-    new THREE.MeshBasicMaterial({ map: softRadialTexture(), transparent: true, depthWrite: false })
+  const zoneTileCenters = new Map(
+    ZONES.map((zone) => [
+      zone.id,
+      TILES.filter((t) => t.zone === zone.id).map((t) => {
+        const { x, z } = tileObjects.get(t.id).raftMesh.position;
+        return { id: t.id, x, z };
+      }),
+    ])
   );
-  cloudShadowMesh.rotation.x = -Math.PI / 2;
-  cloudShadowMesh.position.set(CLOUD_CENTER_X, 0.05, 0);
-  scene.add(cloudShadowMesh);
-
-  function paintCloudTexture() {
-    const w = 1024, h = 640;
-    const c = document.createElement('canvas');
-    c.width = w; c.height = h;
-    const ctx = c.getContext('2d');
-    function blob(x, y, r, color, hardness) {
-      const g = ctx.createRadialGradient(x, y, r * hardness, x, y, r);
-      g.addColorStop(0, color);
-      g.addColorStop(1, 'rgba(255,255,255,0)');
-      ctx.fillStyle = g;
-      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
-    }
-    const shadowSpots = [[380, 390, 220], [520, 360, 260], [660, 396, 210], [300, 424, 156], [740, 416, 156]];
-    for (const [x, y, r] of shadowSpots) blob(x, y, r, 'rgba(96,112,146,0.95)', 0.72);
-    const topSpots = [[380, 290, 200], [510, 244, 256], [650, 286, 196], [300, 336, 144], [730, 326, 144]];
-    for (const [x, y, r] of topSpots) blob(x, y, r, 'rgba(214,220,232,1)', 0.8);
-    return new THREE.CanvasTexture(c);
-  }
-
-  const cloudMaterial = new THREE.SpriteMaterial({ map: paintCloudTexture(), transparent: true });
-  const cloudSprite = new THREE.Sprite(cloudMaterial);
-  cloudSprite.scale.set(32, 20, 1);
-  cloudSprite.position.set(CLOUD_CENTER_X, 6, 0);
-  scene.add(cloudSprite);
+  const cloudField = buildCloudField({
+    zoneIds: ZONES.map((zone) => zone.id),
+    zoneTiles: zoneTileCenters,
+    landRadius: HEX_RADIUS,
+    viewHalfHeight: CAMERA_FRUSTUM_HALF_SIZE,
+    cameraTargets: ZONES.map((zone) => cameraPositions.get(zone.id).target),
+    cameraOffset: CAMERA_OFFSET,
+  });
 
   function resize(width, height) {
     updateCameraFrustum(camera, width, height);
     renderer.setSize(width, height, false);
+    resizeCloudField(renderer, cloudField);
   }
 
   return {
@@ -993,8 +960,6 @@ export function buildScene(canvas) {
     waterBasePositions,
     tileObjects,
     cameraPositions,
-    cloudSprite,
-    cloudMaterial,
-    cloudShadowMesh,
+    cloudField,
   };
 }

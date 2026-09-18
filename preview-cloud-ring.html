@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Drift Away — Cloud Field Reference Prototype</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; overflow: hidden; font-family: system-ui, -apple-system, sans-serif; background: #0e2f42; }
+    #game-canvas { display: block; width: 100vw; height: 100vh; }
+    .panel {
+      position: fixed; color: #f4ead2; background: rgba(16, 38, 58, 0.9);
+      padding: 10px 14px; border-radius: 8px; font-size: 13px; line-height: 1.5;
+    }
+    #controls { top: 12px; left: 12px; }
+    #controls .row { margin: 4px 0; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+    #controls b { display: inline-block; min-width: 62px; opacity: 0.75; font-weight: 600; }
+    button {
+      font: inherit; color: #f4ead2; background: #2b5d7c; border: 1px solid #4b86aa;
+      border-radius: 6px; padding: 3px 9px; cursor: pointer;
+    }
+    button:hover { background: #3a7397; }
+    input[type=range] { width: 120px; vertical-align: middle; }
+    #note { bottom: 12px; left: 12px; max-width: 560px; }
+    #status { top: 12px; right: 12px; text-align: right; }
+  </style>
+</head>
+<body>
+  <canvas id="game-canvas"></canvas>
+
+  <div id="controls" class="panel">
+    <div class="row"><b>View</b>
+      <button data-view="zone1">Zone 1</button>
+      <button data-view="zone2">Zone 2</button>
+      <button data-view="overview">Overview</button>
+    </div>
+    <div class="row"><b>Game state</b>
+      <button id="btn-reset">Reset (zone 2 sealed)</button>
+      <button id="btn-unlock1">Unlock 1 zone-2 tile</button>
+      <button id="btn-unlock8">+8 more</button>
+      <button id="btn-unlockall">Unlock all</button>
+    </div>
+    <div class="row"><b>Opacity</b><input type="range" id="opacity" min="0.15" max="1" step="0.05" value="0.4"><span id="opacity-val">0.40</span></div>
+    <div class="row"><b>Sea gap</b><input type="range" id="gap" min="0" max="6" step="0.25" value="2"><span id="gap-val">2.00</span></div>
+  </div>
+
+  <div id="status" class="panel"></div>
+
+  <div id="note" class="panel">
+    Reference prototype for js/clouds.js (the shipped version); not loaded by the game. Kept as a sandbox for tuning the cloud look or trying more zones. Real tiles and scene via the actual <code>buildScene</code>; only the clouds are new.
+    Clouds fill everything outside the land, with an even strip of open sea all the way around, and fill zone 2's place while it's sealed.
+    Unlocking any zone-2 tile clears the clouds off zone 2 and pulls the cloud edge out to the same sea gap around the whole map.
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.182.0/build/three.module.js"
+    }
+  }
+  </script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { buildScene } from './js/scene.js';
+    import { TILES } from './js/tiles.js';
+    import { isDiscovered, getLevel } from './js/state.js';
+
+    const canvas = document.getElementById('game-canvas');
+    const { renderer, scene, camera, resize, waterMesh, waterBasePositions, tileObjects, cameraPositions } = buildScene(canvas);
+
+    // ---------- Game state (just enough to drive the real tile visibility rules) ----------
+    const zone1Ids = TILES.filter((t) => t.zone === 'zone1').map((t) => t.id);
+    const zone2Tiles = TILES.filter((t) => t.zone === 'zone2');
+    const state = { unlocked: [], levels: {} };
+    let zone2Open = false;
+
+    function resetState() {
+      state.unlocked = [...zone1Ids];
+      state.levels = {};
+      zone1Ids.forEach((id, i) => { state.levels[id] = (i % 3) + 1; });
+    }
+
+    function applyTiles() {
+      for (const tile of TILES) {
+        const o = tileObjects.get(tile.id);
+        const unlocked = state.unlocked.includes(tile.id);
+        const discovered = isDiscovered(tile, state);
+        o.raftMesh.visible = unlocked;
+        o.markerMesh.visible = !unlocked && discovered;
+        const level = getLevel(state, tile.id);
+        for (const lvl of [1, 2, 3]) {
+          o.propGroups[lvl].visible = lvl === level;
+          if (o.trimMeshes) o.trimMeshes[lvl].visible = lvl === level;
+        }
+        if (!unlocked && discovered) o.markerMesh.userData.outlineMaterial.opacity = 0.5;
+      }
+      const n = zone2Tiles.filter((t) => state.unlocked.includes(t.id)).length;
+      document.getElementById('status').innerHTML =
+        `Zone 2 tiles unlocked: <b>${n} / 36</b><br>Zone 2: <b>${zone2Open ? 'open (clouds cleared)' : 'sealed (clouds over it)'}</b>`;
+    }
+
+    // ---------- Cloud layer: rendered on its own, then composited at one uniform opacity ----------
+    // Puffs overlap heavily to fill the screen. Drawing them straight into the scene would stack
+    // their transparency into a near-solid blanket; drawing them opaque into an offscreen layer and
+    // blending that layer once keeps the whole field evenly see-through.
+    const cloudScene = new THREE.Scene();
+    const drawSize = new THREE.Vector2();
+    renderer.getDrawingBufferSize(drawSize);
+    const cloudTarget = new THREE.WebGLRenderTarget(drawSize.x, drawSize.y, { samples: 4 });
+
+    const compositeMaterial = new THREE.ShaderMaterial({
+      uniforms: { tMap: { value: cloudTarget.texture }, uOpacity: { value: 0.4 } },
+      vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+      fragmentShader: `
+        uniform sampler2D tMap;
+        uniform float uOpacity;
+        varying vec2 vUv;
+        void main() {
+          vec4 c = texture2D(tMap, vUv);
+          vec3 rgb = c.a > 0.0001 ? c.rgb / c.a : vec3(0.0);
+          gl_FragColor = vec4(rgb, c.a * uOpacity);
+          #include <colorspace_fragment>
+        }`,
+      transparent: true,
+      depthTest: false,
+      depthWrite: false,
+    });
+    const compositeScene = new THREE.Scene();
+    compositeScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), compositeMaterial));
+    const compositeCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+
+    function handleResize() {
+      resize(window.innerWidth, window.innerHeight);
+      renderer.getDrawingBufferSize(drawSize);
+      cloudTarget.setSize(drawSize.x, drawSize.y);
+    }
+    window.addEventListener('resize', handleResize);
+    handleResize();
+
+    // ---------- Cloud textures (same painting technique as the game's cloud) ----------
+    function paintCloud(shadowSpots, topSpots) {
+      const w = 1024, h = 640;
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      const ctx = c.getContext('2d');
+      function blob(x, y, r, color, hardness) {
+        const g = ctx.createRadialGradient(x, y, r * hardness, x, y, r);
+        g.addColorStop(0, color);
+        g.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+      }
+      for (const [x, y, r] of shadowSpots) blob(x, y, r, 'rgba(96,112,146,0.95)', 0.72);
+      for (const [x, y, r] of topSpots) blob(x, y, r, 'rgba(214,220,232,1)', 0.8);
+      return new THREE.CanvasTexture(c);
+    }
+    const cloudTextures = [
+      paintCloud(
+        [[380, 390, 220], [520, 360, 260], [660, 396, 210], [300, 424, 156], [740, 416, 156]],
+        [[380, 290, 200], [510, 244, 256], [650, 286, 196], [300, 336, 144], [730, 326, 144]]
+      ),
+      paintCloud(
+        [[420, 400, 200], [590, 372, 240], [730, 410, 170], [330, 430, 130]],
+        [[420, 306, 180], [580, 264, 236], [720, 312, 160], [340, 344, 120]]
+      ),
+    ];
+
+    // ---------- Land geometry ----------
+    const HEX_R = 1.6;
+    const VISIBLE_HALF = 0.4; // a puff's visible body extends about this fraction of its width from center
+    const centersOf = (zoneId) => TILES.filter((t) => t.zone === zoneId).map((t) => {
+      const p = tileObjects.get(t.id).raftMesh.position;
+      return { x: p.x, z: p.z };
+    });
+    const zone1Centers = centersOf('zone1');
+    const allCenters = [...zone1Centers, ...centersOf('zone2')];
+
+    function minDist(list, x, z) {
+      let d = Infinity;
+      for (const c of list) d = Math.min(d, Math.hypot(x - c.x, z - c.z));
+      return d;
+    }
+
+    // ---------- Which world points can ever be on screen (so the field only covers what's visible) ----------
+    const OFFSET = new THREE.Vector3(14, 16, 14);
+    const viewCam = new THREE.OrthographicCamera();
+    viewCam.position.copy(OFFSET);
+    viewCam.lookAt(0, 0, 0);
+    viewCam.updateMatrixWorld();
+    const viewRot = new THREE.Matrix3().setFromMatrix4(viewCam.matrixWorldInverse);
+
+    const zone2Target = cameraPositions.get('zone2').target;
+    const overviewTarget = new THREE.Vector3(zone2Target.x / 2, 0, 0);
+    const VIEWS = [
+      { target: new THREE.Vector3(0, 0, 0), zoom: 1 },
+      { target: zone2Target.clone(), zoom: 1 },
+      { target: overviewTarget, zoom: 0.5 },
+    ];
+    const HALF_H = 12, MAX_ASPECT = 1.9, MARGIN = 6;
+    function canBeVisible(x, z) {
+      for (const v of VIEWS) {
+        const d = new THREE.Vector3(x - v.target.x, 0 - v.target.y, z - v.target.z).applyMatrix3(viewRot);
+        const halfH = HALF_H / v.zoom + MARGIN;
+        if (Math.abs(d.y) <= halfH && Math.abs(d.x) <= halfH * MAX_ASPECT) return true;
+      }
+      return false;
+    }
+
+    // ---------- Puff generation ----------
+    const puffs = [];
+
+    function seeded(seed) {
+      let s = seed;
+      return () => { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; };
+    }
+
+    function clearPuffs() {
+      for (const p of puffs) { cloudScene.remove(p.sprite); p.sprite.material.dispose(); }
+      puffs.length = 0;
+    }
+
+    function addPuff(x, z, width, rnd, bright = false) {
+      const material = new THREE.SpriteMaterial({
+        map: cloudTextures[rnd() < 0.5 ? 0 : 1], transparent: true, depthWrite: false, fog: false,
+      });
+      // Overlapping puffs of identical brightness melt into a flat wash; varying them keeps the billows readable.
+      material.color.setScalar(bright ? 1 : 0.6 + rnd() * 0.4);
+      const sprite = new THREE.Sprite(material);
+      sprite.scale.set(width * (rnd() < 0.5 ? -1 : 1), width * 0.625, 1);
+      cloudScene.add(sprite);
+      const d1 = minDist(allCenters, x, z);
+      const rhoOwn = HEX_R + gapValue() + VISIBLE_HALF * width;
+      puffs.push({
+        sprite, x, z,
+        y: 1.0 + rnd() * 0.6,
+        factor: 0.9 + rnd() * 0.1,
+        phase: rnd() * Math.PI * 2,
+        out: new THREE.Vector2(x - overviewTarget.x, z).normalize(),
+        // Cleared once zone 2 opens: anything that would sit inside the new sea gap around the whole map.
+        dissolvesOnOpen: d1 < rhoOwn - 0.05,
+        dissolve: null,
+        gone: false,
+      });
+    }
+
+    function gapValue() { return Number(document.getElementById('gap').value); }
+
+    // Points on the boundary of "everything within rho of a tile center" — an even offset outline of the land.
+    function contourPoints(centers, rho, step) {
+      const pts = [];
+      for (const c of centers) {
+        const n = Math.ceil((2 * Math.PI * rho) / step);
+        for (let i = 0; i < n; i++) {
+          const th = (i / n) * Math.PI * 2;
+          const x = c.x + rho * Math.cos(th), z = c.z + rho * Math.sin(th);
+          if (minDist(centers, x, z) < rho - 0.02) continue;
+          if (pts.some((q) => Math.hypot(q.x - x, q.z - z) < step * 0.6)) continue;
+          pts.push({ x, z });
+        }
+      }
+      return pts;
+    }
+
+    function buildClouds() {
+      clearPuffs();
+      const rnd = seeded(7);
+      const EDGE_W = 10;
+      const rho = HEX_R + gapValue() + VISIBLE_HALF * EDGE_W;
+
+      // Edge rows: one puff row exactly on the even-gap outline, both for the sealed map (zone 1 only)
+      // and for the opened map (both zones). The second row starts hidden inside the zone-2 fog.
+      for (const centers of [zone1Centers, allCenters]) {
+        for (const p of contourPoints(centers, rho, 3.1)) {
+          if (canBeVisible(p.x, p.z)) addPuff(p.x, p.z, EDGE_W + rnd() * 1.4, rnd, true);
+        }
+      }
+
+      // Fill: fills everything beyond the edge row, out past the screen edges. Puffs get bigger and
+      // sparser with distance so the far field stays cheap.
+      const STEP = 4;
+      for (let gx = -90; gx <= 110; gx += STEP) {
+        for (let gz = -70; gz <= 70; gz += STEP) {
+          const x = gx + (rnd() - 0.5) * STEP * 0.8;
+          const z = gz + (rnd() - 0.5) * STEP * 0.8;
+          if (minDist(zone1Centers, x, z) < rho + 1.6) continue;
+          if (!canBeVisible(x, z)) continue;
+          const far = Math.max(0, minDist(allCenters, x, z) - rho);
+          const cell = Math.min(9, 4.4 + far * 0.2);
+          if (rnd() > (4.4 / cell) ** 2) continue;
+          addPuff(x, z, Math.min(24, 11 + far * 0.4 + rnd() * 2), rnd);
+        }
+      }
+      if (zone2Open) for (const p of puffs) if (p.dissolvesOnOpen) p.gone = true;
+    }
+
+    // ---------- Zone-2 open: clouds over zone 2 dissolve ----------
+    function openZone2(originTile) {
+      if (zone2Open) return;
+      zone2Open = true;
+      const now = performance.now();
+      const o = tileObjects.get(originTile.id).raftMesh.position;
+      for (const p of puffs) {
+        if (!p.dissolvesOnOpen) continue;
+        p.dissolve = { start: now + Math.hypot(p.x - o.x, p.z - o.z) * 40, dur: 1100 };
+      }
+    }
+
+    function unlockNext(n) {
+      for (let i = 0; i < n; i++) {
+        const candidates = zone2Tiles.filter((t) => !state.unlocked.includes(t.id) && isDiscovered(t, state));
+        if (!candidates.length) break;
+        const tile = candidates.find((t) => t.id === 'frozen_booster_net_weavers') || candidates[0];
+        state.unlocked.push(tile.id);
+        state.levels[tile.id] = 1 + (state.unlocked.length % 3);
+        openZone2(tile);
+      }
+      applyTiles();
+    }
+
+    // ---------- Views ----------
+    function setView(name) {
+      const v = name === 'overview' ? VIEWS[2] : name === 'zone2' ? VIEWS[1] : VIEWS[0];
+      camera.position.copy(v.target).add(OFFSET);
+      camera.zoom = v.zoom;
+      camera.updateProjectionMatrix();
+      camera.lookAt(v.target);
+    }
+
+    // ---------- Controls ----------
+    document.querySelectorAll('[data-view]').forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
+    document.getElementById('btn-reset').addEventListener('click', () => {
+      zone2Open = false; resetState(); buildClouds(); applyTiles();
+    });
+    document.getElementById('btn-unlock1').addEventListener('click', () => unlockNext(1));
+    document.getElementById('btn-unlock8').addEventListener('click', () => unlockNext(8));
+    document.getElementById('btn-unlockall').addEventListener('click', () => unlockNext(36));
+    document.getElementById('opacity').addEventListener('input', (e) => {
+      compositeMaterial.uniforms.uOpacity.value = Number(e.target.value);
+      document.getElementById('opacity-val').textContent = Number(e.target.value).toFixed(2);
+    });
+    document.getElementById('gap').addEventListener('input', (e) => {
+      document.getElementById('gap-val').textContent = Number(e.target.value).toFixed(2);
+      buildClouds();
+    });
+
+    // ---------- Render loop ----------
+    function easeInOut(t) { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
+
+    function updateWater(t) {
+      const positions = waterMesh.geometry.attributes.position;
+      for (let i = 0; i < positions.count; i++) {
+        const x = waterBasePositions[i * 3];
+        const z = waterBasePositions[i * 3 + 2];
+        positions.setY(i,
+          Math.sin(x * 0.35 + t * 1.1) * 0.05 + Math.sin(z * 0.5 + t * 0.7) * 0.04 + Math.sin((x + z) * 0.2 + t * 1.6) * 0.025);
+      }
+      positions.needsUpdate = true;
+      waterMesh.geometry.computeVertexNormals();
+    }
+
+    function loop(now) {
+      updateWater(now / 1000);
+      for (const p of puffs) {
+        let e = 0;
+        if (p.dissolve) {
+          const raw = (now - p.dissolve.start) / p.dissolve.dur;
+          e = raw <= 0 ? 0 : easeInOut(Math.min(1, raw));
+          if (raw >= 1) p.gone = true;
+        }
+        p.sprite.visible = !p.gone;
+        if (p.gone) continue;
+        // Height lifts a sprite up the screen, which would widen the sea gap on the north side and
+        // squeeze it on the south. Sliding the ground position back down-screen by the same amount
+        // (1.24 ground units per unit of height at this camera elevation) keeps the gap even.
+        const height = p.y + Math.sin(now / 1800 + p.phase) * 0.12 + e * 2.5;
+        const comp = 0.877 * height;
+        p.sprite.position.set(
+          p.x + Math.sin(now / 4000 + p.phase) * 0.3 + p.out.x * e * 2.5 + comp,
+          height,
+          p.z + Math.cos(now / 5000 + p.phase) * 0.25 + p.out.y * e * 2.5 + comp
+        );
+        p.sprite.material.opacity = p.factor * (1 - e);
+      }
+
+      renderer.render(scene, camera);
+      renderer.setRenderTarget(cloudTarget);
+      renderer.setClearColor(0x000000, 0);
+      renderer.clear();
+      renderer.render(cloudScene, camera);
+      renderer.setRenderTarget(null);
+      renderer.autoClear = false;
+      renderer.render(compositeScene, compositeCamera);
+      renderer.autoClear = true;
+      requestAnimationFrame(loop);
+    }
+
+    resetState();
+    applyTiles();
+    buildClouds();
+    setView('overview');
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>
