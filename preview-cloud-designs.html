@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Drift Away — Cloud Design Options (scratch, not part of the game)</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; font-family: system-ui, -apple-system, sans-serif; background: #1b4965; }
+    #game-canvas { display: block; width: 100vw; height: 100vh; }
+    #legend {
+      position: fixed; bottom: 12px; left: 12px; right: 12px;
+      color: #f4ead2; background: rgba(16, 38, 58, 0.85);
+      padding: 10px 14px; border-radius: 8px; font-size: 13px;
+    }
+    #labels {
+      position: fixed; top: 12px; left: 0; right: 0;
+      display: flex; justify-content: space-around; pointer-events: none;
+    }
+    #labels span {
+      color: #f4ead2; background: rgba(16, 38, 58, 0.85);
+      padding: 6px 14px; border-radius: 8px; font-size: 14px; font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="game-canvas"></canvas>
+  <div id="labels">
+    <span>A: Glossy spheres</span>
+    <span>B: Merged blob (marching cubes)</span>
+    <span>C: Soft sprite (2D card)</span>
+  </div>
+  <div id="legend">
+    Scratch prototype, not part of the game build — three cloud design candidates side by side, using the real scene lighting/water/build. Reference: a smooth glossy 3D-render cloud style (merged lobes, soft blue underside shading, small floating satellite orbs).
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.182.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.182.0/examples/jsm/"
+    }
+  }
+  </script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { MarchingCubes } from 'three/addons/objects/MarchingCubes.js';
+    import { buildScene } from './js/scene.js';
+
+    const canvas = document.getElementById('game-canvas');
+    const { renderer, scene, camera, resize } = buildScene(canvas);
+
+    // Wide comparison framing — not any real in-game camera position, just wide
+    // enough to see all three candidates plus labels at once.
+    const COMPARE_TARGET = new THREE.Vector3(0, 2, 0);
+    camera.position.set(20, 20, 24);
+    camera.lookAt(COMPARE_TARGET);
+
+    function handleResize() {
+      resize(window.innerWidth, window.innerHeight);
+    }
+    window.addEventListener('resize', handleResize);
+    handleResize();
+
+    const SLOT_A = new THREE.Vector3(-11, 4.5, 0);
+    const SLOT_B = new THREE.Vector3(0, 4.5, 0);
+    const SLOT_C = new THREE.Vector3(11, 4.5, 0);
+
+    // ---------- A: Glossy overlapping spheres (refined) ----------
+    // Smooth (non-faceted) spheres, tighter overlap so seams read as one lumpy
+    // mass, glossier physical material for the soft sheen in the reference, plus
+    // small perfectly-round detached "satellite" puffs.
+    const glossyMaterial = new THREE.MeshPhysicalMaterial({
+      color: 0xf3f7fb, roughness: 0.32, metalness: 0.02,
+      clearcoat: 0.5, clearcoatRoughness: 0.35,
+      transparent: true, opacity: 0.97,
+    });
+    const groupA = new THREE.Group();
+    const lobesA = [
+      [0, 0, 0, 2.6], [-2.1, 0.3, 0.4, 2.0], [2.0, 0.4, -0.3, 2.1],
+      [-1.0, 1.1, 0.6, 1.7], [1.1, 1.2, 0.5, 1.6], [-3.4, -0.4, 0, 1.3], [3.3, -0.3, 0.2, 1.2],
+    ];
+    for (const [dx, dy, dz, r] of lobesA) {
+      const s = new THREE.Mesh(new THREE.SphereGeometry(r, 32, 20), glossyMaterial);
+      s.position.set(dx, dy, dz);
+      groupA.add(s);
+    }
+    for (const [dx, dy, dz, r] of [[-4.6, -1.2, 1.2, 0.5], [4.7, 0.6, -1, 0.4], [-0.5, -1.3, 1.6, 0.35]]) {
+      const s = new THREE.Mesh(new THREE.SphereGeometry(r, 20, 14), glossyMaterial);
+      s.position.set(dx, dy, dz);
+      groupA.add(s);
+    }
+    groupA.position.copy(SLOT_A);
+    scene.add(groupA);
+
+    // ---------- B: Merged blob via marching cubes ----------
+    // A genuinely continuous, seamlessly blended surface — closest to the
+    // reference's "single soft blob" look, at the cost of being a new technique
+    // for this codebase (still just a Three.js addon, no external dependency).
+    const resolution = 48;
+    const mcMaterial = new THREE.MeshPhysicalMaterial({
+      color: 0xf3f7fb, roughness: 0.3, metalness: 0.02,
+      clearcoat: 0.5, clearcoatRoughness: 0.35,
+    });
+    const marchingCubes = new MarchingCubes(resolution, mcMaterial, true, true, 100000);
+    marchingCubes.position.copy(SLOT_B);
+    marchingCubes.scale.set(5.2, 3.8, 4.2);
+    marchingCubes.isolation = 80;
+
+    function buildBlobField() {
+      marchingCubes.reset();
+      // Balanced between the too-wide spread (thin stretched bridges) and the
+      // too-strong/close first fix (smoothed into one plain ellipsoid, losing
+      // all bump definition) — lower strength per ball lets the surface keep a
+      // scalloped, lobed silhouette while still merging into one continuous mass.
+      const balls = [
+        [0.5, 0.52, 0.5, 0.85], [0.36, 0.55, 0.53, 0.68], [0.64, 0.54, 0.47, 0.68],
+        [0.44, 0.65, 0.56, 0.5], [0.57, 0.66, 0.44, 0.48],
+        [0.26, 0.5, 0.5, 0.42], [0.74, 0.49, 0.5, 0.42],
+      ];
+      for (const [x, y, z, strength] of balls) {
+        marchingCubes.addBall(x, y, z, strength, 10);
+      }
+      marchingCubes.update();
+    }
+    buildBlobField();
+    scene.add(marchingCubes);
+    // small detached satellites next to the blob, same trick as design A
+    const groupBExtras = new THREE.Group();
+    for (const [dx, dy, dz, r] of [[-3.6, -0.6, 0.9, 0.45], [3.7, 0.4, -0.7, 0.38]]) {
+      const s = new THREE.Mesh(new THREE.SphereGeometry(r, 20, 14), glossyMaterial);
+      s.position.set(dx, dy, dz);
+      groupBExtras.add(s);
+    }
+    groupBExtras.position.copy(SLOT_B);
+    scene.add(groupBExtras);
+
+    // ---------- C: Soft 2D sprite (canvas-drawn cloud card) ----------
+    // A single billboarded plane with a procedurally-painted soft cloud texture
+    // — cheapest option, flatter/more "atmospheric painting" than true 3D volume.
+    function paintCloudTexture() {
+      const w = 512, h = 320;
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      const ctx = c.getContext('2d');
+      function blob(x, y, r, color, hardness) {
+        const g = ctx.createRadialGradient(x, y, r * hardness, x, y, r);
+        g.addColorStop(0, color);
+        g.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+      }
+      // Soft blue shadow layer first (slightly lower/behind each lobe), then a
+      // bright top layer with a harder edge (smaller feather radius) so
+      // individual lobes stay visually distinct instead of blurring into one
+      // glow — closer to the reference's separated puffy bumps.
+      const shadowSpots = [[190, 195, 110], [260, 180, 130], [330, 198, 105], [150, 212, 78], [370, 208, 78]];
+      for (const [x, y, r] of shadowSpots) blob(x, y, r, 'rgba(148,164,196,0.95)', 0.3);
+      const topSpots = [[190, 145, 100], [255, 122, 128], [325, 143, 98], [150, 168, 72], [365, 163, 72]];
+      for (const [x, y, r] of topSpots) blob(x, y, r, 'rgba(252,253,255,1)', 0.55);
+      return new THREE.CanvasTexture(c);
+    }
+    const spriteMaterial = new THREE.MeshBasicMaterial({
+      map: paintCloudTexture(), transparent: true, depthWrite: false, side: THREE.DoubleSide,
+    });
+    const spritePlane = new THREE.Mesh(new THREE.PlaneGeometry(9, 5.6), spriteMaterial);
+    spritePlane.position.copy(SLOT_C);
+    spritePlane.lookAt(camera.position);
+    scene.add(spritePlane);
+
+    function loop() {
+      renderer.render(scene, camera);
+      requestAnimationFrame(loop);
+    }
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>
