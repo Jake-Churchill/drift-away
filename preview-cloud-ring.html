@@ -65,7 +65,7 @@
     import { isDiscovered, getLevel } from './js/state.js';
 
     const canvas = document.getElementById('game-canvas');
-    const { renderer, scene, camera, resize, waterMesh, waterBasePositions, tileObjects, cameraPositions } = buildScene(canvas);
+    const { renderer, scene, camera, resize, waterUniforms, tileObjects, cameraPositions } = buildScene(canvas);
 
     // ---------- Game state (just enough to drive the real tile visibility rules) ----------
     const zone1Ids = TILES.filter((t) => t.zone === 'zone1').map((t) => t.id);
@@ -345,20 +345,8 @@
     // ---------- Render loop ----------
     function easeInOut(t) { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
 
-    function updateWater(t) {
-      const positions = waterMesh.geometry.attributes.position;
-      for (let i = 0; i < positions.count; i++) {
-        const x = waterBasePositions[i * 3];
-        const z = waterBasePositions[i * 3 + 2];
-        positions.setY(i,
-          Math.sin(x * 0.35 + t * 1.1) * 0.05 + Math.sin(z * 0.5 + t * 0.7) * 0.04 + Math.sin((x + z) * 0.2 + t * 1.6) * 0.025);
-      }
-      positions.needsUpdate = true;
-      waterMesh.geometry.computeVertexNormals();
-    }
-
     function loop(now) {
-      updateWater(now / 1000);
+      waterUniforms.uTime.value = now / 1000;
       for (const p of puffs) {
         let e = 0;
         if (p.dissolve) {

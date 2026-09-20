@@ -3,6 +3,7 @@ import { TILES } from './tiles.js';
 import { ZONES } from './zones.js';
 import { buildZone2Prop } from './zone2-props.js';
 import { buildCloudField, resizeCloudField } from './clouds.js';
+import { createFoamTexture, createWaterNormalTexture } from './textures.js';
 
 export const GRID_ROWS = 6;
 export const GRID_COLS = 6;
@@ -835,15 +836,55 @@ function buildMarkerMesh(tile) {
   return markerMesh;
 }
 
-function buildWater() {
-  const waterGeometry = new THREE.PlaneGeometry(80, 80, 140, 140);
+function buildWater(anisotropy) {
+  const waterGeometry = new THREE.PlaneGeometry(80, 80, 1, 1);
   waterGeometry.rotateX(-Math.PI / 2);
-  const waterBasePositions = Float32Array.from(waterGeometry.attributes.position.array);
-  const waterMaterial = new THREE.MeshStandardMaterial({ color: 0x2e7ba8, roughness: 0.25, metalness: 0.2 });
+  const waterUniforms = { uTime: { value: 0 }, uNormal: { value: createWaterNormalTexture(anisotropy) } };
+  const waterMaterial = new THREE.MeshStandardMaterial({ color: 0x2e7ba8, roughness: 0.14, metalness: 0 });
+  // The ripples are two scrolling normal maps instead of moving vertices. The plane is flat and
+  // horizontal, so the perturbed normal is built in world space and rotated into view space.
+  waterMaterial.onBeforeCompile = (shader) => {
+    shader.uniforms.uTime = waterUniforms.uTime;
+    shader.uniforms.uNormal = waterUniforms.uNormal;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nuniform float uTime;\nuniform sampler2D uNormal;')
+      .replace(
+        '#include <normal_fragment_maps>',
+        `#include <normal_fragment_maps>
+        vec2 wp = vWPos.xz;
+        vec3 n1 = texture2D(uNormal, wp * 0.045 + vec2(uTime * 0.018, uTime * 0.011)).xyz * 2.0 - 1.0;
+        vec3 n2 = texture2D(uNormal, wp * 0.11 + vec2(-uTime * 0.03, uTime * 0.02)).xyz * 2.0 - 1.0;
+        vec3 wn = normalize(vec3((n1.x + n2.x) * 0.95, 1.0, (n1.y + n2.y) * 0.95));
+        normal = normalize((viewMatrix * vec4(wn, 0.0)).xyz);
+        diffuseColor.rgb *= 0.86 + 0.28 * (n1.x * 0.5 + 0.5);`
+      );
+  };
   const waterMesh = new THREE.Mesh(waterGeometry, waterMaterial);
   waterMesh.position.y = -0.05;
   waterMesh.receiveShadow = true;
-  return { waterMesh, waterBasePositions };
+  return { waterMesh, waterUniforms };
+}
+
+// One instance per tile; render.js places and scales each one every frame, so a raft that
+// isn't unlocked yet gets a zero-scale (invisible) ring.
+function buildFoam(anisotropy) {
+  const foamGeometry = new THREE.PlaneGeometry(4.1, 4.1);
+  foamGeometry.rotateX(-Math.PI / 2);
+  const foamMaterial = new THREE.MeshBasicMaterial({
+    map: createFoamTexture(anisotropy),
+    transparent: true,
+    opacity: 0.55,
+    depthWrite: false,
+  });
+  const foamMesh = new THREE.InstancedMesh(foamGeometry, foamMaterial, TILES.length);
+  const hidden = new THREE.Matrix4().makeScale(0, 0, 0);
+  for (let i = 0; i < TILES.length; i++) foamMesh.setMatrixAt(i, hidden);
+  foamMesh.renderOrder = 1;
+  foamMesh.frustumCulled = false;
+  return foamMesh;
 }
 
 function updateCameraFrustum(camera, width, height) {
@@ -885,8 +926,11 @@ export function buildScene(canvas) {
   sun.shadow.camera.far = 40;
   scene.add(sun);
 
-  const { waterMesh, waterBasePositions } = buildWater();
+  const anisotropy = renderer.capabilities.getMaxAnisotropy();
+  const { waterMesh, waterUniforms } = buildWater(anisotropy);
   scene.add(waterMesh);
+  const foamMesh = buildFoam(anisotropy);
+  scene.add(foamMesh);
 
   const tileObjects = new Map();
   for (const tile of TILES) {
@@ -956,8 +1000,8 @@ export function buildScene(canvas) {
     scene,
     camera,
     resize,
-    waterMesh,
-    waterBasePositions,
+    waterUniforms,
+    foamMesh,
     tileObjects,
     cameraPositions,
     cloudField,

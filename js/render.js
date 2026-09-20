@@ -4,11 +4,14 @@ import { getLevel, isDiscovered, isEligible } from './state.js';
 import { buildScene } from './scene.js';
 import { updateCloudField, renderCloudField } from './clouds.js';
 
-let renderer, scene, camera, resizeFn, waterMesh, waterBasePositions, tileObjects, cameraPositions;
+let renderer, scene, camera, resizeFn, waterUniforms, foamMesh, tileObjects, cameraPositions;
 let cloudField;
 let currentZone = 'zone1';
 let cameraLookTarget = new THREE.Vector3(0, 0, 0);
 let sailAnimation = null;
+
+const FOAM_Y = 0.012;
+const foamDummy = new THREE.Object3D();
 
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
@@ -19,8 +22,8 @@ export function initScene(canvas) {
   scene = built.scene;
   camera = built.camera;
   resizeFn = built.resize;
-  waterMesh = built.waterMesh;
-  waterBasePositions = built.waterBasePositions;
+  waterUniforms = built.waterUniforms;
+  foamMesh = built.foamMesh;
   tileObjects = built.tileObjects;
   cameraPositions = built.cameraPositions;
   cloudField = built.cloudField;
@@ -78,33 +81,28 @@ function advanceSail() {
   }
 }
 
-function updateWater(elapsedSeconds) {
-  const positions = waterMesh.geometry.attributes.position;
-  for (let i = 0; i < positions.count; i++) {
-    const x = waterBasePositions[i * 3];
-    const z = waterBasePositions[i * 3 + 2];
-    const y =
-      Math.sin(x * 0.35 + elapsedSeconds * 1.1) * 0.05 +
-      Math.sin(z * 0.5 + elapsedSeconds * 0.7) * 0.04 +
-      Math.sin((x + z) * 0.2 + elapsedSeconds * 1.6) * 0.025;
-    positions.setY(i, y);
-  }
-  positions.needsUpdate = true;
-  waterMesh.geometry.computeVertexNormals();
-}
-
 export function updateScene(state, time) {
   advanceSail();
   updateCloudField(cloudField, state.unlocked, time);
-  updateWater(time / 1000);
+  const seconds = time / 1000;
+  waterUniforms.uTime.value = seconds;
 
-  for (const tile of TILES) {
+  for (let i = 0; i < TILES.length; i++) {
+    const tile = TILES[i];
     const objects = tileObjects.get(tile.id);
     const unlocked = state.unlocked.includes(tile.id);
     const discovered = isDiscovered(tile, state); // already true when `unlocked` is true
 
     objects.raftMesh.visible = unlocked;
     objects.markerMesh.visible = !unlocked && discovered;
+
+    // Foam rings only exist around unlocked rafts; the index matches the instance order in scene.js.
+    const raft = objects.raftMesh.position;
+    const swell = unlocked ? 1 + 0.025 * Math.sin(seconds * 1.3 + i * 2.4) : 0;
+    foamDummy.position.set(raft.x, FOAM_Y, raft.z);
+    foamDummy.scale.set(swell, 1, swell);
+    foamDummy.updateMatrix();
+    foamMesh.setMatrixAt(i, foamDummy.matrix);
 
     const level = getLevel(state, tile.id);
     for (const lvl of [1, 2, 3]) {
@@ -118,6 +116,9 @@ export function updateScene(state, time) {
       objects.markerMesh.userData.outlineMaterial.opacity = pulse;
     }
   }
+
+  foamMesh.instanceMatrix.needsUpdate = true;
+  foamMesh.material.opacity = 0.5 + 0.12 * Math.sin(seconds * 0.9);
 
   renderer.render(scene, camera);
   renderCloudField(renderer, cloudField, camera);
