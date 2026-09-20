@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import { formatCount, formatEta } from '../js/format.js';
 import { SETTINGS_KEY, loadSettings, saveSettings } from '../js/settings.js';
+import { VERSION } from '../js/version.js';
+
+assert.match(VERSION, /^\d+\.\d+\.\d+$/, 'VERSION must be MAJOR.MINOR.PATCH');
 
 // --- number and time formatting ---
 {

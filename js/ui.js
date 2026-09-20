@@ -22,6 +22,7 @@ import {
   unlockEta,
 } from './state.js';
 import { formatCount, formatEta } from './format.js';
+import { VERSION } from './version.js';
 
 const elements = {};
 
@@ -368,6 +369,7 @@ export function hideTilePanel() {
 }
 
 export function initMenu({ onRestart, onRefresh, onExport, onImport, onShopBuy, settings, onSettingChange }) {
+  document.getElementById('game-version').textContent = `Version ${VERSION}`;
   elements.menuBtn = document.getElementById('menu-btn');
   elements.menuOverlay = document.getElementById('menu-overlay');
   elements.menuMain = document.getElementById('menu-main');
