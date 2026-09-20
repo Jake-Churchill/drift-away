@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Drift Away — Batch 1 Feel Prototype (scratch)</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; overflow: hidden; font-family: system-ui, -apple-system, sans-serif; background: #0e2f42; color: #f4ead2; }
+    #game-canvas { display: block; width: 100vw; height: 100vh; }
+    .panel { position: fixed; background: rgba(16, 38, 58, 0.92); border-radius: 8px; padding: 10px 14px; font-size: 12.5px; line-height: 1.45; }
+
+    /* ---- HUD: "before" is the game's current bar; "after" adds a rate line under each count ---- */
+    #hud { top: 12px; left: 50%; transform: translateX(-50%); display: flex; gap: 18px; padding: 8px 18px; border-radius: 8px; line-height: 1; font-size: 16px; }
+    #hud .cell { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; }
+    #hud .top { display: flex; gap: 6px; align-items: center; white-space: nowrap; }
+    #hud .num { font-variant-numeric: tabular-nums; transition: color 0.35s; }
+    #hud .num.gain { color: #8fe0a0; transition: none; }
+    #hud .num.spend { color: #ff9a86; transition: none; }
+    #hud .rate { font-size: 11px; opacity: 0.8; font-variant-numeric: tabular-nums; display: none; white-space: nowrap; }
+    body.rate-on #hud .rate { display: block; }
+    body.rate-on #hud .cell { cursor: help; }
+    #hud .rate small { color: #d9b545; margin-left: 3px; }
+
+    #eta { top: 62px; left: 50%; transform: translateX(-50%); display: none; min-width: 260px; text-align: center; cursor: pointer; padding: 6px 14px; }
+    body.eta-on #eta { display: block; }
+    #eta .bar { height: 4px; border-radius: 2px; background: rgba(244, 234, 210, 0.18); margin-top: 5px; overflow: hidden; }
+    #eta .bar i { display: block; height: 100%; width: 0; background: #d9b545; transition: width 0.3s; }
+    #eta b { color: #d9b545; }
+
+    #tip { display: none; pointer-events: none; z-index: 5; max-width: 250px; }
+    #card { bottom: 14px; left: 50%; transform: translateX(-50%); min-width: 250px; text-align: center; display: none; }
+    #card h4 { margin: 0 0 4px; font-size: 14px; }
+    #card p { margin: 2px 0; opacity: 0.9; }
+    #card .accent { color: #d9b545; }
+
+    /* ---- board pills ---- */
+    #pills { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
+    .pill { position: absolute; transform: translate(-50%, -50%); font-size: 10.5px; padding: 1px 6px; border-radius: 9px; white-space: nowrap; font-weight: 650; display: none; }
+    .pill.next { font-size: 12px; padding: 3px 9px; box-shadow: 0 0 0 2px rgba(217, 181, 69, 0.55); }
+    body.tint-on .pill { display: block; }
+    .pill.ready { background: #d9b545; color: #10263a; }
+    .pill.wait { background: rgba(16, 38, 58, 0.88); color: #a9c9d6; border: 1px solid rgba(169, 201, 214, 0.45); }
+
+    /* ---- controls ---- */
+    #controls { top: 12px; left: 12px; width: 300px; max-height: calc(100vh - 24px); overflow-y: auto; }
+    #controls h3 { margin: 0 0 6px; font-size: 13px; }
+    .item { display: block; padding: 5px 0; border-top: 1px solid rgba(244, 234, 210, 0.12); cursor: pointer; }
+    .item input { margin-right: 6px; vertical-align: middle; }
+    .item small { display: block; opacity: 0.7; margin: 1px 0 0 22px; }
+    .row { display: flex; gap: 5px; flex-wrap: wrap; margin: 6px 0; align-items: center; }
+    button { font: inherit; color: #f4ead2; background: #2b5d7c; border: 1px solid #4b86aa; border-radius: 6px; padding: 3px 9px; cursor: pointer; }
+    button:hover { background: #3a7397; }
+    input[type=range] { width: 120px; vertical-align: middle; }
+    .particle { position: fixed; width: 6px; height: 6px; border-radius: 50%; background: #d9b545; pointer-events: none; transition: transform 0.5s ease-out, opacity 0.5s; z-index: 6; }
+  </style>
+</head>
+<body>
+  <canvas id="game-canvas"></canvas>
+
+  <div id="hud" class="panel"></div>
+  <div id="eta" class="panel"></div>
+  <div id="pills"></div>
+  <div id="tip" class="panel"></div>
+  <div id="card" class="panel"></div>
+
+  <div id="controls" class="panel">
+    <h3>Batch 1 — each item is one proposed change</h3>
+    <div class="row"><button id="all-on">All after</button><button id="all-off">All before</button></div>
+    <label class="item"><input type="checkbox" id="t-impact" checked><b>1. Unlock / level-up impact</b>
+      <small>Frame hold, squash-and-stretch rise, ripple, sparkles, screen kick, and a rising chime. One intensity value scales all of it.</small></label>
+    <label class="item"><input type="checkbox" id="t-rate" checked><b>2. Rate readout</b>
+      <small>Per-second rate under each count; hover for the booster breakdown; click a tile for its share.</small></label>
+    <label class="item"><input type="checkbox" id="t-odo" checked><b>3. Odometer counters</b>
+      <small>Counts glide to new values and flash on big changes; K / M / B suffixes.</small></label>
+    <label class="item"><input type="checkbox" id="t-eta" checked><b>4. Next-unlock timer</b>
+      <small>Which tile comes next and when. Click it to fly the camera there.</small></label>
+    <label class="item"><input type="checkbox" id="t-tint" checked><b>5. Board tint</b>
+      <small>Ready tiles glow gold with a tick; the rest show progress and time left.</small></label>
+
+    <div class="row"><b style="min-width:70px;opacity:.75">Try it</b>
+      <button id="do-unlock">Unlock next tile</button>
+      <button id="do-level">Level up a tile</button>
+    </div>
+    <div class="row"><b style="min-width:70px;opacity:.75">Numbers</b>
+      <button id="do-gain">+500 each</button>
+      <button id="do-spend">Spend 40%</button>
+      <button id="do-away">Away 3 h</button>
+    </div>
+    <div class="row"><b style="min-width:70px;opacity:.75">Intensity</b>
+      <input type="range" id="intensity" min="0" max="1" step="0.05" value="0.5"><span id="intensity-val">0.50</span>
+    </div>
+    <div class="row"><b style="min-width:70px;opacity:.75">Feels like</b>
+      <button data-int="0.2">tile #1</button><button data-int="0.6">tile #30</button><button data-int="1">zone reveal</button>
+    </div>
+    <div class="row"><button id="reset-view">Reset camera</button></div>
+  </div>
+
+  <script type="importmap">
+  { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.182.0/build/three.module.js" } }
+  </script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { buildScene } from './js/scene.js';
+    import { TILES } from './js/tiles.js';
+    import {
+      RESOURCES, createInitialState, advance, unlockTile, levelUpTile, levelUpCost,
+      isEligible, isDiscovered, getLevel, levelMultiplier, effectiveRate, effectiveTileRate, MAX_LEVEL,
+    } from './js/state.js';
+    import { updateCloudField, renderCloudField } from './js/clouds.js';
+    import { playUnlockSound, playLevelUpSound } from './js/sound.js';
+
+    const canvas = document.getElementById('game-canvas');
+    const { renderer, scene, camera, resize, waterUniforms, foamMesh, tileObjects, cameraPositions, cloudField } = buildScene(canvas);
+    window.addEventListener('resize', () => resize(window.innerWidth, window.innerHeight));
+    resize(window.innerWidth, window.innerHeight);
+
+    const $ = (id) => document.getElementById(id);
+    const ICON = { fish: '🐟', kelp: '🌿', driftwood: '🪵', crops: '🌾' };
+    const NAME = { fish: 'Fish', kelp: 'Kelp', driftwood: 'Driftwood', crops: 'Crops' };
+
+    // ------------------------------------------------------------------ mid-game state on the real economy
+    const state = createInitialState();
+    for (const r of RESOURCES) { state.resources[r] = 1e6; state.lifetime[r] = 1e6; }
+    for (let i = 0; i < 17; i++) {
+      const next = TILES.find((t) => t.zone === 'zone1' && !state.unlocked.includes(t.id) && isEligible(t, state));
+      if (!next) break;
+      unlockTile(state, next);
+    }
+    state.unlocked.forEach((id, i) => { if (i % 3 === 1) state.levels[id] = 2; });
+    state.resources = { fish: 45, kelp: 25, driftwood: 70, crops: 30 };
+    state.lifetime = { fish: 900, kelp: 500, driftwood: 1200, crops: 600 };
+    state.gold = 12;
+
+    function applyTiles() {
+      for (const tile of TILES) {
+        const o = tileObjects.get(tile.id);
+        const unlocked = state.unlocked.includes(tile.id);
+        o.raftMesh.visible = unlocked;
+        o.markerMesh.visible = !unlocked && isDiscovered(tile, state);
+        const level = getLevel(state, tile.id);
+        for (const lvl of [1, 2, 3]) {
+          o.propGroups[lvl].visible = lvl === level;
+          if (o.trimMeshes) o.trimMeshes[lvl].visible = lvl === level;
+        }
+      }
+    }
+    applyTiles();
+
+    // ------------------------------------------------------------------ rates and timers (would live in state.js)
+    function rateInfo(res) {
+      let base = 0, boost = 0;
+      const boosters = [];
+      for (const t of TILES) {
+        if (!state.unlocked.includes(t.id)) continue;
+        const m = levelMultiplier(getLevel(state, t.id));
+        if (t.kind === 'producer' && t.produces === res) base += t.rate * m;
+        if (t.kind === 'booster') for (const b of t.boosts) if (b.resource === res) { boost += b.percent * m; boosters.push(`${t.name} +${Math.round(b.percent * m)}%`); }
+      }
+      const prestige = 10 * (state.prestige.upgrades[res] || 0);
+      return { base, boost, prestige, boosters, total: effectiveRate(res, state.unlocked, state.levels, state.prestige.upgrades) };
+    }
+
+    function etaFor(tile) {
+      const need = [];
+      if (tile.unlock.type === 'cost') for (const [r, a] of Object.entries(tile.unlock.cost)) need.push([r, a, state.resources[r]]);
+      else need.push([tile.unlock.resource, tile.unlock.target, state.lifetime[tile.unlock.resource]]);
+      let secs = 0, frac = 1, blockedBy = null;
+      for (const [r, amount, have] of need) {
+        frac = Math.min(frac, Math.min(1, have / amount));
+        if (have >= amount) continue;
+        const rate = effectiveRate(r, state.unlocked, state.levels, state.prestige.upgrades);
+        if (rate <= 0) blockedBy = r;
+        secs = Math.max(secs, rate > 0 ? (amount - have) / rate : Infinity);
+      }
+      return { secs, frac, blockedBy };
+    }
+
+    const fmtTime = (s) => {
+      if (!isFinite(s)) return '—';
+      s = Math.ceil(s);
+      if (s < 60) return `${s}s`;
+      if (s < 3600) return `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`;
+      return `${Math.floor(s / 3600)}h ${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}m`;
+    };
+    function fmtNum(n, suffixes) {
+      if (!suffixes) return Math.floor(n).toLocaleString();
+      if (n < 1e4) return Math.floor(n).toLocaleString();
+      for (const [limit, sfx] of [[1e12, 'T'], [1e9, 'B'], [1e6, 'M'], [1e3, 'K']]) {
+        if (n >= limit) { const v = n / limit; return (v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2)) + sfx; }
+      }
+      return String(Math.floor(n));
+    }
+
+    // ------------------------------------------------------------------ HUD
+    const hud = $('hud');
+    hud.innerHTML = RESOURCES.map((r) => `<div class="cell" data-res="${r}"><div class="top"><span>${ICON[r]}</span><span class="num"></span></div><div class="rate"></div></div>`).join('')
+      + `<div class="cell"><div class="top"><span>🪙</span><span class="num gold"></span></div><div class="rate"></div></div>`;
+    const cells = Object.fromEntries(RESOURCES.map((r) => [r, hud.querySelector(`[data-res="${r}"]`)]));
+    const goldNum = hud.querySelector('.gold');
+    const shown = Object.fromEntries(RESOURCES.map((r) => [r, state.resources[r]]));
+    const prev = { ...state.resources };
+    const flashUntil = {};
+
+    const tip = $('tip');
+    hud.addEventListener('mousemove', (e) => {
+      const cell = e.target.closest('[data-res]');
+      if (!cell || !document.body.classList.contains('rate-on')) { tip.style.display = 'none'; return; }
+      const r = cell.dataset.res, i = rateInfo(r);
+      tip.innerHTML = `<b>${NAME[r]}</b> ${i.total.toFixed(2)}/s<br>Producers ${i.base.toFixed(2)}/s`
+        + (i.boost ? `<br>Boosters +${Math.round(i.boost)}%<br><span style="opacity:.75">${i.boosters.join('<br>')}</span>` : '<br><span style="opacity:.75">No boosters yet</span>')
+        + (i.prestige ? `<br>Prestige +${i.prestige}%` : '');
+      tip.style.display = 'block';
+      tip.style.left = `${Math.min(window.innerWidth - 270, e.clientX + 14)}px`;
+      tip.style.top = `${e.clientY + 18}px`;
+    });
+    hud.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
+
+    function updateHud(dt) {
+      const odo = $('t-odo').checked;
+      const rateOn = $('t-rate').checked;
+      for (const r of RESOURCES) {
+        const actual = state.resources[r];
+        const rate = effectiveRate(r, state.unlocked, state.levels, state.prestige.upgrades);
+        const step = actual - prev[r];
+        prev[r] = actual;
+        const num = cells[r].querySelector('.num');
+        if (odo) {
+          if (step < -0.5) { num.className = 'num spend'; flashUntil[r] = performance.now() + 450; }
+          else if (step > rate * Math.max(dt, 0.02) * 3 + 5) { num.className = 'num gain'; flashUntil[r] = performance.now() + 450; }
+          else if (flashUntil[r] && performance.now() > flashUntil[r]) { num.className = 'num'; flashUntil[r] = 0; }
+          shown[r] += (actual - shown[r]) * (1 - Math.exp(-dt * 9));
+          if (Math.abs(actual - shown[r]) < 0.5) shown[r] = actual;
+        } else { shown[r] = actual; num.className = 'num'; }
+        num.textContent = fmtNum(shown[r], odo);
+        if (rateOn) {
+          const i = rateInfo(r);
+          cells[r].querySelector('.rate').innerHTML = `+${i.total.toFixed(1)}/s` + (i.boost ? `<small>×${(1 + i.boost / 100).toFixed(2)}</small>` : '');
+        }
+      }
+      goldNum.textContent = state.gold;
+    }
+
+    // ------------------------------------------------------------------ next-unlock timer and board pills
+    const pills = new Map();
+    let nextTarget = null;
+    function updateEtaAndPills() {
+      const entries = [];
+      for (const tile of TILES) {
+        if (state.unlocked.includes(tile.id) || !isDiscovered(tile, state)) continue;
+        entries.push({ tile, e: etaFor(tile) });
+      }
+      let best = null;
+      for (const x of entries) if (!best || x.e.secs < best.e.secs || (x.e.secs === best.e.secs && x.e.frac > best.e.frac)) best = x;
+
+      const wanted = new Set(entries.map((x) => x.tile.id));
+      for (const { tile, e } of entries) {
+        let pill = pills.get(tile.id);
+        if (!pill) { pill = document.createElement('div'); $('pills').appendChild(pill); pills.set(tile.id, pill); }
+        const ready = e.secs === 0, isNext = best.tile.id === tile.id;
+        pill.className = `pill ${ready ? 'ready' : 'wait'}${isNext ? ' next' : ''}`;
+        const needs = e.blockedBy ? `needs ${ICON[e.blockedBy]}` : fmtTime(e.secs);
+        pill.textContent = isNext ? (ready ? '✓ Next' : `▸ ${needs}`) : ready ? '✓' : `${Math.floor(e.frac * 100)}%`;
+        const ow = tileObjects.get(tile.id).markerMesh.userData.outlineMaterial;
+        if ($('t-tint').checked) { ow.color.set(ready ? 0xffd23d : 0x7fa8c4); ow.opacity = ready ? 0.95 : 0.5; }
+        else { ow.color.set(0xbcd8e8); ow.opacity = 0.35; }
+      }
+      for (const [id, pill] of pills) if (!wanted.has(id)) { pill.remove(); pills.delete(id); }
+      nextTarget = best;
+
+      const eta = $('eta');
+      if (best) {
+        const ready = best.e.secs === 0;
+        const readyCount = entries.filter((x) => x.e.secs === 0).length;
+        const when = ready ? 'ready now' + (readyCount > 1 ? ` (+${readyCount - 1} more)` : '')
+          : best.e.blockedBy ? `needs ${ICON[best.e.blockedBy]} income` : 'in ' + fmtTime(best.e.secs);
+        eta.innerHTML = `Next: <b>${best.tile.name}</b> — ${when}<div class="bar"><i style="width:${Math.floor(best.e.frac * 100)}%"></i></div>`;
+      } else eta.textContent = 'Every discovered tile is unlocked';
+    }
+    function placePills() {
+      const v = new THREE.Vector3();
+      for (const [id, pill] of pills) {
+        const m = tileObjects.get(id).markerMesh;
+        v.copy(m.position).project(camera);
+        pill.style.left = `${(v.x * 0.5 + 0.5) * window.innerWidth}px`;
+        pill.style.top = `${(-v.y * 0.5 + 0.5) * window.innerHeight - 4}px`;
+      }
+    }
+
+    // ------------------------------------------------------------------ camera: focus + kick
+    const OFFSET = new THREE.Vector3(14, 16, 14);
+    const home = cameraPositions.get('zone1').target.clone();
+    let focus = home.clone(), focusZoom = 1, curTarget = home.clone(), curZoom = 1;
+    $('eta').addEventListener('click', () => { if (nextTarget) { focus.copy(tileObjects.get(nextTarget.tile.id).markerMesh.position); focusZoom = 1.7; } });
+    $('reset-view').addEventListener('click', () => { focus.copy(home); focusZoom = 1; });
+    let kick = null;
+    const camBase = new THREE.Vector3();
+
+    // ------------------------------------------------------------------ impact pass
+    let clock = 0, frozen = 0;                         // seconds; the clock stops during a frame hold
+    const fx = [];                                     // { update(t): boolean keep }
+    const dummy = new THREE.Object3D();
+    const intensityOf = () => Number($('intensity').value);
+
+    const dev = (t) => -Math.exp(-5 * t) * Math.cos(11 * t);   // -1 at t=0, small overshoot, settles by t~1
+    function ringFx(pos, intensity, delay = 0) {
+      const mesh = new THREE.Mesh(new THREE.RingGeometry(0.85, 1.0, 64), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false }));
+      mesh.rotation.x = -Math.PI / 2; mesh.position.set(pos.x, 0.05, pos.z);
+      scene.add(mesh);
+      const t0 = clock + delay, life = 0.95, reach = 2.1 + 1.6 * intensity;
+      fx.push({ update() {
+        const t = (clock - t0) / life;
+        if (t < 0) return true;
+        if (t >= 1) { scene.remove(mesh); mesh.geometry.dispose(); mesh.material.dispose(); return false; }
+        const e = 1 - Math.pow(1 - t, 3);
+        const s = 1 + (reach - 1) * e;
+        mesh.scale.set(s, s, s); mesh.material.opacity = (1 - t) * 0.75;
+        return true;
+      } });
+    }
+    function sparkFx(pos, intensity, height) {
+      const n = Math.round(10 + 34 * intensity);
+      const positions = new Float32Array(n * 3), vel = [];
+      for (let i = 0; i < n; i++) {
+        const a = Math.random() * Math.PI * 2, sp = 0.6 + Math.random() * (1.4 + 1.6 * intensity);
+        positions.set([pos.x, height, pos.z], i * 3);
+        vel.push([Math.cos(a) * sp, 2.2 + Math.random() * (2 + 2 * intensity), Math.sin(a) * sp]);
+      }
+      const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      const mat = new THREE.PointsMaterial({ color: 0xffd23d, size: 5, sizeAttenuation: false, transparent: true, depthWrite: false });
+      const pts = new THREE.Points(geo, mat); pts.frustumCulled = false; scene.add(pts);
+      const t0 = clock;
+      fx.push({ update() {
+        const t = clock - t0;
+        if (t > 1.1) { scene.remove(pts); geo.dispose(); mat.dispose(); return false; }
+        const p = geo.attributes.position;
+        for (let i = 0; i < n; i++) p.setXYZ(i, pos.x + vel[i][0] * t, height + vel[i][1] * t - 4.2 * t * t, pos.z + vel[i][2] * t);
+        p.needsUpdate = true; mat.opacity = Math.min(1, (1.1 - t) * 1.4);
+        return true;
+      } });
+    }
+    function riseFx(tile, intensity) {
+      const raft = tileObjects.get(tile.id).raftMesh;
+      const t0 = clock, A = 0.3 + 0.35 * intensity, drop = 0.35 + 0.6 * intensity;
+      fx.push({ update() {
+        const t = (clock - t0) / 1.0;
+        if (t >= 1) { raft.scale.set(1, 1, 1); raft.position.y = 0; return false; }
+        const sy = 1 + A * dev(t), sxz = 1 / Math.sqrt(sy);
+        raft.scale.set(sxz, sy, sxz);
+        raft.position.y = -drop * Math.pow(1 - Math.min(1, t / 0.55), 2);
+        return true;
+      } });
+    }
+    function popFx(tile, intensity) {
+      const group = tileObjects.get(tile.id).propGroups[getLevel(state, tile.id)];
+      const base = group.scale.clone(), t0 = clock, A = 0.2 + 0.25 * intensity;
+      fx.push({ update() {
+        const t = (clock - t0) / 0.75;
+        if (t >= 1) { group.scale.copy(base); return false; }
+        const sy = 1 + A * dev(t), sxz = 1 / Math.sqrt(sy);
+        group.scale.set(base.x * sxz, base.y * sy, base.z * sxz);
+        return true;
+      } });
+    }
+
+    let audio = null;
+    function tone(freq, when, dur, type, gain) {
+      const o = audio.createOscillator(), g = audio.createGain();
+      o.type = type; o.frequency.setValueAtTime(freq, when);
+      g.gain.setValueAtTime(0.0001, when); g.gain.exponentialRampToValueAtTime(gain, when + 0.015); g.gain.exponentialRampToValueAtTime(0.0001, when + dur);
+      o.connect(g).connect(audio.destination); o.start(when); o.stop(when + dur + 0.05);
+    }
+    function chime(intensity, up) {
+      audio ||= new (window.AudioContext || window.webkitAudioContext)();
+      if (audio.state === 'suspended') audio.resume();
+      const t = audio.currentTime + 0.005, shift = Math.round(intensity * 5);
+      const hz = (semi) => 392 * Math.pow(2, (semi + shift) / 12);
+      const notes = up ? [0, 7] : intensity > 0.6 ? [0, 4, 7, 12] : [0, 4, 7];
+      notes.forEach((s, i) => tone(hz(s), t + i * 0.07, 0.38, 'triangle', 0.12));
+      if (!up && intensity > 0.3) { const o = audio.createOscillator(), g = audio.createGain(); o.frequency.setValueAtTime(110, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.22); g.gain.setValueAtTime(0.22 * intensity, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.26); o.connect(g).connect(audio.destination); o.start(t); o.stop(t + 0.3); }
+    }
+    function oldBurst() {
+      for (let i = 0; i < 10; i++) {
+        const a = ((i + Math.random() * 0.6) / 10) * Math.PI * 2, d = 40 + Math.random() * 30;
+        const p = document.createElement('div'); p.className = 'particle';
+        p.style.left = `${window.innerWidth / 2}px`; p.style.top = `${window.innerHeight / 2}px`; document.body.appendChild(p);
+        requestAnimationFrame(() => { p.style.transform = `translate(${Math.cos(a) * d}px, ${Math.sin(a) * d}px)`; p.style.opacity = '0'; });
+        setTimeout(() => p.remove(), 550);
+      }
+    }
+    function impact(tile, kind) {
+      if (!$('t-impact').checked) { oldBurst(); (kind === 'unlock' ? playUnlockSound : playLevelUpSound)(); return; }
+      const I = intensityOf(), pos = tileObjects.get(tile.id).raftMesh.position;
+      frozen = 0.03 + 0.05 * I;
+      kick = { t0: clock, amp: 0.05 + 0.17 * I, ang: Math.random() * Math.PI * 2 };
+      ringFx(pos, I);
+      if (I > 0.55) ringFx(pos, I, 0.14);
+      if (kind === 'unlock') { riseFx(tile, I); sparkFx(pos, I, 0.6); chime(I, false); }
+      else { popFx(tile, I); sparkFx(pos, I * 0.6, 1.0); chime(I, true); }
+    }
+
+    // ------------------------------------------------------------------ demo buttons
+    function ensureAffordable(tile) {
+      if (tile.unlock.type === 'cost') for (const [r, a] of Object.entries(tile.unlock.cost)) state.resources[r] = Math.max(state.resources[r], a);
+      else state.lifetime[tile.unlock.resource] = Math.max(state.lifetime[tile.unlock.resource], tile.unlock.target);
+    }
+    $('do-unlock').addEventListener('click', () => {
+      const tile = (nextTarget && nextTarget.tile) || null;
+      if (!tile) return;
+      ensureAffordable(tile);
+      if (unlockTile(state, tile)) { applyTiles(); impact(tile, 'unlock'); }
+    });
+    $('do-level').addEventListener('click', () => {
+      const cands = state.unlocked.map((id) => TILES.find((t) => t.id === id)).filter((t) => getLevel(state, t.id) < MAX_LEVEL);
+      const tile = cands[Math.floor(Math.random() * cands.length)];
+      if (!tile) return;
+      for (const [r, a] of Object.entries(levelUpCost(tile, getLevel(state, tile.id) + 1))) state.resources[r] = Math.max(state.resources[r], a);
+      if (levelUpTile(state, tile)) { applyTiles(); impact(tile, 'level'); }
+    });
+    $('do-gain').addEventListener('click', () => { for (const r of RESOURCES) state.resources[r] += 500; });
+    $('do-spend').addEventListener('click', () => { for (const r of RESOURCES) state.resources[r] *= 0.6; });
+    $('do-away').addEventListener('click', () => { advance(state, 3 * 3600); });
+    $('intensity').addEventListener('input', (e) => { $('intensity-val').textContent = Number(e.target.value).toFixed(2); });
+    document.querySelectorAll('[data-int]').forEach((b) => b.addEventListener('click', () => { $('intensity').value = b.dataset.int; $('intensity-val').textContent = Number(b.dataset.int).toFixed(2); }));
+
+    // ------------------------------------------------------------------ tile card on click
+    const raycaster = new THREE.Raycaster(), pointer = new THREE.Vector2();
+    canvas.addEventListener('click', (ev) => {
+      pointer.set((ev.clientX / window.innerWidth) * 2 - 1, -(ev.clientY / window.innerHeight) * 2 + 1);
+      raycaster.setFromCamera(pointer, camera);
+      const hits = raycaster.intersectObjects([...tileObjects.values()].flatMap((o) => [o.raftMesh, o.markerMesh]).filter((m) => m.visible), true);
+      const card = $('card');
+      if (!hits.length) { card.style.display = 'none'; return; }
+      let obj = hits[0].object; while (obj && !obj.userData.tileId) obj = obj.parent;
+      const tile = TILES.find((t) => t.id === obj?.userData.tileId);
+      if (!tile) return;
+      const unlocked = state.unlocked.includes(tile.id);
+      const rateOn = $('t-rate').checked;
+      let html = `<h4>${tile.name}${unlocked ? ` · Level ${getLevel(state, tile.id)}` : ''}</h4>`;
+      if (unlocked && tile.kind === 'producer') {
+        const mine = effectiveTileRate(tile, state.unlocked, state.levels, state.prestige.upgrades), total = rateInfo(tile.produces).total;
+        html += `<p>Makes ${ICON[tile.produces]} <b>${mine.toFixed(2)}/s</b></p>` + (rateOn ? `<p class="accent">${Math.round((mine / total) * 100)}% of your ${NAME[tile.produces].toLowerCase()}</p>` : '');
+      } else if (unlocked) {
+        html += tile.boosts.map((b) => {
+          const i = rateInfo(b.resource), m = levelMultiplier(getLevel(state, tile.id));
+          const gain = (i.base * ((b.percent * m) / 100)) * (1 + i.prestige / 100);
+          return `<p>+${Math.round(b.percent * m)}% ${ICON[b.resource]}` + (rateOn ? ` <span class="accent">= +${gain.toFixed(2)}/s right now</span>` : '') + '</p>';
+        }).join('');
+      } else {
+        const e = etaFor(tile);
+        html += `<p>${e.secs === 0 ? '<b class="accent">Ready to unlock</b>' : e.blockedBy ? `Needs ${ICON[e.blockedBy]} income first (${Math.floor(e.frac * 100)}%)` : `Ready in <b>${fmtTime(e.secs)}</b> (${Math.floor(e.frac * 100)}%)`}</p>`;
+      }
+      card.innerHTML = html; card.style.display = 'block';
+    });
+
+    // ------------------------------------------------------------------ toggles
+    const toggles = { 't-rate': 'rate-on', 't-eta': 'eta-on', 't-tint': 'tint-on' };
+    for (const [id, cls] of Object.entries(toggles)) { $(id).addEventListener('change', (e) => document.body.classList.toggle(cls, e.target.checked)); document.body.classList.toggle(cls, $(id).checked); }
+    const setAll = (on) => { for (const id of ['t-impact', 't-rate', 't-odo', 't-eta', 't-tint']) { $(id).checked = on; $(id).dispatchEvent(new Event('change')); } };
+    $('all-on').addEventListener('click', () => setAll(true));
+    $('all-off').addEventListener('click', () => setAll(false));
+
+    // ------------------------------------------------------------------ loop
+    let last = performance.now();
+    function frame(nowMs) {
+      const realDt = Math.max(0, Math.min(0.1, (nowMs - last) / 1000)); last = nowMs;
+      let dt = realDt;
+      if (frozen > 0) { frozen -= realDt; dt = 0; }
+      clock += dt;
+      if (dt > 0) advance(state, dt);
+      waterUniforms.uTime.value = clock;
+      curTarget.lerp(focus, 1 - Math.exp(-realDt * 4)); curZoom += (focusZoom - curZoom) * (1 - Math.exp(-realDt * 4));
+
+      for (let i = fx.length - 1; i >= 0; i--) if (!fx[i].update()) fx.splice(i, 1);
+
+      camBase.copy(curTarget).add(OFFSET);
+      let kx = 0, kz = 0;
+      if (kick) {
+        const t = clock - kick.t0;
+        if (t > 0.5) kick = null; else { const a = kick.amp * Math.exp(-t * 9) * Math.cos(t * 42); kx = Math.cos(kick.ang) * a; kz = Math.sin(kick.ang) * a; }
+      }
+      camera.position.set(camBase.x + kx, camBase.y, camBase.z + kz);
+      camera.zoom = curZoom; camera.updateProjectionMatrix(); camera.lookAt(curTarget.x + kx, curTarget.y, curTarget.z + kz);
+
+      for (let i = 0; i < TILES.length; i++) {
+        const raft = tileObjects.get(TILES[i].id).raftMesh;
+        const swell = raft.visible ? 1 + 0.025 * Math.sin(clock * 1.3 + i * 2.4) : 0;
+        dummy.position.set(raft.position.x, 0.012, raft.position.z); dummy.scale.set(swell, 1, swell); dummy.updateMatrix();
+        foamMesh.setMatrixAt(i, dummy.matrix);
+      }
+      foamMesh.instanceMatrix.needsUpdate = true;
+      foamMesh.material.opacity = 0.5 + 0.12 * Math.sin(clock * 0.9);
+
+      updateCloudField(cloudField, state.unlocked, clock * 1000);
+      updateHud(realDt);
+      updateEtaAndPills();
+      renderer.render(scene, camera);
+      renderCloudField(renderer, cloudField, camera);
+      placePills();
+    }
+    function loop(nowMs) { frame(nowMs); requestAnimationFrame(loop); }
+    requestAnimationFrame(loop);
+    let simNow = 0;
+    const step = (n) => { for (let i = 0; i < n; i++) { simNow = Math.max(simNow, performance.now()) + 16.7; frame(simNow); } };
+    window.__f = { step, state, impact, setAll, tileObjects, camera, frame, getClock: () => clock, getFrozen: () => frozen, freeze: (s) => { frozen = s; } };
+  </script>
+</body>
+</html>

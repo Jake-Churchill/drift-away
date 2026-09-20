@@ -145,7 +145,8 @@ export function buildCloudField({ zoneIds, zoneTiles, landRadius, viewHalfHeight
       fog: false,
     });
     // Overlapping puffs of identical brightness melt into a flat wash; varying them keeps the billows readable.
-    material.color.setScalar(bright ? 1 : 0.6 + rnd() * 0.4);
+    const shade = bright ? 1 : 0.6 + rnd() * 0.4;
+    material.color.setScalar(shade);
     const sprite = new THREE.Sprite(material);
     sprite.scale.set(width * (rnd() < 0.5 ? -1 : 1), width * 0.625, 1);
     scene.add(sprite);
@@ -153,6 +154,7 @@ export function buildCloudField({ zoneIds, zoneTiles, landRadius, viewHalfHeight
     const ownRho = landRadius + SEA_GAP + VISIBLE_HALF * width;
     puffs.push({
       sprite,
+      shade,
       x,
       z,
       y: 1 + rnd() * 0.6,
@@ -199,10 +201,17 @@ export function buildCloudField({ zoneIds, zoneTiles, landRadius, viewHalfHeight
   }
 
   return {
+    tint: new THREE.Color(0xffffff),
     scene, target, compositeScene, compositeCamera, puffs, zoneIds, zoneTiles,
     lift, compX, compZ,
     openZones: null,
   };
+}
+
+// Recolours the whole field (the shop's looks tint the clouds), keeping each puff's own shade.
+export function setCloudTint(field, hex) {
+  field.tint.setHex(hex);
+  for (const p of field.puffs) p.sprite.material.color.copy(field.tint).multiplyScalar(p.shade);
 }
 
 export function resizeCloudField(renderer, field) {

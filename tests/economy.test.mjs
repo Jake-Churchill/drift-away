@@ -2,28 +2,47 @@ import assert from 'node:assert/strict';
 import { TILES, TILE_NEIGHBORS } from '../js/tiles.js';
 import {
   ACHIEVEMENTS,
+  advance,
   applyOfflineProgress,
+  ballastCost,
+  boosterGain,
+  boosterIsIdle,
+  buyHeadStart,
   buyPrestigeUpgrade,
+  buyShopItem,
   checkAchievements,
   completionCount,
   createInitialState,
+  decodeSave,
   doPrestige,
   effectiveRate,
   effectiveTileRate,
+  encodeSave,
   getLevel,
+  HEAD_START_MAX_LEVEL,
+  headStartCost,
   isDiscovered,
   isEligible,
   isFullyComplete,
   isLevelUpEligible,
   levelUpCost,
+  levelUpIntensity,
   levelUpTile,
   loadState,
+  lockedTileStatuses,
   MAX_LEVEL,
+  nextUnlock,
+  offlineCapSeconds,
+  offlineRate,
   prestigeTokensEarned,
   prestigeUpgradeCost,
+  rateBreakdown,
   SAVE_KEY,
+  shopCatalog,
   tick,
   TOTAL_TILE_COUNT,
+  unlockEta,
+  unlockIntensity,
   unlockTile,
 } from '../js/state.js';
 
@@ -164,8 +183,8 @@ console.log('geometry-derived adjacency tests passed');
   const state = createInitialState();
   assert.deepEqual(
     state.prestige,
-    { tokens: 0, upgrades: { fish: 0, kelp: 0, driftwood: 0, crops: 0 } },
-    'a fresh game starts with zero prestige tokens and no upgrades purchased'
+    { tokens: 0, upgrades: { fish: 0, kelp: 0, driftwood: 0, crops: 0 }, headStart: 0, count: 0 },
+    'a fresh game starts with zero prestige tokens, no upgrades purchased, and no prestiges done'
   );
 }
 
@@ -326,6 +345,7 @@ console.log('geometry-derived adjacency tests passed');
     lifetime: { fish: 0, kelp: 0, driftwood: 0, crops: 0 },
     levels: {},
     prestige: { tokens: 0, upgrades: { fish: 0, kelp: 0, driftwood: 0, crops: 0 } },
+    shop: createInitialState().shop,
     gold: 0,
     achievements: [],
   };
@@ -471,6 +491,7 @@ console.log('prestige store tests passed');
     lifetime: { fish: 0, kelp: 0, driftwood: 0, crops: 0 },
     levels: {},
     prestige: { tokens: 0, upgrades: { fish: 2, kelp: 0, driftwood: 0, crops: 0 } },
+    shop: createInitialState().shop,
     gold: 0,
     achievements: [],
   };
@@ -485,6 +506,7 @@ console.log('prestige store tests passed');
     lifetime: { fish: 0, kelp: 0, driftwood: 0, crops: 0 },
     levels: {},
     prestige: { tokens: 0, upgrades: { fish: 2, kelp: 0, driftwood: 0, crops: 0 } },
+    shop: createInitialState().shop,
     gold: 0,
     achievements: [],
   };
@@ -611,10 +633,10 @@ console.log('economy math tests passed');
 // --- ACHIEVEMENTS data integrity ---
 
 {
-  assert.equal(ACHIEVEMENTS.length, 10, 'expected exactly 10 achievements');
+  assert.equal(ACHIEVEMENTS.length, 27, 'expected exactly 27 achievements');
   assert.equal(
     new Set(ACHIEVEMENTS.map((a) => a.id)).size,
-    10,
+    27,
     'achievement ids must be unique'
   );
   for (const achievement of ACHIEVEMENTS) {
@@ -711,8 +733,10 @@ console.log('economy math tests passed');
   state.unlocked.push(nextTile.id);
   state.levels[nextTile.id] = MAX_LEVEL;
   const awarded = checkAchievements(state);
-  assert.deepEqual(awarded.map((a) => a.id), ['halfway-there'], 'half the tiles maxed earns halfway-there');
-  assert.equal(state.gold, goldBefore + 2, 'halfway-there pays 2 gold');
+  // The 36th unlocked tile also crosses the "Home Waters" tile-count milestone (2 gold).
+  assert.deepEqual(awarded.map((a) => a.id).sort(), ['halfway-there', 'tiles-36'], 'half the tiles maxed earns halfway-there');
+  assert.equal(awarded.find((a) => a.id === 'halfway-there').reward, 2, 'halfway-there pays 2 gold');
+  assert.equal(state.gold, goldBefore + 2 + 2);
 }
 
 {
@@ -746,11 +770,12 @@ console.log('achievement award tests passed');
 
   const result = doPrestige(state);
 
-  assert.equal(result.state.gold, 9, 'gold is permanent currency and survives prestige');
+  // Prestiging is itself an achievement now ("Second Voyage", 5 gold), earned the moment the new run starts.
+  assert.equal(result.state.gold, 9 + 5, 'gold is permanent currency and survives prestige, plus the voyage reward');
   assert.deepEqual(
     result.state.achievements,
-    ['first-steps', 'maxed-out'],
-    'already-earned achievements carry over unchanged'
+    ['first-steps', 'maxed-out', 'voyage-1'],
+    'already-earned achievements carry over unchanged, and the first voyage is added'
   );
   assert.notEqual(
     result.state.achievements,
@@ -844,14 +869,14 @@ console.log('achievement save migration tests passed');
 // --- zone-2 economy multiplier tests ---
 // Locks in the spec's mirrored-economy invariant: every zone-1 tile has a
 // zone-2 mirror 6 columns over (same row, family, kind) whose unlock cost is
-// 15x and whose production (rate / boost percent) is 4x. This documents the
-// currently-shipped numbers — it does not judge whether 15x/4x is the right
-// call (that's a separate, open balance question).
+// 90x and whose production (rate / boost percent) is 4x. The unlock cost was
+// 15x in the original design and was then multiplied by 6 after a simulated
+// run showed zone 2 finishing in about 2 minutes; this pins the shipped numbers.
 {
   const zone1Tiles = TILES.filter((t) => t.zone === 'zone1');
   const zone2Tiles = TILES.filter((t) => t.zone === 'zone2');
 
-  const UNLOCK_MULTIPLIER = 15;
+  const UNLOCK_MULTIPLIER = 90;
   const PRODUCTION_MULTIPLIER = 4;
 
   for (const t1 of zone1Tiles) {
@@ -921,7 +946,7 @@ console.log('achievement save migration tests passed');
   assert.equal(driftwoodStart.unlock.type, 'start', 'driftwood_start is the one true start tile');
   assert.deepEqual(
     frozenDriftwoodStart.unlock,
-    { type: 'cost', cost: { crops: 600 } },
+    { type: 'cost', cost: { crops: 3600 } },
     'frozen_driftwood_start has its own explicit unlock cost since it cannot mirror a start tile'
   );
   assert.equal(
@@ -1001,4 +1026,386 @@ console.log('achievement save migration tests passed');
   assert(bothZonesAwarded.some((a) => a.id === 'frozen-reach-complete'), 'frozen-reach-complete fires once every zone-2 tile is maxed');
 
   console.log('zone-2 achievement tests passed');
+}
+
+// --- save export / import ---
+{
+  const state = createInitialState();
+  state.resources.fish = 123.5;
+  state.lifetime.fish = 999;
+  state.unlocked.push('fish_start');
+  state.levels.fish_start = 2;
+  state.prestige.tokens = 3;
+  checkAchievements(state); // so the exported gold already includes what these tiles earn
+  assert(state.gold > 0, 'setup: some achievement gold is in the save');
+
+  const code = encodeSave(state);
+  assert.equal(typeof code, 'string');
+  assert(!/\s/.test(code), 'export code is one unbroken string, safe to paste');
+
+  const restored = decodeSave(code);
+  assert(restored, 'a code we exported decodes');
+  assert.equal(restored.resources.fish, 123.5);
+  assert.equal(restored.lifetime.fish, 999);
+  assert.deepEqual(restored.unlocked, state.unlocked);
+  assert.equal(restored.levels.fish_start, 2);
+  assert.equal(restored.gold, state.gold);
+  assert.deepEqual(restored.achievements, state.achievements);
+  assert.equal(restored.prestige.tokens, 3);
+  assert(Math.abs(restored.lastSaved - Date.now()) < 5000, 'export stamps the time so offline credit counts from the export');
+
+  assert(decodeSave('  \n' + code + '\n '), 'surrounding whitespace from copy/paste is tolerated');
+  assert(decodeSave('  ' + code.slice(0, 20) + '\n' + code.slice(20) + '  '), 'a code wrapped across lines still decodes');
+
+  for (const junk of ['', 'not base64 !!', btoa('not json'), btoa('{}'), btoa('{"resources":{},"lifetime":{}}'), btoa('null')]) {
+    assert.equal(decodeSave(junk), null, `rejects ${JSON.stringify(junk).slice(0, 30)}`);
+  }
+
+  // a save from an older version missing newer fields is filled in from the defaults
+  const old = decodeSave(btoa(JSON.stringify({ resources: { fish: 5 }, lifetime: { fish: 5 }, unlocked: ['driftwood_start'] })));
+  assert(old, 'an older, sparser save still imports');
+  assert.equal(old.resources.fish, 5);
+  assert.equal(old.resources.kelp, 0);
+  assert.deepEqual(old.prestige.upgrades, createInitialState().prestige.upgrades);
+
+  console.log('save export/import tests passed');
+}
+
+// --- advance: one rule for a running frame, a throttled tab, a sleeping laptop and a closed game ---
+{
+  const running = createInitialState();
+  assert.equal(advance(running, 1), null, 'a short gap is plain production, no away summary');
+  assert.equal(running.resources.driftwood, 0.5, '0.5/s for 1s at full rate');
+
+  const backgrounded = createInitialState();
+  assert.equal(advance(backgrounded, 30), null);
+  assert.equal(backgrounded.resources.driftwood, 15, 'a 30s hiccup is not penalised: full rate, uncapped by frame size');
+
+  const away = createInitialState();
+  const summary = advance(away, 100);
+  assert(summary, 'a gap of a minute or more is reported as time away');
+  assert.equal(summary.seconds, 100);
+  assert.equal(summary.gains.driftwood, 25, 'away time is the offline rate (50%)');
+  assert.equal(away.resources.driftwood, 25);
+
+  const capped = createInitialState();
+  assert.equal(advance(capped, 30 * 3600).seconds, 8 * 3600, 'away time is capped at 8 hours');
+
+  console.log('advance tests passed');
+}
+
+// --- rate breakdown, unlock timer, intensity ---
+{
+  const state = createInitialState();
+  const smokehouse = TILES.find((t) => t.id === 'booster_smokehouse');
+  const fishStart = TILES.find((t) => t.id === 'fish_start');
+  state.unlocked.push(fishStart.id, smokehouse.id);
+  state.levels[fishStart.id] = 2;
+  state.prestige.upgrades.fish = 2;
+
+  const fish = rateBreakdown(state, 'fish');
+  assert.equal(fish.base, fishStart.rate * 1.5, 'producer base is rate x level multiplier');
+  assert.equal(fish.boostPercent, smokehouse.boosts.find((b) => b.resource === 'fish').percent);
+  assert.deepEqual(fish.boosters.map((b) => b.name), [smokehouse.name]);
+  assert.equal(fish.prestigePercent, 20);
+  assert.equal(fish.total, effectiveRate('fish', state.unlocked, state.levels, state.prestige.upgrades), 'breakdown total matches effectiveRate');
+  assert.equal(rateBreakdown(state, 'kelp').boosters.length, 0, 'a booster that does not touch kelp is not listed under kelp');
+
+  const withBooster = effectiveRate('fish', state.unlocked, state.levels, state.prestige.upgrades);
+  const without = effectiveRate('fish', state.unlocked.filter((id) => id !== smokehouse.id), state.levels, state.prestige.upgrades);
+  assert(Math.abs(boosterGain(state, smokehouse, 'fish') - (withBooster - without)) < 1e-9, 'booster gain is exactly what removing it would cost');
+  assert.equal(boosterGain(state, smokehouse, 'kelp'), 0);
+
+  // unlock timer: crops_soil_barge costs 35 driftwood; the start tile makes 0.5 driftwood/s
+  const fresh = createInitialState();
+  const soil = TILES.find((t) => t.id === 'crops_soil_barge');
+  assert.deepEqual(soil.unlock.cost, { driftwood: 35 }, 'setup: the tile this test reasons about');
+  let eta = unlockEta(fresh, soil);
+  assert.equal(eta.fraction, 0);
+  assert.equal(eta.seconds, 35 / 0.5, 'seconds = shortfall / current rate');
+  fresh.resources.driftwood = 21;
+  eta = unlockEta(fresh, soil);
+  assert.equal(eta.fraction, 21 / 35);
+  assert.equal(eta.seconds, 14 / 0.5);
+  fresh.resources.driftwood = 35;
+  eta = unlockEta(fresh, soil);
+  assert.equal(eta.seconds, 0, 'nothing left to wait for');
+  assert.equal(eta.fraction, 1);
+
+  const noIncome = createInitialState();
+  const needsCrops = TILES.find((t) => t.unlock.type === 'cost' && 'crops' in t.unlock.cost);
+  noIncome.resources.crops = 0;
+  const blocked = unlockEta(noIncome, needsCrops);
+  assert.equal(blocked.seconds, Infinity, 'a resource with no producer never arrives');
+  assert.equal(blocked.blockedBy, 'crops');
+
+  // it agrees with isEligible for every tile the player can see
+  const mid = createInitialState();
+  for (const r of ['fish', 'kelp', 'driftwood', 'crops']) { mid.resources[r] = 80; mid.lifetime[r] = 150; }
+  for (let i = 0; i < 6; i++) {
+    const next = TILES.find((t) => !mid.unlocked.includes(t.id) && isEligible(t, mid));
+    if (next) unlockTile(mid, next);
+  }
+  const statuses = lockedTileStatuses(mid);
+  assert(statuses.length > 0);
+  for (const { tile, eta: e } of statuses) {
+    assert(isDiscovered(tile, mid) && !mid.unlocked.includes(tile.id), 'only discovered, still-locked tiles are listed');
+    assert.equal(e.seconds === 0, isEligible(tile, mid), `ready <=> eligible for ${tile.id}`);
+  }
+  const next = nextUnlock(mid);
+  assert(statuses.every((x) => next.eta.seconds <= x.eta.seconds), 'next is the soonest tile');
+  assert.equal(next.readyCount, statuses.filter((x) => x.eta.seconds === 0).length);
+
+  const everything = createInitialState();
+  everything.unlocked = TILES.map((t) => t.id);
+  assert.equal(nextUnlock(everything), null, 'nothing left to unlock');
+
+  // intensity ladder
+  const early = createInitialState();
+  early.unlocked.push('fish_start');
+  const late = createInitialState();
+  late.unlocked = TILES.filter((t) => t.zone === 'zone1').map((t) => t.id);
+  const zone1Tile = TILES.find((t) => t.id === 'fish_start');
+  assert(unlockIntensity(early, zone1Tile) < unlockIntensity(late, zone1Tile), 'later unlocks hit harder');
+  assert(unlockIntensity(early, zone1Tile) >= 0.2 && unlockIntensity(late, zone1Tile) <= 0.8, 'ordinary unlocks stay in 0.2-0.8');
+  const firstFrozen = createInitialState();
+  const frozenTile = TILES.find((t) => t.zone === 'zone2');
+  firstFrozen.unlocked = TILES.filter((t) => t.zone === 'zone1').map((t) => t.id).concat(frozenTile.id);
+  assert.equal(unlockIntensity(firstFrozen, frozenTile), 1, 'the first tile of a new zone is the biggest moment');
+  firstFrozen.unlocked.push(TILES.filter((t) => t.zone === 'zone2')[1].id);
+  assert(unlockIntensity(firstFrozen, TILES.filter((t) => t.zone === 'zone2')[1]) < 1, 'the second one is not');
+  assert(levelUpIntensity(3) > levelUpIntensity(2), 'reaching max level lands harder');
+  assert(levelUpIntensity(2) > 0 && levelUpIntensity(MAX_LEVEL) <= 1);
+
+  console.log('rate breakdown, unlock timer and intensity tests passed');
+}
+
+// --- the away summary carries the real time away, so a capped return can say so ---
+{
+  const state = createInitialState();
+  const short = applyOfflineProgress(state, 100);
+  assert.equal(short.away, 100);
+  assert.equal(short.seconds, 100, 'under the cap, everything counts');
+
+  const long = applyOfflineProgress(createInitialState(), 14 * 3600 + 1200);
+  assert.equal(long.away, 14 * 3600 + 1200, 'the true time away is reported');
+  assert.equal(long.seconds, 8 * 3600, 'only the capped amount is credited');
+
+  const viaAdvance = advance(createInitialState(), 30 * 3600);
+  assert.equal(viaAdvance.away, 30 * 3600, 'advance reports it too');
+
+  console.log('away summary tests passed');
+}
+
+// --- a booster with nothing to boost ---
+{
+  const state = createInitialState();
+  const windmill = TILES.find((t) => t.id === 'booster_windmill'); // +25% crops
+  const netWeavers = TILES.find((t) => t.id === 'booster_net_weavers'); // +fish, +kelp
+  assert.equal(boosterIsIdle(state, windmill), true, 'no crops producer yet');
+  assert.equal(boosterIsIdle(state, netWeavers), true, 'no fish or kelp producer yet');
+
+  state.unlocked.push('crops_start');
+  assert.equal(boosterIsIdle(state, windmill), false, 'a crops tile gives it something to boost');
+  assert.equal(boosterIsIdle(state, netWeavers), true, 'still nothing for fish or kelp');
+
+  state.unlocked.push('fish_start');
+  assert.equal(boosterIsIdle(state, netWeavers), false, 'one of its two resources is enough');
+
+  console.log('idle booster tests passed');
+}
+
+// --- gold shop ---
+{
+  const s = createInitialState();
+  assert.deepEqual(s.shop, { holdLevel: 0, tidesLevel: 0, palette: 'default', palettes: [], ballast: 0 });
+  assert.equal(offlineCapSeconds(s), 8 * 3600);
+  assert.equal(offlineRate(s), 0.5);
+
+  s.gold = 5;
+  assert.equal(buyShopItem(s, 'hold'), false, 'six gold needed, five held');
+  assert.equal(s.gold, 5, 'a refused purchase costs nothing');
+  s.gold = 100;
+  for (const [cost, hours] of [[6, 12], [12, 16], [20, 24]]) {
+    const before = s.gold;
+    assert.equal(buyShopItem(s, 'hold'), true);
+    assert.equal(before - s.gold, cost, `deeper hold to ${hours}h costs ${cost}`);
+    assert.equal(offlineCapSeconds(s), hours * 3600);
+  }
+  assert.equal(buyShopItem(s, 'hold'), false, 'nothing above the top step');
+  for (const [cost, rate] of [[8, 0.65], [16, 0.8]]) {
+    const before = s.gold;
+    assert.equal(buyShopItem(s, 'tides'), true);
+    assert.equal(before - s.gold, cost);
+    assert.equal(offlineRate(s), rate);
+  }
+  assert.equal(buyShopItem(s, 'tides'), false);
+  assert.equal(shopCatalog(s).find((r) => r.id === 'hold').status, 'maxed');
+
+  // the shop's effect on time away
+  const away = createInitialState();
+  away.shop.holdLevel = 2; // 16h
+  away.shop.tidesLevel = 1; // 65%
+  const result = applyOfflineProgress(away, 20 * 3600);
+  assert.equal(result.seconds, 16 * 3600, 'the bought cap applies');
+  assert.equal(result.rate, 0.65, 'the summary reports the rate used');
+  assert.equal(result.gains.driftwood, 0.5 * 16 * 3600 * 0.65);
+
+  // palettes
+  const p = createInitialState();
+  p.gold = 100;
+  assert.equal(buyShopItem(p, 'palette:lagoon'), true);
+  assert.equal(p.gold, 94);
+  assert.deepEqual(p.shop.palettes, ['lagoon']);
+  assert.equal(p.shop.palette, 'lagoon', 'buying a palette also puts it on');
+  assert.equal(buyShopItem(p, 'palette:lagoon'), false, 'already in use');
+  assert.equal(buyShopItem(p, 'palette:dusk'), true);
+  assert.equal(p.shop.palette, 'dusk');
+  assert.equal(buyShopItem(p, 'palette:lagoon'), true, 'switching to one you own is free');
+  assert.equal(p.gold, 88, 'nothing charged for switching');
+  assert.equal(p.shop.palette, 'lagoon');
+  assert.equal(buyShopItem(p, 'palette:default'), true, 'the classic look is always available');
+  assert.equal(p.shop.palette, 'default');
+  assert.equal(buyShopItem(p, 'palette:storm-nonsense'), false);
+  assert.equal(buyShopItem(p, 'not-an-item'), false);
+  const rows = shopCatalog(p);
+  assert.equal(rows.find((r) => r.id === 'palette:dusk').status, 'owned');
+  assert.equal(rows.find((r) => r.id === 'palette:default').status, 'active');
+  assert.equal(rows.find((r) => r.id === 'palette:storm').status, 'buy');
+
+  // ballast: unlimited, +1% each, price climbs by 2
+  const b = createInitialState();
+  b.gold = 1000;
+  const baseRate = effectiveRate('driftwood', b.unlocked, b.levels, b.prestige.upgrades);
+  assert.equal(ballastCost(b), 4);
+  for (const cost of [4, 6, 8]) {
+    const before = b.gold;
+    assert.equal(buyShopItem(b, 'ballast'), true);
+    assert.equal(before - b.gold, cost);
+  }
+  assert.equal(b.shop.ballast, 3);
+  assert.equal(ballastCost(b), 10);
+  const info = rateBreakdown(b, 'driftwood');
+  assert.equal(info.ballastPercent, 3);
+  assert(Math.abs(info.total - baseRate * 1.03) < 1e-9, 'three ballast is +3% on everything');
+  const before = b.resources.driftwood;
+  tick(b, 10);
+  assert(Math.abs(b.resources.driftwood - before - baseRate * 1.03 * 10) < 1e-9, 'production actually uses it');
+  for (let i = 0; i < 40; i++) buyShopItem(b, 'ballast');
+  assert.equal(b.shop.ballast > 3, true, 'ballast has no ceiling until gold runs out');
+
+  // survives export/import, prestige, and a save from before the shop existed
+  const kept = createInitialState();
+  kept.shop = { holdLevel: 2, tidesLevel: 1, palette: 'dusk', palettes: ['dusk'], ballast: 5 };
+  kept.gold = 9;
+  const roundTrip = decodeSave(encodeSave(kept));
+  assert.deepEqual(roundTrip.shop, kept.shop);
+  const old = decodeSave(btoa(JSON.stringify({ resources: {}, lifetime: {}, unlocked: ['driftwood_start'] })));
+  assert.deepEqual(old.shop, createInitialState().shop, 'an older save gets an empty shop');
+
+  console.log('gold shop tests passed');
+}
+
+// --- head start and prestige count ---
+{
+  assert.equal(headStartCost(0), 20);
+  assert.equal(headStartCost(2), 60);
+  const s = createInitialState();
+  s.prestige.tokens = 19;
+  assert.equal(buyHeadStart(s), false, 'twenty tokens for the first level');
+  s.prestige.tokens = 10000;
+  for (let level = 0; level < HEAD_START_MAX_LEVEL; level++) {
+    const before = s.prestige.tokens;
+    assert.equal(buyHeadStart(s), true);
+    assert.equal(before - s.prestige.tokens, headStartCost(level));
+  }
+  assert.equal(s.prestige.headStart, HEAD_START_MAX_LEVEL);
+  assert.equal(buyHeadStart(s), false, 'there is a top level');
+
+  const finished = (headStart) => {
+    const f = createInitialState();
+    f.unlocked = TILES.map((t) => t.id);
+    for (const t of TILES) f.levels[t.id] = MAX_LEVEL;
+    for (const r of ['fish', 'kelp', 'driftwood', 'crops']) f.lifetime[r] = 10000;
+    f.prestige.headStart = headStart;
+    f.prestige.count = 4;
+    f.shop.ballast = 7;
+    f.shop.palettes = ['dusk'];
+    f.shop.palette = 'dusk';
+    f.gold = 33;
+    f.achievements = ACHIEVEMENTS.map((a) => a.id); // already earned, so gold only shows what persists
+    return f;
+  };
+  const none = doPrestige(finished(0)).state;
+  assert.equal(none.unlocked.length, 1, 'no head start: just the starting tile');
+  assert.equal(none.prestige.count, 5, 'each prestige is counted');
+  assert.deepEqual(none.shop, { holdLevel: 0, tidesLevel: 0, palette: 'dusk', palettes: ['dusk'], ballast: 7 }, 'the shop is kept');
+  assert.equal(none.gold, 33);
+
+  const two = doPrestige(finished(2)).state;
+  assert.equal(two.unlocked.length, 1 + 4, 'two tiles per level');
+  assert.equal(two.prestige.headStart, 2, 'the upgrade itself carries over');
+  for (const r of ['fish', 'kelp', 'driftwood', 'crops']) assert.equal(two.resources[r], 0, 'a head start costs nothing');
+  for (const id of two.unlocked) {
+    assert(
+      id === 'driftwood_start' || TILE_NEIGHBORS.get(id).some((n) => two.unlocked.includes(n)),
+      `${id} is connected to the raft`
+    );
+  }
+  assert.deepEqual(doPrestige(finished(2)).state.unlocked, two.unlocked, 'the same tiles every time');
+  const boosterIds = TILES.filter((t) => t.kind === 'booster').map((t) => t.id);
+  for (const level of [1, 2, 3, 5]) {
+    const st = doPrestige(finished(level)).state;
+    for (const id of st.unlocked.filter((x) => boosterIds.includes(x))) {
+      assert.equal(boosterIsIdle(st, TILES.find((t) => t.id === id)), false, `a head start never wastes ${id} on nothing to boost (level ${level})`);
+    }
+  }
+  const big = doPrestige(finished(HEAD_START_MAX_LEVEL)).state;
+  assert.equal(big.unlocked.length, 1 + 2 * HEAD_START_MAX_LEVEL);
+  assert(big.unlocked.every((id) => TILES.find((t) => t.id === id).zone === 'zone1'), 'the head start stays in home waters');
+
+  console.log('head start tests passed');
+}
+
+// --- the new achievements ---
+{
+  const total = ACHIEVEMENTS.reduce((sum, a) => sum + a.reward, 0);
+  assert.equal(total, 85, 'gold available from achievements');
+  assert.equal(new Set(ACHIEVEMENTS.map((a) => a.id)).size, ACHIEVEMENTS.length, 'ids are unique');
+
+  const st = createInitialState();
+  const fired = (state) => new Set(checkAchievements(state).map((a) => a.id));
+
+  for (const resource of ['fish', 'kelp', 'driftwood', 'crops']) {
+    st.lifetime[resource] = 25000;
+  }
+  let got = fired(st);
+  for (const resource of ['fish', 'kelp', 'driftwood', 'crops']) {
+    assert(got.has(`${resource}-baron`), `${resource}-baron at 25,000`);
+    assert(!got.has(`${resource}-magnate`), `${resource}-magnate needs 100,000`);
+  }
+  for (const resource of ['fish', 'kelp', 'driftwood', 'crops']) st.lifetime[resource] = 100000;
+  got = fired(st);
+  for (const resource of ['fish', 'kelp', 'driftwood', 'crops']) assert(got.has(`${resource}-magnate`));
+
+  const counts = createInitialState();
+  const ids = TILES.map((t) => t.id);
+  const expectAt = { 10: 'tiles-10', 25: 'tiles-25', 36: 'tiles-36', 50: 'tiles-50', 72: 'tiles-72' };
+  for (const [n, id] of Object.entries(expectAt)) {
+    counts.unlocked = ids.slice(0, Number(n) - 1);
+    assert(!fired(counts).has(id), `${id} not yet at ${n - 1} tiles`);
+    counts.unlocked = ids.slice(0, Number(n));
+    assert(fired(counts).has(id) || counts.achievements.includes(id), `${id} at ${n} tiles`);
+  }
+
+  const voyages = createInitialState();
+  for (const [n, id] of [[1, 'voyage-1'], [3, 'voyage-3'], [5, 'voyage-5'], [10, 'voyage-10']]) {
+    voyages.prestige.count = n - 1;
+    assert(!voyages.achievements.includes(id));
+    voyages.prestige.count = n;
+    checkAchievements(voyages);
+    assert(voyages.achievements.includes(id), `${id} after ${n} prestige(s)`);
+  }
+
+  console.log('new achievement tests passed');
 }

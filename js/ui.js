@@ -1,18 +1,27 @@
 import {
   ACHIEVEMENTS,
   RESOURCES,
+  boosterGain,
+  boosterIsIdle,
   effectiveTileRate,
   getLevel,
   levelMultiplier,
   levelUpCost,
   MAX_LEVEL,
+  HEAD_START_MAX_LEVEL,
+  HEAD_START_TILES_PER_LEVEL,
   completionCount,
+  headStartCost,
   isFullyComplete,
   prestigeTokensEarned,
   prestigeUpgradeCost,
   PRESTIGE_UPGRADE_PERCENT,
+  rateBreakdown,
+  shopCatalog,
   TOTAL_TILE_COUNT,
+  unlockEta,
 } from './state.js';
+import { formatCount, formatEta } from './format.js';
 
 const elements = {};
 
@@ -27,7 +36,7 @@ function tileIcon(tile) {
   return tile.boosts.map((b) => RESOURCE_ICONS[b.resource]).join('');
 }
 
-export function initUI(onClose) {
+export function initUI(onClose, onNextUnlockClick) {
   elements.canvas = document.getElementById('game-canvas');
   elements.counts = {};
   for (const resource of RESOURCES) {
@@ -36,11 +45,22 @@ export function initUI(onClose) {
   // Gold is a reward counter, not one of the produced RESOURCES, so it sits
   // outside the loop above even though it shares the resource bar's markup.
   elements.goldCount = document.getElementById('count-gold');
+  elements.rates = {};
+  for (const resource of RESOURCES) {
+    elements.rates[resource] = document.getElementById(`rate-${resource}`);
+  }
+  elements.rateTip = document.getElementById('rate-tip');
+  elements.nextUnlock = document.getElementById('next-unlock');
+  elements.nextUnlockText = document.getElementById('next-unlock-text');
+  elements.nextUnlockBar = document.querySelector('#next-unlock-bar i');
+  elements.nextUnlockHint = document.getElementById('next-unlock-hint');
+  elements.boardPills = document.getElementById('board-pills');
   elements.panel = document.getElementById('tile-panel');
   elements.panelIcon = document.getElementById('tile-panel-icon');
   elements.panelName = document.getElementById('tile-panel-name');
   elements.panelDesc = document.getElementById('tile-panel-desc');
   elements.panelProgress = document.getElementById('tile-panel-progress');
+  elements.panelHint = document.getElementById('tile-panel-hint');
   elements.panelUnlockBtn = document.getElementById('tile-panel-unlock-btn');
   elements.panelCloseBtn = document.getElementById('tile-panel-close-btn');
   elements.panelCloseBtn.addEventListener('click', () => {
@@ -49,34 +69,103 @@ export function initUI(onClose) {
   });
 
   elements.offlineOverlay = document.getElementById('offline-overlay');
-  elements.offlineDuration = document.getElementById('offline-duration');
+  elements.offlineAway = document.getElementById('offline-away');
+  elements.offlineNext = document.getElementById('offline-next');
+  elements.offlineGoBtn = document.getElementById('offline-go-btn');
   elements.offlineGains = document.getElementById('offline-gains');
   elements.offlineCollectBtn = document.getElementById('offline-collect-btn');
   elements.offlineCollectBtn.addEventListener('click', () => {
     hideOfflineModal();
     if (elements.onOfflineCollect) elements.onOfflineCollect();
   });
+  // Going to the next tile collects first, so the gains are never left unclaimed.
+  elements.offlineGoBtn.addEventListener('click', () => {
+    hideOfflineModal();
+    if (elements.onOfflineCollect) elements.onOfflineCollect();
+    if (elements.onOfflineGo) elements.onOfflineGo();
+  });
 
   elements.feedbackLayer = document.getElementById('feedback-layer');
+
+  // Hovering a resource shows where its income comes from.
+  const bar = document.getElementById('resource-bar');
+  bar.addEventListener('mousemove', (event) => {
+    const cell = event.target.closest('[data-resource]');
+    if (!cell || !elements.lastState) {
+      elements.rateTip.classList.add('hidden');
+      return;
+    }
+    showRateTip(cell.dataset.resource, event);
+  });
+  bar.addEventListener('mouseleave', () => elements.rateTip.classList.add('hidden'));
+
+  elements.nextUnlock.addEventListener('click', () => {
+    if (elements.nextTile && onNextUnlockClick) onNextUnlockClick(elements.nextTile);
+  });
+}
+
+function showRateTip(resource, event) {
+  const info = rateBreakdown(elements.lastState, resource);
+  const tip = elements.rateTip;
+  tip.textContent = '';
+  const line = (text, dim) => {
+    const row = document.createElement('div');
+    row.textContent = text;
+    if (dim) row.className = 'dim';
+    tip.appendChild(row);
+  };
+  line(`${resource[0].toUpperCase()}${resource.slice(1)} ${info.total.toFixed(2)}/s`);
+  line(`Producers ${info.base.toFixed(2)}/s`);
+  if (info.boosters.length > 0) {
+    line(`Boosters +${Math.round(info.boostPercent)}%`);
+    for (const b of info.boosters) line(`${b.name} +${Number(b.percent.toFixed(1))}%`, true);
+  } else {
+    line('No boosters yet', true);
+  }
+  if (info.prestigePercent > 0) line(`Prestige +${info.prestigePercent}%`);
+  if (info.ballastPercent > 0) line(`Ballast +${info.ballastPercent}%`);
+  tip.classList.remove('hidden');
+  tip.style.left = `${Math.min(window.innerWidth - 270, event.clientX + 14)}px`;
+  tip.style.top = `${event.clientY + 18}px`;
 }
 
 function formatDuration(seconds) {
   const totalMinutes = Math.round(seconds / 60);
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
-  return hours === 0 ? `${minutes}m` : `${hours}h ${minutes}m`;
+  if (hours === 0) return `${minutes}m`;
+  return minutes === 0 ? `${hours}h` : `${hours}h ${minutes}m`;
 }
 
-export function showOfflineModal(seconds, gains, onCollect) {
+// `away` is applyOfflineProgress's result. `next` is nextUnlock(state) (or null): the modal ends by
+// pointing at it, and `onGo` (only used when there is a next tile) takes the player there.
+export function showOfflineModal(away, next, onCollect, onGo) {
   elements.onOfflineCollect = onCollect;
-  elements.offlineDuration.textContent = `While you were away for ${formatDuration(seconds)}, you earned:`;
+  elements.onOfflineGo = onGo;
+
+  const rate = `${Math.round(away.rate * 100)}% rate`;
+  elements.offlineAway.textContent =
+    away.away > away.seconds
+      ? `Away ${formatDuration(away.away)} \u00b7 ${formatDuration(away.seconds)} counted (offline cap), at ${rate}`
+      : `Away ${formatDuration(away.away)} \u00b7 counted at ${rate}`;
+
   elements.offlineGains.innerHTML = '';
   for (const resource of RESOURCES) {
-    const amount = gains[resource];
+    const amount = away.gains[resource];
     if (amount <= 0) continue;
     const item = document.createElement('li');
     item.textContent = `${RESOURCE_ICONS[resource]} +${Math.floor(amount).toLocaleString()}`;
     elements.offlineGains.appendChild(item);
+  }
+
+  elements.offlineNext.classList.toggle('hidden', !next);
+  elements.offlineGoBtn.classList.toggle('hidden', !next);
+  if (next) {
+    const name = document.createElement('b');
+    name.textContent = next.tile.name;
+    elements.offlineNext.textContent = 'Next: ';
+    elements.offlineNext.append(name, ` \u2014 ${describeWhen(next)}`);
+    elements.offlineGoBtn.textContent = `Take me to ${next.tile.name}`;
   }
   elements.offlineOverlay.classList.remove('hidden');
 }
@@ -89,11 +178,107 @@ export function getCanvas() {
   return elements.canvas;
 }
 
+// The counts glide to their new value instead of jumping, and flash green or red when something
+// other than ordinary production changed them (a purchase, an import, time away).
+const shownCounts = {};
+const previousCounts = {};
+let lastBarUpdate = null;
+
+function flashCount(element, kind) {
+  element.classList.remove('gain', 'spend');
+  element.classList.add(kind);
+  clearTimeout(element.flashTimer);
+  element.flashTimer = setTimeout(() => element.classList.remove(kind), 450);
+}
+
 export function updateResourceBar(state) {
+  const now = performance.now();
+  const dt = lastBarUpdate === null ? 0 : Math.min(0.1, (now - lastBarUpdate) / 1000);
+  lastBarUpdate = now;
+  elements.lastState = state;
+
   for (const resource of RESOURCES) {
-    elements.counts[resource].textContent = Math.floor(state.resources[resource]).toLocaleString();
+    const actual = state.resources[resource];
+    const info = rateBreakdown(state, resource);
+    const element = elements.counts[resource];
+
+    if (shownCounts[resource] === undefined) {
+      shownCounts[resource] = actual;
+    } else {
+      const step = actual - previousCounts[resource];
+      if (step < -0.5) flashCount(element, 'spend');
+      else if (step > info.total * Math.max(dt, 0.02) * 3 + 5) flashCount(element, 'gain');
+      shownCounts[resource] += (actual - shownCounts[resource]) * (1 - Math.exp(-dt * 9));
+      if (Math.abs(actual - shownCounts[resource]) < 0.5) shownCounts[resource] = actual;
+    }
+    previousCounts[resource] = actual;
+
+    element.textContent = formatCount(shownCounts[resource]);
+    const boost = info.boostPercent > 0 ? `<small>\u00d7${(1 + info.boostPercent / 100).toFixed(2)}</small>` : '';
+    elements.rates[resource].innerHTML = `+${info.total.toFixed(1)}/s${boost}`;
   }
   elements.goldCount.textContent = state.gold.toLocaleString();
+}
+
+// "ready now (+2 more)", "in 4m 12s", or "needs 🌾 income" for a nextUnlock() result.
+function describeWhen({ eta, readyCount }) {
+  if (eta.seconds === 0) return `ready now${readyCount > 1 ? ` (+${readyCount - 1} more)` : ''}`;
+  if (eta.blockedBy) return `needs ${RESOURCE_ICONS[eta.blockedBy]} income`;
+  return `in ${formatEta(eta.seconds)}`;
+}
+
+// The line under the resource bar: which tile you can unlock next and when. `showHint` adds a
+// one-line instruction for a player who has never unlocked anything yet.
+export function updateNextUnlock(next, showHint) {
+  const element = elements.nextUnlock;
+  if (!next) {
+    element.classList.add('hidden');
+    elements.nextTile = null;
+    return;
+  }
+  elements.nextTile = next.tile;
+  const text = `Next: ${next.tile.name} \u2014 ${describeWhen(next)}`;
+  if (elements.nextUnlockText.textContent !== text) elements.nextUnlockText.textContent = text;
+  elements.nextUnlockBar.style.width = `${Math.floor(next.eta.fraction * 100)}%`;
+  elements.nextUnlockHint.classList.toggle('hidden', !showHint);
+  element.classList.remove('hidden');
+}
+
+// Labels over the tiles you can see but haven't unlocked: a tick when ready, otherwise progress.
+// The tile that comes next also says when. Off when `enabled` is false.
+const boardPills = new Map();
+export function updateBoardTint(statuses, next, enabled, project) {
+  if (!enabled) {
+    for (const pill of boardPills.values()) pill.remove();
+    boardPills.clear();
+    return;
+  }
+  const wanted = new Set();
+  for (const { tile, eta } of statuses) {
+    wanted.add(tile.id);
+    let pill = boardPills.get(tile.id);
+    if (!pill) {
+      pill = document.createElement('div');
+      elements.boardPills.appendChild(pill);
+      boardPills.set(tile.id, pill);
+    }
+    const ready = eta.seconds === 0;
+    const isNext = next !== null && next.tile.id === tile.id;
+    const className = `board-pill ${ready ? 'ready' : 'wait'}${isNext ? ' next' : ''}`;
+    if (pill.className !== className) pill.className = className;
+    const wait = eta.blockedBy ? `needs ${RESOURCE_ICONS[eta.blockedBy]}` : formatEta(eta.seconds);
+    const text = isNext ? (ready ? '\u2713 Next' : `\u25b8 ${wait}`) : ready ? '\u2713' : `${Math.floor(eta.fraction * 100)}%`;
+    if (pill.textContent !== text) pill.textContent = text;
+    const { x, y } = project(tile.id);
+    pill.style.left = `${x}px`;
+    pill.style.top = `${y - 4}px`;
+  }
+  for (const [id, pill] of boardPills) {
+    if (!wanted.has(id)) {
+      pill.remove();
+      boardPills.delete(id);
+    }
+  }
 }
 
 function describeCost(cost) {
@@ -116,30 +301,41 @@ function describeUnlock(tile) {
   return `Reach ${tile.unlock.target} lifetime ${tile.unlock.resource}`;
 }
 
-function progressFraction(tile, state) {
-  if (tile.unlock.type === 'cost') {
-    return costProgressFraction(tile.unlock.cost, state);
-  }
-  return Math.min(1, state.lifetime[tile.unlock.resource] / tile.unlock.target);
-}
-
 function describeProduction(tile, state) {
   const level = getLevel(state, tile.id);
-  return tile.kind === 'producer'
-    ? `Produces ${Number(effectiveTileRate(tile, state.unlocked, state.levels, state.prestige.upgrades).toFixed(2))} ${tile.produces}/s`
-    : tile.boosts.map((b) => `+${Number((b.percent * levelMultiplier(level)).toFixed(2))}% ${b.resource}`).join(', ');
+  if (tile.kind === 'producer') {
+    const mine = effectiveTileRate(tile, state.unlocked, state.levels, state.prestige.upgrades, state.shop.ballast);
+    const share = Math.round((mine / rateBreakdown(state, tile.produces).total) * 100);
+    return `Produces ${Number(mine.toFixed(2))} ${tile.produces}/s \u00b7 ${share}% of your ${tile.produces}`;
+  }
+  return tile.boosts
+    .map((b) => `+${Number((b.percent * levelMultiplier(level)).toFixed(2))}% ${b.resource} (+${boosterGain(state, tile, b.resource).toFixed(2)}/s now)`)
+    .join(', ');
+}
+
+function boosterHint(tile, state) {
+  if (tile.kind !== 'booster' || !boosterIsIdle(state, tile)) return '';
+  const resources = tile.boosts.map((b) => b.resource);
+  const icons = resources.map((r) => RESOURCE_ICONS[r]).join('');
+  return `You have no ${icons} tiles yet. This boosts every ${resources.join(' or ')} tile you build, wherever it sits.`;
 }
 
 export function showTilePanel(tile, state, eligible, onUnlock, onLevelUp) {
   elements.panel.classList.remove('hidden');
+  const hint = boosterHint(tile, state);
+  elements.panelHint.textContent = hint;
+  elements.panelHint.classList.toggle('hidden', hint === '');
   elements.panelIcon.textContent = tileIcon(tile);
   elements.panelName.textContent = tile.name;
 
   const unlocked = state.unlocked.includes(tile.id);
   if (!unlocked) {
     elements.panelDesc.textContent = `Requires: ${describeUnlock(tile)}`;
-    const frac = progressFraction(tile, state);
-    elements.panelProgress.textContent = `${Math.floor(frac * 100)}% ready`;
+    const eta = unlockEta(state, tile);
+    let progress = `${Math.floor(eta.fraction * 100)}% ready`;
+    if (eta.blockedBy) progress += ` \u00b7 needs ${RESOURCE_ICONS[eta.blockedBy]} income first`;
+    else if (eta.seconds > 0) progress += ` \u00b7 ${formatEta(eta.seconds)} left`;
+    elements.panelProgress.textContent = progress;
     elements.panelUnlockBtn.classList.remove('hidden');
     elements.panelUnlockBtn.textContent = 'Unlock';
     elements.panelUnlockBtn.disabled = !eligible;
@@ -171,7 +367,7 @@ export function hideTilePanel() {
   elements.panel.classList.add('hidden');
 }
 
-export function initMenu(onRestart, onRefresh) {
+export function initMenu({ onRestart, onRefresh, onExport, onImport, onShopBuy, settings, onSettingChange }) {
   elements.menuBtn = document.getElementById('menu-btn');
   elements.menuOverlay = document.getElementById('menu-overlay');
   elements.menuMain = document.getElementById('menu-main');
@@ -184,10 +380,31 @@ export function initMenu(onRestart, onRefresh) {
   elements.menuAchievements = document.getElementById('menu-achievements');
   elements.menuAchievementsList = document.getElementById('menu-achievements-list');
   elements.menuAchievementsBackBtn = document.getElementById('menu-achievements-back-btn');
+  elements.menuSaveBtn = document.getElementById('menu-save-btn');
+  elements.menuSave = document.getElementById('menu-save');
+  elements.menuSaveExport = document.getElementById('menu-save-export');
+  elements.menuSaveCopyBtn = document.getElementById('menu-save-copy-btn');
+  elements.menuSaveImport = document.getElementById('menu-save-import');
+  elements.menuSaveLoadBtn = document.getElementById('menu-save-load-btn');
+  elements.menuSaveStatus = document.getElementById('menu-save-status');
+  elements.menuSaveBackBtn = document.getElementById('menu-save-back-btn');
+  elements.menuShopBtn = document.getElementById('menu-shop-btn');
+  elements.menuShop = document.getElementById('menu-shop');
+  elements.shopGold = document.getElementById('shop-gold');
+  elements.shopList = document.getElementById('shop-list');
+  elements.menuShopBackBtn = document.getElementById('menu-shop-back-btn');
+  elements.menuSettingsBtn = document.getElementById('menu-settings-btn');
+  elements.menuSettings = document.getElementById('menu-settings');
+  elements.menuSettingsBackBtn = document.getElementById('menu-settings-back-btn');
+  elements.settingBoardTint = document.getElementById('setting-board-tint');
+  let loadArmed = false;
 
   function showMain() {
     elements.menuConfirm.classList.add('hidden');
     elements.menuAchievements.classList.add('hidden');
+    elements.menuSave.classList.add('hidden');
+    elements.menuSettings.classList.add('hidden');
+    elements.menuShop.classList.add('hidden');
     elements.menuMain.classList.remove('hidden');
   }
 
@@ -200,6 +417,15 @@ export function initMenu(onRestart, onRefresh) {
     if (onRefresh) onRefresh();
     elements.menuMain.classList.add('hidden');
     elements.menuAchievements.classList.remove('hidden');
+  }
+
+  function showSave() {
+    elements.menuMain.classList.add('hidden');
+    elements.menuSave.classList.remove('hidden');
+    elements.menuSaveExport.value = onExport();
+    elements.menuSaveImport.value = '';
+    elements.menuSaveStatus.textContent = '';
+    loadArmed = false;
   }
 
   elements.menuBtn.addEventListener('click', () => {
@@ -219,6 +445,95 @@ export function initMenu(onRestart, onRefresh) {
   });
   elements.menuAchievementsBtn.addEventListener('click', showAchievements);
   elements.menuAchievementsBackBtn.addEventListener('click', showMain);
+
+  const shopHeadings = { comfort: 'Comfort', look: 'Look', ballast: 'Ballast' };
+  function renderShop() {
+    const state = elements.lastState;
+    elements.shopGold.textContent = `${RESOURCE_ICONS.gold} ${state.gold.toLocaleString()} gold`;
+    elements.shopList.textContent = '';
+    let section = null;
+    for (const row of shopCatalog(state)) {
+      if (row.section !== section) {
+        section = row.section;
+        const heading = document.createElement('div');
+        heading.className = 'shop-section';
+        heading.textContent = shopHeadings[section];
+        elements.shopList.appendChild(heading);
+      }
+      const item = document.createElement('div');
+      item.className = 'shop-item';
+      const info = document.createElement('div');
+      info.className = 'shop-info';
+      const name = document.createElement('b');
+      if (row.swatch) {
+        const swatch = document.createElement('span');
+        swatch.className = 'shop-swatch';
+        swatch.style.background = row.swatch;
+        name.appendChild(swatch);
+      }
+      name.append(row.name);
+      const detail = document.createElement('small');
+      detail.textContent = row.detail;
+      info.append(name, detail);
+
+      const button = document.createElement('button');
+      const label = { buy: `${RESOURCE_ICONS.gold} ${row.cost}`, poor: `${RESOURCE_ICONS.gold} ${row.cost}`, owned: 'Use', active: 'In use', maxed: 'Max' };
+      button.textContent = label[row.status];
+      button.disabled = row.status === 'poor' || row.status === 'active' || row.status === 'maxed';
+      if (row.status === 'owned' || row.status === 'active' || row.status === 'maxed') button.className = 'own';
+      button.addEventListener('click', () => {
+        if (onShopBuy(row.id)) renderShop();
+      });
+      item.append(info, button);
+      elements.shopList.appendChild(item);
+    }
+  }
+
+  elements.menuShopBtn.addEventListener('click', () => {
+    elements.menuMain.classList.add('hidden');
+    elements.menuShop.classList.remove('hidden');
+    renderShop();
+  });
+  elements.menuShopBackBtn.addEventListener('click', showMain);
+
+  elements.settingBoardTint.checked = settings.boardTint;
+  elements.settingBoardTint.addEventListener('change', () => onSettingChange('boardTint', elements.settingBoardTint.checked));
+  elements.menuSettingsBtn.addEventListener('click', () => {
+    elements.menuMain.classList.add('hidden');
+    elements.menuSettings.classList.remove('hidden');
+  });
+  elements.menuSettingsBackBtn.addEventListener('click', showMain);
+
+  elements.menuSaveBtn.addEventListener('click', showSave);
+  elements.menuSaveBackBtn.addEventListener('click', showMain);
+  elements.menuSaveCopyBtn.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(elements.menuSaveExport.value);
+      elements.menuSaveStatus.textContent = 'Copied.';
+    } catch {
+      elements.menuSaveExport.select();
+      elements.menuSaveStatus.textContent = 'Press Ctrl+C (or Cmd+C) to copy the selected code.';
+    }
+  });
+  elements.menuSaveImport.addEventListener('input', () => {
+    loadArmed = false;
+    elements.menuSaveStatus.textContent = '';
+  });
+  // Loading replaces the whole game, so it takes a second press to confirm.
+  elements.menuSaveLoadBtn.addEventListener('click', () => {
+    const code = elements.menuSaveImport.value;
+    if (!code.trim()) {
+      elements.menuSaveStatus.textContent = 'Paste a save code first.';
+    } else if (!loadArmed) {
+      loadArmed = true;
+      elements.menuSaveStatus.textContent = 'This replaces your current game. Press Load code again to confirm.';
+    } else if (onImport(code)) {
+      hideMenu();
+    } else {
+      loadArmed = false;
+      elements.menuSaveStatus.textContent = "That code doesn't look like a Drift Away save.";
+    }
+  });
 }
 
 export function updateAchievementsDisplay(state) {
@@ -297,6 +612,12 @@ export function initPrestige(onPrestige, onBuyUpgrade, onRefresh) {
     };
     elements.storeRows[resource].buyBtn.addEventListener('click', () => onBuyUpgrade(resource));
   }
+  elements.headStartRow = {
+    count: document.getElementById('store-headstart-count'),
+    cost: document.getElementById('store-headstart-cost'),
+    buyBtn: document.getElementById('store-headstart-buy-btn'),
+  };
+  elements.headStartRow.buyBtn.addEventListener('click', () => onBuyUpgrade('headStart'));
 
   function showMain() {
     elements.prestigeConfirm.classList.add('hidden');
@@ -384,13 +705,18 @@ export function updatePrestigeDisplay(state) {
     row.cost.textContent = `${cost} tokens`;
     row.buyBtn.disabled = state.prestige.tokens < cost;
   }
+
+  const level = state.prestige.headStart;
+  const headStart = elements.headStartRow;
+  const maxed = level >= HEAD_START_MAX_LEVEL;
+  headStart.count.textContent = `Head start +${level * HEAD_START_TILES_PER_LEVEL}`;
+  headStart.cost.textContent = maxed ? 'Max' : `${headStartCost(level)} tokens`;
+  headStart.buyBtn.disabled = maxed || state.prestige.tokens < headStartCost(level);
 }
 
 const POPUP_DURATION_MS = 1200;
 const POPUP_STAGGER_PX = 22;
 const MAX_STAGGER_STEPS = 4;
-const BURST_PARTICLE_COUNT = 8;
-const BURST_DURATION_MS = 700;
 
 // Two popups landing in the same frame would otherwise animate exactly on top of
 // each other, so each one starts a notch lower than the ones still in flight and
@@ -440,17 +766,3 @@ export function showTokenPopup(amount) {
   spawnPopup(popup);
 }
 
-export function spawnUnlockBurst() {
-  for (let i = 0; i < BURST_PARTICLE_COUNT; i += 1) {
-    // Evenly spaced around the circle, then jittered, so the burst stays visually
-    // balanced instead of clumping the way fully random angles would.
-    const angle = ((i + Math.random() * 0.6) / BURST_PARTICLE_COUNT) * Math.PI * 2;
-    const distance = 40 + Math.random() * 30;
-    const particle = document.createElement('div');
-    particle.className = 'feedback-particle';
-    particle.style.setProperty('--dx', `${Math.cos(angle) * distance}px`);
-    particle.style.setProperty('--dy', `${Math.sin(angle) * distance}px`);
-    elements.feedbackLayer.appendChild(particle);
-    setTimeout(() => particle.remove(), BURST_DURATION_MS);
-  }
-}

@@ -4,6 +4,7 @@ import { ZONES } from './zones.js';
 import { buildZone2Prop } from './zone2-props.js';
 import { buildCloudField, resizeCloudField } from './clouds.js';
 import { createFoamTexture, createWaterNormalTexture } from './textures.js';
+import { DEFAULT_PALETTE } from './palettes.js';
 
 export const GRID_ROWS = 6;
 export const GRID_COLS = 6;
@@ -833,6 +834,7 @@ function buildMarkerMesh(tile) {
   markerMesh.add(buoy);
 
   markerMesh.userData.outlineMaterial = outlineMaterial;
+  markerMesh.userData.baseColor = MARKER_COLOR;
   return markerMesh;
 }
 
@@ -840,7 +842,7 @@ function buildWater(anisotropy) {
   const waterGeometry = new THREE.PlaneGeometry(80, 80, 1, 1);
   waterGeometry.rotateX(-Math.PI / 2);
   const waterUniforms = { uTime: { value: 0 }, uNormal: { value: createWaterNormalTexture(anisotropy) } };
-  const waterMaterial = new THREE.MeshStandardMaterial({ color: 0x2e7ba8, roughness: 0.14, metalness: 0 });
+  const waterMaterial = new THREE.MeshStandardMaterial({ color: DEFAULT_PALETTE.water, roughness: 0.14, metalness: 0 });
   // The ripples are two scrolling normal maps instead of moving vertices. The plane is flat and
   // horizontal, so the perturbed normal is built in world space and rotated into view space.
   waterMaterial.onBeforeCompile = (shader) => {
@@ -900,8 +902,8 @@ function updateCameraFrustum(camera, width, height) {
 
 export function buildScene(canvas) {
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x0e2f42);
-  scene.fog = new THREE.Fog(0x0e2f42, 36, 60);
+  scene.background = new THREE.Color(DEFAULT_PALETTE.background);
+  scene.fog = new THREE.Fog(DEFAULT_PALETTE.background, 36, 60);
 
   const camera = new THREE.OrthographicCamera();
   camera.position.set(14, 16, 14);
@@ -1000,6 +1002,7 @@ export function buildScene(canvas) {
     scene,
     camera,
     resize,
+    waterMesh,
     waterUniforms,
     foamMesh,
     tileObjects,

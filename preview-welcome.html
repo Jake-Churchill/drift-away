@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Drift Away — Batch 2 Mock (scratch)</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    html, body { height: auto; overflow: auto; background: #12384f; color: #f4ead2; font-family: system-ui, -apple-system, sans-serif; }
+    h1 { font-size: 16px; margin: 18px 24px 4px; }
+    .lead { margin: 0 24px 14px; font-size: 13px; opacity: 0.8; max-width: 760px; }
+    h2.section { font-size: 13px; margin: 22px 24px 10px; text-transform: uppercase; letter-spacing: 0.06em; opacity: 0.7; }
+    .grid { display: flex; flex-wrap: wrap; gap: 18px; padding: 0 24px 24px; align-items: flex-start; }
+    .card { display: flex; flex-direction: column; gap: 8px; }
+    .card > small { font-size: 12px; opacity: 0.75; max-width: 320px; }
+    /* Re-use the game's own panel styles, but let several sit on one page. */
+    .card #offline-panel, .card #tile-panel, .card #next-unlock { position: static; transform: none; }
+    .card #next-unlock { display: block; }
+    /* New in this mock */
+    .offline-away { margin: 0 0 12px; font-size: 12px; opacity: 0.8; line-height: 1.4; }
+    .offline-next { margin: 0 0 14px; padding-top: 12px; border-top: 1px solid rgba(244, 234, 210, 0.2); font-size: 14px; }
+    .offline-next b { color: #d9b545; }
+    #offline-panel .offline-go { width: 100%; margin-top: 10px; background: transparent; color: #f4ead2; border: 1px solid rgba(244, 234, 210, 0.4); border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 14px; padding: 10px 16px; }
+    #next-unlock .hint { display: block; margin-top: 4px; font-size: 11.5px; opacity: 0.8; }
+    #tile-panel .hint { margin: 8px 0 0; font-size: 12px; opacity: 0.8; }
+  </style>
+</head>
+<body>
+  <h1>Batch 2 — the return, and the first minute</h1>
+  <p class="lead">Mock of the proposed welcome-back message and two small hints, drawn with the game's real stylesheet. The first card is what the game shows today. Nothing here is in the game yet.</p>
+
+  <h2 class="section">Welcome-back message</h2>
+  <div class="grid">
+
+    <div class="card"><small><b>Today</b></small>
+      <div id="offline-panel">
+        <h2>Welcome back!</h2>
+        <p id="offline-duration">While you were away for 3h 0m, you earned:</p>
+        <ul id="offline-gains"><li>🐟 +181,237</li><li>🌿 +164,322</li><li>🪵 +84,564</li><li>🌾 +104,328</li></ul>
+        <button id="offline-collect-btn">Collect</button>
+      </div>
+    </div>
+
+    <div class="card"><small><b>A. Under the cap, next tile ready.</b> Says how much time was counted and at what rate, then points at what to do.</small>
+      <div id="offline-panel">
+        <h2>Welcome back!</h2>
+        <p class="offline-away">Away 3h 0m · counted at half rate</p>
+        <ul id="offline-gains"><li>🐟 +181,237</li><li>🌿 +164,322</li><li>🪵 +84,564</li><li>🌾 +104,328</li></ul>
+        <p class="offline-next">Next: <b>Current Sweeper</b> — ready now (+11 more)</p>
+        <button id="offline-collect-btn">Collect</button>
+        <button class="offline-go">Take me to Current Sweeper</button>
+      </div>
+    </div>
+
+    <div class="card"><small><b>B. Past the cap, next tile a few minutes off.</b> The cap is stated instead of silently trimming.</small>
+      <div id="offline-panel">
+        <h2>Welcome back!</h2>
+        <p class="offline-away">Away 14h 20m · 8h counted (offline cap), at half rate</p>
+        <ul id="offline-gains"><li>🐟 +1,240,512</li><li>🌿 +1,105,880</li><li>🪵 +562,340</li></ul>
+        <p class="offline-next">Next: <b>Kelp Nursery</b> — in 4m 12s</p>
+        <button id="offline-collect-btn">Collect</button>
+        <button class="offline-go">Take me to Kelp Nursery</button>
+      </div>
+    </div>
+
+    <div class="card"><small><b>C. Next tile needs a resource with no income.</b></small>
+      <div id="offline-panel">
+        <h2>Welcome back!</h2>
+        <p class="offline-away">Away 1h 5m · counted at half rate</p>
+        <ul id="offline-gains"><li>🪵 +900</li></ul>
+        <p class="offline-next">Next: <b>Windmill</b> — needs 🌾 income</p>
+        <button id="offline-collect-btn">Collect</button>
+        <button class="offline-go">Take me to Windmill</button>
+      </div>
+    </div>
+
+    <div class="card"><small><b>D. Everything visible is already unlocked.</b> No next line, no second button.</small>
+      <div id="offline-panel">
+        <h2>Welcome back!</h2>
+        <p class="offline-away">Away 2h 0m · counted at half rate</p>
+        <ul id="offline-gains"><li>🐟 +40,120</li><li>🌿 +31,004</li></ul>
+        <button id="offline-collect-btn">Collect</button>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="section">First-minute hints (derived from what is on screen, nothing extra saved)</h2>
+  <div class="grid">
+    <div class="card"><small><b>E. Only the start tile owned.</b> The "Next" line carries one short instruction until the first unlock, then it is gone for good.</small>
+      <div id="next-unlock"><div id="next-unlock-text">Next: Windmill — in 37s</div><div id="next-unlock-bar"><i style="width:22%"></i></div><span class="hint">Click any tile beside your raft to see what it needs.</span></div>
+    </div>
+
+    <div class="card"><small><b>F. Opening a booster while you have nothing for it to boost.</b> Today this reads "+0.00/s now", which looks broken.</small>
+      <div id="tile-panel">
+        <span class="tile-panel-icon">🌾</span>
+        <h2>Windmill</h2>
+        <p id="tile-panel-desc">+25% crops (+0.00/s now)</p>
+        <div id="tile-panel-progress">100% ready</div>
+        <p class="hint">You have no 🌾 tiles yet. This boosts every crops tile you build, wherever it sits.</p>
+        <button id="tile-panel-unlock-btn">Unlock</button>
+      </div>
+    </div>
+
+    <div class="card"><small><b>G. Same booster once it has something to boost.</b> No hint; the number speaks.</small>
+      <div id="tile-panel">
+        <span class="tile-panel-icon">🌾</span>
+        <h2>Windmill</h2>
+        <p id="tile-panel-desc">+25% crops (+1.30/s now)</p>
+        <div id="tile-panel-progress">100% ready</div>
+        <button id="tile-panel-unlock-btn">Unlock</button>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,4 +1,6 @@
 import { TILES, TILE_NEIGHBORS } from './tiles.js';
+import { ZONES } from './zones.js';
+import { PALETTES } from './palettes.js';
 
 export const RESOURCES = ['fish', 'kelp', 'driftwood', 'crops'];
 export const SAVE_KEY = 'driftaway_save_v1';
@@ -9,7 +11,12 @@ const PRODUCER_UPGRADE_BASE = 30;
 const BOOSTER_UPGRADE_BASE = 6;
 
 export function createInitialPrestige() {
-  return { tokens: 0, upgrades: { fish: 0, kelp: 0, driftwood: 0, crops: 0 } };
+  return { tokens: 0, upgrades: { fish: 0, kelp: 0, driftwood: 0, crops: 0 }, headStart: 0, count: 0 };
+}
+
+// What gold has bought. Like gold itself it survives a prestige.
+export function createInitialShop() {
+  return { holdLevel: 0, tidesLevel: 0, palette: 'default', palettes: [], ballast: 0 };
 }
 
 export function createInitialState() {
@@ -23,6 +30,7 @@ export function createInitialState() {
     unlocked,
     levels: {},
     prestige: createInitialPrestige(),
+    shop: createInitialShop(),
     gold: 0,
     achievements: [],
   };
@@ -40,20 +48,73 @@ function boostPercentFor(resource, unlockedIds, levels = {}) {
     .reduce((sum, b) => sum + b.percent * levelMultiplier(b.level), 0);
 }
 
-export function effectiveRate(resource, unlockedIds, levels = {}, prestigeUpgrades = {}) {
+export function effectiveRate(resource, unlockedIds, levels = {}, prestigeUpgrades = {}, ballastPercent = 0) {
   const baseSum = TILES
     .filter((t) => unlockedIds.includes(t.id) && t.kind === 'producer' && t.produces === resource)
     .reduce((sum, t) => sum + t.rate * levelMultiplier(levels[t.id] || 1), 0);
   const boosterMultiplier = 1 + boostPercentFor(resource, unlockedIds, levels) / 100;
   const prestigeMultiplier = 1 + (PRESTIGE_UPGRADE_PERCENT * (prestigeUpgrades[resource] || 0)) / 100;
-  return baseSum * boosterMultiplier * prestigeMultiplier;
+  return baseSum * boosterMultiplier * prestigeMultiplier * (1 + ballastPercent / 100);
 }
 
-export function effectiveTileRate(tile, unlockedIds, levels = {}, prestigeUpgrades = {}) {
+export function effectiveTileRate(tile, unlockedIds, levels = {}, prestigeUpgrades = {}, ballastPercent = 0) {
   const level = levels[tile.id] || 1;
   const boosterMultiplier = 1 + boostPercentFor(tile.produces, unlockedIds, levels) / 100;
   const prestigeMultiplier = 1 + (PRESTIGE_UPGRADE_PERCENT * (prestigeUpgrades[tile.produces] || 0)) / 100;
-  return tile.rate * levelMultiplier(level) * boosterMultiplier * prestigeMultiplier;
+  return tile.rate * levelMultiplier(level) * boosterMultiplier * prestigeMultiplier * (1 + ballastPercent / 100);
+}
+
+// A resource's income for this game state: everything that applies, ballast included.
+function stateRate(state, resource) {
+  return effectiveRate(resource, state.unlocked, state.levels, state.prestige.upgrades, state.shop.ballast);
+}
+
+// Where a resource's income comes from, for the HUD: producer output, the boosters stacked on it,
+// and the prestige bonus. `total` is exactly effectiveRate.
+export function rateBreakdown(state, resource) {
+  let base = 0;
+  let boostPercent = 0;
+  const boosters = [];
+  for (const tile of TILES) {
+    if (!state.unlocked.includes(tile.id)) continue;
+    const multiplier = levelMultiplier(getLevel(state, tile.id));
+    if (tile.kind === 'producer' && tile.produces === resource) base += tile.rate * multiplier;
+    if (tile.kind === 'booster') {
+      for (const b of tile.boosts) {
+        if (b.resource !== resource) continue;
+        boostPercent += b.percent * multiplier;
+        boosters.push({ name: tile.name, percent: b.percent * multiplier });
+      }
+    }
+  }
+  const prestigePercent = PRESTIGE_UPGRADE_PERCENT * (state.prestige.upgrades[resource] || 0);
+  const ballastPercent = state.shop.ballast;
+  return {
+    base,
+    boostPercent,
+    boosters,
+    prestigePercent,
+    ballastPercent,
+    total: base * (1 + boostPercent / 100) * (1 + prestigePercent / 100) * (1 + ballastPercent / 100),
+  };
+}
+
+// True when nothing the booster affects has a producer yet, so unlocking it would change nothing.
+export function boosterIsIdle(state, tile) {
+  return tile.boosts.every((b) => rateBreakdown(state, b.resource).base === 0);
+}
+
+// What one booster adds to a resource right now, per second.
+export function boosterGain(state, tile, resource) {
+  const b = tile.boosts.find((x) => x.resource === resource);
+  if (!b) return 0;
+  const { base, prestigePercent, ballastPercent } = rateBreakdown(state, resource);
+  return (
+    base *
+    ((b.percent * levelMultiplier(getLevel(state, tile.id))) / 100) *
+    (1 + prestigePercent / 100) *
+    (1 + ballastPercent / 100)
+  );
 }
 
 export function isDiscovered(tile, state) {
@@ -75,6 +136,51 @@ export function isEligible(tile, state) {
   return false;
 }
 
+// How close a locked tile is to being unlockable, and how long that takes at current rates.
+// `blockedBy` names a needed resource nothing produces yet.
+export function unlockEta(state, tile) {
+  let needs = [];
+  if (tile.unlock.type === 'cost') {
+    needs = Object.entries(tile.unlock.cost).map(([r, amount]) => [r, amount, state.resources[r]]);
+  } else if (tile.unlock.type === 'milestone') {
+    needs = [[tile.unlock.resource, tile.unlock.target, state.lifetime[tile.unlock.resource]]];
+  }
+  let seconds = 0;
+  let fraction = 1;
+  let blockedBy = null;
+  for (const [resource, amount, have] of needs) {
+    fraction = Math.min(fraction, Math.min(1, have / amount));
+    if (have >= amount) continue;
+    const rate = stateRate(state, resource);
+    if (rate <= 0) {
+      blockedBy = resource;
+      seconds = Infinity;
+    } else {
+      seconds = Math.max(seconds, (amount - have) / rate);
+    }
+  }
+  return { seconds, fraction, blockedBy };
+}
+
+// Every tile the player can see but hasn't unlocked, with its timer.
+export function lockedTileStatuses(state) {
+  return TILES.filter((t) => !state.unlocked.includes(t.id) && isDiscovered(t, state)).map((tile) => ({
+    tile,
+    eta: unlockEta(state, tile),
+  }));
+}
+
+// The soonest visible tile to unlock (ties go to the one closest to affordable), and how many are
+// ready right now. Null when nothing visible is left to unlock.
+export function nextUnlock(state, statuses = lockedTileStatuses(state)) {
+  if (statuses.length === 0) return null;
+  let best = statuses[0];
+  for (const x of statuses) {
+    if (x.eta.seconds < best.eta.seconds || (x.eta.seconds === best.eta.seconds && x.eta.fraction > best.eta.fraction)) best = x;
+  }
+  return { ...best, readyCount: statuses.filter((x) => x.eta.seconds === 0).length };
+}
+
 export function getLevel(state, tileId) {
   return state.levels[tileId] || 1;
 }
@@ -92,8 +198,7 @@ export function isFullyComplete(state) {
 const START_TILE_COUNT = TILES.filter((t) => t.unlock.type === 'start').length;
 const TYCOON_TARGET = 5000;
 
-// Gold is a plain reward counter: nothing in the production, unlock, level-up or
-// prestige-store math reads it. It only ever grows, via these rewards.
+// Gold is earned only from these rewards, never lost to a prestige, and spent in the Harbor Shop.
 export const ACHIEVEMENTS = [
   {
     id: 'first-steps',
@@ -170,6 +275,39 @@ export const ACHIEVEMENTS = [
   },
 ];
 
+// Tiered follow-ups, so there is always a next one to reach: bigger lifetime totals per resource,
+// tile counts, and how many times the player has prestiged.
+for (const resource of RESOURCES) {
+  const name = `${resource[0].toUpperCase()}${resource.slice(1)}`;
+  for (const [suffix, title, target, reward] of [['baron', 'Baron', 25000, 2], ['magnate', 'Magnate', 100000, 3]]) {
+    ACHIEVEMENTS.push({
+      id: `${resource}-${suffix}`,
+      name: `${name} ${title}`,
+      description: `Earn ${target.toLocaleString('en-US')} lifetime ${resource}`,
+      reward,
+      condition: (state) => state.lifetime[resource] >= target,
+    });
+  }
+}
+for (const [count, name, reward] of [[10, 'Small Fleet', 1], [25, 'Growing Raft', 2], [36, 'Home Waters', 2], [50, 'Far Horizons', 3], [72, 'A Whole Ocean', 4]]) {
+  ACHIEVEMENTS.push({
+    id: `tiles-${count}`,
+    name,
+    description: count === TOTAL_TILE_COUNT ? `Unlock all ${count} tiles` : `Unlock ${count} tiles`,
+    reward,
+    condition: (state) => state.unlocked.length >= count,
+  });
+}
+for (const [count, name, reward] of [[1, 'Second Voyage', 5], [3, 'Seasoned Sailor', 5], [5, 'Old Salt', 8], [10, 'Ocean Legend', 12]]) {
+  ACHIEVEMENTS.push({
+    id: `voyage-${count}`,
+    name,
+    description: count === 1 ? 'Prestige for the first time' : `Prestige ${count} times`,
+    reward,
+    condition: (state) => state.prestige.count >= count,
+  });
+}
+
 export function checkAchievements(state) {
   const awarded = [];
   for (const achievement of ACHIEVEMENTS) {
@@ -196,10 +334,129 @@ export function doPrestige(state) {
   nextState.prestige = {
     tokens: state.prestige.tokens + tokensEarned,
     upgrades: { ...state.prestige.upgrades },
+    headStart: state.prestige.headStart,
+    count: state.prestige.count + 1,
   };
+  nextState.shop = { ...state.shop, palettes: [...state.shop.palettes] };
   nextState.gold = state.gold;
   nextState.achievements = [...state.achievements];
+  grantHeadStart(nextState, HEAD_START_TILES_PER_LEVEL * nextState.prestige.headStart);
+  checkAchievements(nextState);
   return { state: nextState, tokensEarned };
+}
+
+// Head start: each level begins a run with two more tiles already unlocked, free — the ones a
+// player would have unlocked first at that point.
+export const HEAD_START_MAX_LEVEL = 10;
+export const HEAD_START_TILES_PER_LEVEL = 2;
+
+export function headStartCost(level) {
+  return 20 * (level + 1);
+}
+
+export function buyHeadStart(state) {
+  const level = state.prestige.headStart;
+  if (level >= HEAD_START_MAX_LEVEL || state.prestige.tokens < headStartCost(level)) return false;
+  state.prestige.tokens -= headStartCost(level);
+  state.prestige.headStart += 1;
+  return true;
+}
+
+// Skips boosters that have nothing to boost yet, so the free tiles are ones that do something.
+function grantHeadStart(state, count) {
+  for (let i = 0; i < count; i++) {
+    const all = lockedTileStatuses(state);
+    const useful = all.filter((x) => x.tile.kind !== 'booster' || !boosterIsIdle(state, x.tile));
+    const next = nextUnlock(state, useful.length > 0 ? useful : all);
+    if (!next) break;
+    state.unlocked.push(next.tile.id);
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Harbor Shop: what gold buys. Comfort (time away), looks (palettes) and ballast (a small, endless
+// production bonus so gold never has nowhere to go).
+const HOLD_COSTS = [6, 12, 20];
+const TIDES_COSTS = [8, 16];
+
+export function ballastCost(state) {
+  return 4 + 2 * state.shop.ballast;
+}
+
+// The rows the shop screen shows. `status` is one of buy / poor (can't afford yet) / owned /
+// active (a look that is on) / maxed.
+export function shopCatalog(state) {
+  const { shop, gold } = state;
+  const row = (id, section, name, detail, cost, status, extra = {}) => ({ id, section, name, detail, cost, status, ...extra });
+  const priced = (cost) => (gold >= cost ? 'buy' : 'poor');
+  const rows = [];
+
+  const hold = shop.holdLevel;
+  rows.push(
+    hold >= HOLD_COSTS.length
+      ? row('hold', 'comfort', `Deeper hold \u00b7 ${hold} of ${HOLD_COSTS.length}`, `Offline cap ${OFFLINE_CAP_HOURS[hold]}h`, 0, 'maxed')
+      : row('hold', 'comfort', `Deeper hold \u00b7 ${hold} of ${HOLD_COSTS.length}`, `Offline cap ${OFFLINE_CAP_HOURS[hold]}h \u2192 ${OFFLINE_CAP_HOURS[hold + 1]}h`, HOLD_COSTS[hold], priced(HOLD_COSTS[hold]))
+  );
+
+  const tides = shop.tidesLevel;
+  const percent = (level) => Math.round(OFFLINE_RATES[level] * 100);
+  rows.push(
+    tides >= TIDES_COSTS.length
+      ? row('tides', 'comfort', `Steady tides \u00b7 ${tides} of ${TIDES_COSTS.length}`, `Time away counted at ${percent(tides)}%`, 0, 'maxed')
+      : row('tides', 'comfort', `Steady tides \u00b7 ${tides} of ${TIDES_COSTS.length}`, `Time away counted at ${percent(tides + 1)}% instead of ${percent(tides)}%`, TIDES_COSTS[tides], priced(TIDES_COSTS[tides]))
+  );
+
+  const look = (id, name, detail, cost, swatch) => {
+    const active = shop.palette === id;
+    const owned = shop.palettes.includes(id) || id === 'default';
+    return row(`palette:${id}`, 'look', name, detail, cost, active ? 'active' : owned ? 'owned' : priced(cost), { swatch });
+  };
+  if (shop.palettes.length > 0) rows.push(look('default', 'Classic', 'The original look', 0, '#2e7ba8'));
+  for (const [id, palette] of Object.entries(PALETTES)) rows.push(look(id, palette.name, palette.blurb, palette.cost, palette.swatch));
+
+  rows.push(
+    row('ballast', 'ballast', `Ballast \u00b7 owned ${shop.ballast}`, '+1% to all production each. Cost rises by 2 every time, no limit', ballastCost(state), priced(ballastCost(state)))
+  );
+  return rows;
+}
+
+// Buys (or, for a look already owned, switches to) a shop item. False if it can't be done.
+export function buyShopItem(state, id) {
+  const { shop } = state;
+  const pay = (cost) => {
+    if (state.gold < cost) return false;
+    state.gold -= cost;
+    return true;
+  };
+  if (id === 'hold') {
+    if (shop.holdLevel >= HOLD_COSTS.length || !pay(HOLD_COSTS[shop.holdLevel])) return false;
+    shop.holdLevel += 1;
+    return true;
+  }
+  if (id === 'tides') {
+    if (shop.tidesLevel >= TIDES_COSTS.length || !pay(TIDES_COSTS[shop.tidesLevel])) return false;
+    shop.tidesLevel += 1;
+    return true;
+  }
+  if (id === 'ballast') {
+    if (!pay(ballastCost(state))) return false;
+    shop.ballast += 1;
+    return true;
+  }
+  if (id.startsWith('palette:')) {
+    const key = id.slice('palette:'.length);
+    if (shop.palette === key) return false;
+    if (key !== 'default') {
+      if (!PALETTES[key]) return false;
+      if (!shop.palettes.includes(key)) {
+        if (!pay(PALETTES[key].cost)) return false;
+        shop.palettes.push(key);
+      }
+    }
+    shop.palette = key;
+    return true;
+  }
+  return false;
 }
 
 export const PRESTIGE_UPGRADE_BASE_COST = 5; // first-pass constant, not playtested
@@ -247,27 +504,37 @@ export function levelUpTile(state, tile) {
   return true;
 }
 
-export const OFFLINE_RATE = 0.5;
-export const MAX_OFFLINE_SECONDS = 8 * 60 * 60;
+// Time away. The cap and the rate start at 8 hours and 50% and are raised in the Harbor Shop.
+export const OFFLINE_CAP_HOURS = [8, 12, 16, 24];
+const OFFLINE_RATES = [0.5, 0.65, 0.8];
 const MIN_OFFLINE_SECONDS = 60;
+
+export function offlineCapSeconds(state) {
+  return OFFLINE_CAP_HOURS[state.shop.holdLevel] * 60 * 60;
+}
+
+export function offlineRate(state) {
+  return OFFLINE_RATES[state.shop.tidesLevel];
+}
 
 export function applyOfflineProgress(state, elapsedSeconds) {
   if (elapsedSeconds < MIN_OFFLINE_SECONDS) return null;
-  const seconds = Math.min(elapsedSeconds, MAX_OFFLINE_SECONDS);
+  const seconds = Math.min(elapsedSeconds, offlineCapSeconds(state));
+  const rate = offlineRate(state);
   const gains = {};
   for (const resource of RESOURCES) {
-    const amount = effectiveRate(resource, state.unlocked, state.levels, state.prestige.upgrades) * seconds * OFFLINE_RATE;
+    const amount = stateRate(state, resource) * seconds * rate;
     state.resources[resource] += amount;
     state.lifetime[resource] += amount;
     gains[resource] = amount;
   }
   checkAchievements(state);
-  return { gains, seconds };
+  return { gains, seconds, away: elapsedSeconds, rate };
 }
 
 export function tick(state, dt) {
   for (const resource of RESOURCES) {
-    const amount = effectiveRate(resource, state.unlocked, state.levels, state.prestige.upgrades) * dt;
+    const amount = stateRate(state, resource) * dt;
     state.resources[resource] += amount;
     state.lifetime[resource] += amount;
   }
@@ -299,34 +566,52 @@ export function saveState(state) {
   }
 }
 
+// Shared by loading from localStorage and importing a pasted code: fills a saved object in from the
+// defaults so saves from older versions keep working. Null when it doesn't look like a save at all.
+function normalizeSave(parsed) {
+  const looksValid =
+    parsed &&
+    typeof parsed === 'object' &&
+    parsed.resources &&
+    parsed.lifetime &&
+    Array.isArray(parsed.unlocked);
+  if (!looksValid) return null;
+  const base = createInitialState();
+  return {
+    ...base,
+    ...parsed,
+    resources: { ...base.resources, ...parsed.resources },
+    lifetime: { ...base.lifetime, ...parsed.lifetime },
+    levels: { ...base.levels, ...parsed.levels },
+    prestige: {
+      ...base.prestige,
+      ...(parsed.prestige || {}),
+      upgrades: { ...base.prestige.upgrades, ...(parsed.prestige || {}).upgrades },
+    },
+    gold: parsed.gold ?? base.gold,
+    achievements: [...(parsed.achievements || base.achievements)],
+    shop: normalizeShop(parsed.shop, base.shop),
+  };
+}
+
+// A pasted or hand-edited save can hold anything, so the shop is clamped to what exists.
+function normalizeShop(saved, base) {
+  const shop = { ...base, ...(saved || {}) };
+  const clamp = (value, max) => Math.min(max, Math.max(0, Math.floor(Number(value)) || 0));
+  shop.holdLevel = clamp(shop.holdLevel, OFFLINE_CAP_HOURS.length - 1);
+  shop.tidesLevel = clamp(shop.tidesLevel, OFFLINE_RATES.length - 1);
+  shop.ballast = clamp(shop.ballast, Infinity);
+  shop.palettes = (Array.isArray(shop.palettes) ? shop.palettes : []).filter((id) => PALETTES[id]);
+  if (shop.palette !== 'default' && !shop.palettes.includes(shop.palette)) shop.palette = 'default';
+  return shop;
+}
+
 export function loadState() {
   try {
     const raw = localStorage.getItem(SAVE_KEY);
-    if (!raw) return { state: createInitialState(), offline: null };
-    const parsed = JSON.parse(raw);
-    const looksValid =
-      parsed &&
-      typeof parsed === 'object' &&
-      parsed.resources &&
-      parsed.lifetime &&
-      Array.isArray(parsed.unlocked);
-    if (!looksValid) return { state: createInitialState(), offline: null };
-    const base = createInitialState();
-    const state = {
-      ...base,
-      ...parsed,
-      resources: { ...base.resources, ...parsed.resources },
-      lifetime: { ...base.lifetime, ...parsed.lifetime },
-      levels: { ...base.levels, ...parsed.levels },
-      prestige: {
-        ...base.prestige,
-        ...(parsed.prestige || {}),
-        upgrades: { ...base.prestige.upgrades, ...(parsed.prestige || {}).upgrades },
-      },
-      gold: parsed.gold ?? base.gold,
-      achievements: [...(parsed.achievements || base.achievements)],
-    };
-    const elapsedSeconds = parsed.lastSaved ? Math.max(0, (Date.now() - parsed.lastSaved) / 1000) : 0;
+    const state = raw ? normalizeSave(JSON.parse(raw)) : null;
+    if (!state) return { state: createInitialState(), offline: null };
+    const elapsedSeconds = state.lastSaved ? Math.max(0, (Date.now() - state.lastSaved) / 1000) : 0;
     const offline = applyOfflineProgress(state, elapsedSeconds);
     // A save migrated from before achievements existed may already meet several
     // conditions; credit them now rather than on the next frame's tick.
@@ -335,4 +620,45 @@ export function loadState() {
   } catch {
     return { state: createInitialState(), offline: null };
   }
+}
+
+// The save as one unbroken base64 string, stamped with the time so any offline credit on the
+// other end counts from the moment of export.
+export function encodeSave(state) {
+  return btoa(JSON.stringify({ ...state, lastSaved: Date.now() }));
+}
+
+export function decodeSave(text) {
+  try {
+    const state = normalizeSave(JSON.parse(atob(text.trim())));
+    if (state) checkAchievements(state);
+    return state;
+  } catch {
+    return null;
+  }
+}
+
+// One rule for every kind of gap between frames. A short gap is ordinary production; a minute or
+// more means the tab was hidden, the machine slept, or the game was closed, and is treated as time
+// away (offline rate, capped). Returns the away summary ({ gains, seconds counted, away = the real
+// time away }), or null for ordinary production.
+export function advance(state, elapsedSeconds) {
+  if (elapsedSeconds >= MIN_OFFLINE_SECONDS) return applyOfflineProgress(state, elapsedSeconds);
+  tick(state, elapsedSeconds);
+  return null;
+}
+
+// How hard an unlock lands, from 0 to 1: it grows as the map fills, and the first tile of a new
+// zone is the biggest moment in the game. Call after the tile is in state.unlocked.
+export function unlockIntensity(state, tile) {
+  if (tile.zone !== ZONES[0].id) {
+    const inZone = state.unlocked.filter((id) => TILES.find((t) => t.id === id)?.zone === tile.zone).length;
+    if (inZone === 1) return 1;
+  }
+  const progress = Math.max(0, Math.min(1, (state.unlocked.length - 1) / (TOTAL_TILE_COUNT - 1)));
+  return 0.2 + 0.6 * progress;
+}
+
+export function levelUpIntensity(newLevel) {
+  return 0.25 + (0.3 * (newLevel - 1)) / (MAX_LEVEL - 1);
 }

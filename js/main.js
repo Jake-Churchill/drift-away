@@ -1,20 +1,38 @@
 import { TILES } from './tiles.js';
 import {
+  advance,
+  buyHeadStart,
   buyPrestigeUpgrade,
+  buyShopItem,
   createInitialState,
+  decodeSave,
   doPrestige,
+  encodeSave,
   getLevel,
   isEligible,
   isLevelUpEligible,
   levelUpCost,
+  levelUpIntensity,
   levelUpTile,
   loadState,
+  lockedTileStatuses,
   MAX_LEVEL,
+  nextUnlock,
   saveState,
-  tick,
+  unlockIntensity,
   unlockTile,
 } from './state.js';
-import { initScene, updateScene, screenToGrid, sailToZone, getCurrentZone, resetCamera } from './render.js';
+import {
+  initScene,
+  updateScene,
+  screenToGrid,
+  sailToZone,
+  getCurrentZone,
+  resetCamera,
+  playLevelUpImpact,
+  playUnlockImpact,
+  projectTile,
+} from './render.js';
 import {
   initUI,
   getCanvas,
@@ -26,25 +44,44 @@ import {
   showOfflineModal,
   showResourcePopup,
   showTokenPopup,
-  spawnUnlockBurst,
   updateAchievementsDisplay,
+  updateBoardTint,
+  updateNextUnlock,
   updatePrestigeDisplay,
 } from './ui.js';
-import { playLevelUpSound, playPrestigeSound, playUnlockSound } from './sound.js';
+import {
+  playLevelUpImpactSound,
+  playLevelUpSound,
+  playPrestigeSound,
+  playUnlockImpactSound,
+  playUnlockSound,
+} from './sound.js';
+import { loadSettings, saveSettings } from './settings.js';
 
 let selectedTileId = null;
+const settings = loadSettings();
 
 // showResourcePopup takes signed deltas, and a cost is always something spent.
 function spent(cost) {
   return Object.fromEntries(Object.entries(cost).map(([resource, amount]) => [resource, -amount]));
 }
 
-initUI(() => {
-  selectedTileId = null;
-});
+// Takes the player to a tile: sail there if it's in the other zone, and open its panel.
+function goToTile(tile) {
+  if (tile.zone !== getCurrentZone()) sailToZone(tile.zone);
+  selectedTileId = tile.id;
+  renderTilePanel(tile);
+}
 
-initMenu(
+initUI(
   () => {
+    selectedTileId = null;
+  },
+  goToTile
+);
+
+initMenu({
+  onRestart: () => {
     state = createInitialState();
     resetCamera();
     selectedTileId = null;
@@ -52,13 +89,40 @@ initMenu(
     saveState(state);
     updateAchievementsDisplay(state);
   },
-  () => {
+  onRefresh: () => {
     updateAchievementsDisplay(state);
-  }
-);
+  },
+  onExport: () => encodeSave(state),
+  onImport: (code) => {
+    const imported = decodeSave(code);
+    if (!imported) return false;
+    state = imported;
+    resetCamera();
+    selectedTileId = null;
+    hideTilePanel();
+    saveState(state);
+    updateAchievementsDisplay(state);
+    updatePrestigeDisplay(state);
+    return true;
+  },
+  onShopBuy: (id) => {
+    const success = buyShopItem(state, id);
+    if (success) {
+      saveState(state);
+      playLevelUpSound();
+    }
+    return success;
+  },
+  settings,
+  onSettingChange: (key, value) => {
+    settings[key] = value;
+    saveSettings(settings);
+  },
+});
 
 initPrestige(
   () => {
+    const goldBefore = state.gold;
     const result = doPrestige(state);
     if (result) {
       state = result.state;
@@ -69,13 +133,14 @@ initPrestige(
       updatePrestigeDisplay(state);
       updateAchievementsDisplay(state);
       showTokenPopup(result.tokensEarned);
+      if (state.gold > goldBefore) showResourcePopup({ gold: state.gold - goldBefore });
       playPrestigeSound();
     }
     return !!result;
   },
-  (resource) => {
+  (upgrade) => {
     const tokensBefore = state.prestige.tokens;
-    const success = buyPrestigeUpgrade(state, resource);
+    const success = upgrade === 'headStart' ? buyHeadStart(state) : buyPrestigeUpgrade(state, upgrade);
     if (success) {
       saveState(state);
       updatePrestigeDisplay(state);
@@ -97,11 +162,20 @@ initScene(canvas);
 
 let { state, offline } = loadState();
 updateAchievementsDisplay(state);
-if (offline) {
-  showOfflineModal(offline.seconds, offline.gains, () => {
-    showResourcePopup(offline.gains);
-    playUnlockSound();
-  });
+if (offline) showAway(offline);
+
+// The welcome-back message: what accrued, and where to go next.
+function showAway(away) {
+  const next = nextUnlock(state);
+  showOfflineModal(
+    away,
+    next,
+    () => {
+      showResourcePopup(away.gains);
+      playUnlockSound();
+    },
+    next ? () => goToTile(next.tile) : null
+  );
 }
 
 function renderTilePanel(tile) {
@@ -122,8 +196,9 @@ function handleUnlockClick(tile) {
     renderTilePanel(tile);
     updateAchievementsDisplay(state);
     if (cost) showResourcePopup(spent(cost));
-    spawnUnlockBurst();
-    playUnlockSound();
+    const intensity = unlockIntensity(state, tile);
+    playUnlockImpact(tile, intensity);
+    playUnlockImpactSound(intensity);
     if (state.gold > goldBefore) showResourcePopup({ gold: state.gold - goldBefore });
   }
 }
@@ -140,7 +215,9 @@ function handleLevelUpClick(tile) {
     renderTilePanel(tile);
     updateAchievementsDisplay(state);
     showResourcePopup(spent(cost));
-    playLevelUpSound();
+    const intensity = levelUpIntensity(level + 1);
+    playLevelUpImpact(tile, level + 1, intensity);
+    playLevelUpImpactSound(intensity);
     if (state.gold > goldBefore) showResourcePopup({ gold: state.gold - goldBefore });
   }
 }
@@ -169,17 +246,21 @@ canvas.addEventListener('click', (event) => {
   renderTilePanel(tile);
 });
 
-let lastFrameTime = performance.now();
+let lastTickAt = Date.now();
 let timeSinceSave = 0;
 
+// Wall-clock time, not the frame timestamp: hidden tabs stop animation frames and laptops sleep, and
+// both show up here as one long gap that advance() treats the same as time spent away.
 function loop(now) {
-  const dt = Math.min(0.25, (now - lastFrameTime) / 1000);
-  lastFrameTime = now;
+  const tickedAt = Date.now();
+  const elapsed = Math.max(0, (tickedAt - lastTickAt) / 1000);
+  lastTickAt = tickedAt;
 
   // The one path where an achievement can fire with no click behind it (passive
   // production crossing a lifetime threshold), so it gets its own sound.
   const goldBefore = state.gold;
-  tick(state, dt);
+  const away = advance(state, elapsed);
+  if (away) showAway(away);
   if (state.gold > goldBefore) {
     showResourcePopup({ gold: state.gold - goldBefore });
     playUnlockSound();
@@ -198,9 +279,17 @@ function loop(now) {
     }
   }
 
-  updateScene(state, now);
+  updateScene(state, now, settings);
 
-  timeSinceSave += dt;
+  // After updateScene, so the labels follow the camera as it ends up this frame.
+  const statuses = lockedTileStatuses(state);
+  const next = nextUnlock(state, statuses);
+  // Until the very first unlock (which is remembered by its achievement, so a new run after
+  // prestige doesn't repeat it), the line also says what to click.
+  updateNextUnlock(next, !state.achievements.includes('first-steps'));
+  updateBoardTint(statuses, next, settings.boardTint, projectTile);
+
+  timeSinceSave += elapsed;
   if (timeSinceSave >= 10) {
     saveState(state);
     timeSinceSave = 0;
@@ -214,3 +303,11 @@ requestAnimationFrame(loop);
 window.addEventListener('beforeunload', () => {
   saveState(state);
 });
+
+// beforeunload is unreliable on phones; hiding the tab is the last moment we can count on.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) saveState(state);
+});
+
+// Asks the browser not to evict the save under storage pressure. Harmless if refused or unsupported.
+navigator.storage?.persist?.()?.catch(() => {});

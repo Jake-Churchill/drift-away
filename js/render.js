@@ -2,13 +2,28 @@ import * as THREE from 'three';
 import { TILES } from './tiles.js';
 import { getLevel, isDiscovered, isEligible } from './state.js';
 import { buildScene } from './scene.js';
-import { updateCloudField, renderCloudField } from './clouds.js';
+import { updateCloudField, renderCloudField, setCloudTint } from './clouds.js';
+import { DEFAULT_PALETTE, PALETTES } from './palettes.js';
+import { createEffects } from './effects.js';
 
-let renderer, scene, camera, resizeFn, waterUniforms, foamMesh, tileObjects, cameraPositions;
-let cloudField;
+let renderer, scene, camera, resizeFn, waterMesh, waterUniforms, foamMesh, tileObjects, cameraPositions;
+let cloudField, effects;
 let currentZone = 'zone1';
 let cameraLookTarget = new THREE.Vector3(0, 0, 0);
 let sailAnimation = null;
+
+// The scene's own clock, in ms. It stops for a moment when an unlock lands (the frame hold), which
+// freezes water, clouds, foam and effects together while the economy and the HUD carry on.
+let visualMs = 0;
+let lastFrameMs = null;
+let holdMs = 0;
+let kick = null;
+const kickApplied = new THREE.Vector3();
+
+let appliedPalette = 'default';
+
+const TINT_READY = 0xffd23d;
+const TINT_WAIT = 0x7fa8c4;
 
 const FOAM_Y = 0.012;
 const foamDummy = new THREE.Object3D();
@@ -22,11 +37,13 @@ export function initScene(canvas) {
   scene = built.scene;
   camera = built.camera;
   resizeFn = built.resize;
+  waterMesh = built.waterMesh;
   waterUniforms = built.waterUniforms;
   foamMesh = built.foamMesh;
   tileObjects = built.tileObjects;
   cameraPositions = built.cameraPositions;
   cloudField = built.cloudField;
+  effects = createEffects(scene, tileObjects, () => visualMs / 1000);
 
   function handleResize() {
     resizeFn(window.innerWidth, window.innerHeight);
@@ -64,8 +81,38 @@ export function resetCamera() {
   currentZone = 'zone1';
   const dest = cameraPositions.get('zone1');
   camera.position.copy(dest.position);
+  kickApplied.set(0, 0, 0);
   cameraLookTarget.copy(dest.target);
   camera.lookAt(cameraLookTarget);
+}
+
+// Every impact does the same things at different strength: hold the frame for a beat, kick the
+// camera a few pixels, then play the effect. `intensity` runs from 0 to 1.
+function impact(intensity) {
+  holdMs = 30 + 50 * intensity;
+  kick = { start: visualMs, amplitude: 0.05 + 0.17 * intensity, angle: Math.random() * Math.PI * 2 };
+}
+
+export function playUnlockImpact(tile, intensity) {
+  impact(intensity);
+  effects.unlock(tile, intensity);
+}
+
+export function playLevelUpImpact(tile, level, intensity) {
+  impact(intensity);
+  effects.levelUp(tile, level, intensity);
+}
+
+// Screen position (CSS pixels) of a tile's marker, for labels drawn over the board.
+const projected = new THREE.Vector3();
+export function projectTile(tileId) {
+  const marker = tileObjects.get(tileId).markerMesh;
+  projected.copy(marker.position).project(camera);
+  const canvas = renderer.domElement;
+  return {
+    x: (projected.x * 0.5 + 0.5) * canvas.clientWidth,
+    y: (-projected.y * 0.5 + 0.5) * canvas.clientHeight,
+  };
 }
 
 function advanceSail() {
@@ -81,10 +128,40 @@ function advanceSail() {
   }
 }
 
-export function updateScene(state, time) {
+// The shop's looks: water, sky and cloud colours. Applied when the chosen look changes, which also
+// covers loading a save, importing one, and restarting.
+function applyPalette(id) {
+  const palette = PALETTES[id] ?? DEFAULT_PALETTE;
+  waterMesh.material.color.setHex(palette.water);
+  scene.background.setHex(palette.background);
+  scene.fog.color.setHex(palette.background);
+  setCloudTint(cloudField, palette.cloud);
+  appliedPalette = id;
+}
+
+export function updateScene(state, time, { boardTint }) {
+  if (state.shop.palette !== appliedPalette) applyPalette(state.shop.palette);
+
+  const frameMs = lastFrameMs === null ? 0 : Math.max(0, Math.min(100, time - lastFrameMs));
+  lastFrameMs = time;
+  if (holdMs > 0) holdMs -= frameMs;
+  else visualMs += frameMs;
+
+  camera.position.sub(kickApplied);
   advanceSail();
-  updateCloudField(cloudField, state.unlocked, time);
-  const seconds = time / 1000;
+  kickApplied.set(0, 0, 0);
+  if (kick) {
+    const t = (visualMs - kick.start) / 1000;
+    if (t > 0.5) kick = null;
+    else {
+      const offset = kick.amplitude * Math.exp(-t * 9) * Math.cos(t * 42);
+      kickApplied.set(Math.cos(kick.angle) * offset, 0, Math.sin(kick.angle) * offset);
+      camera.position.add(kickApplied);
+    }
+  }
+
+  updateCloudField(cloudField, state.unlocked, visualMs);
+  const seconds = visualMs / 1000;
   waterUniforms.uTime.value = seconds;
 
   for (let i = 0; i < TILES.length; i++) {
@@ -112,13 +189,21 @@ export function updateScene(state, time) {
 
     if (!unlocked && discovered) {
       const eligible = isEligible(tile, state);
-      const pulse = eligible ? 0.35 + 0.4 * (0.5 + 0.5 * Math.sin(time / 300)) : 0.35;
-      objects.markerMesh.userData.outlineMaterial.opacity = pulse;
+      const outline = objects.markerMesh.userData.outlineMaterial;
+      const pulse = 0.5 + 0.5 * Math.sin(visualMs / 300);
+      if (boardTint) {
+        outline.color.setHex(eligible ? TINT_READY : TINT_WAIT);
+        outline.opacity = eligible ? 0.7 + 0.3 * pulse : 0.5;
+      } else {
+        outline.color.setHex(objects.markerMesh.userData.baseColor);
+        outline.opacity = eligible ? 0.35 + 0.4 * pulse : 0.35;
+      }
     }
   }
 
   foamMesh.instanceMatrix.needsUpdate = true;
   foamMesh.material.opacity = 0.5 + 0.12 * Math.sin(seconds * 0.9);
+  effects.update();
 
   renderer.render(scene, camera);
   renderCloudField(renderer, cloudField, camera);

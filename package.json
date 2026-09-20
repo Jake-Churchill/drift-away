@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node tests/economy.test.mjs",
+    "test": "node tests/economy.test.mjs && node tests/feel.test.mjs",
     "build": "scripts/build.sh"
   }
 }
