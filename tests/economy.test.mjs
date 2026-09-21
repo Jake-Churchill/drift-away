@@ -44,6 +44,7 @@ import {
   unlockEta,
   unlockIntensity,
   unlockTile,
+  upgradeList,
 } from '../js/state.js';
 
 // --- Tile data integrity ---
@@ -1408,4 +1409,51 @@ console.log('achievement save migration tests passed');
   }
 
   console.log('new achievement tests passed');
+}
+
+// --- Upgrade list (the quick-upgrade panel) ---
+{
+  const st = createInitialState();
+  const rows = upgradeList(st);
+  assert.equal(rows.length, st.unlocked.length, 'a new game lists just the tiles it starts with');
+  assert(rows.every((r) => r.level === 1 && !r.ready), 'nothing is affordable at the start');
+
+  // Locked tiles never appear, max-level tiles drop out.
+  const zone1 = TILES.filter((t) => t.zone === 'zone1').slice(0, 12);
+  st.unlocked = zone1.map((t) => t.id);
+  st.levels[zone1[0].id] = MAX_LEVEL;
+  st.levels[zone1[1].id] = MAX_LEVEL - 1;
+  const listed = upgradeList(st).map((r) => r.tile.id);
+  assert(!listed.includes(zone1[0].id), 'a maxed tile is not listed');
+  assert(listed.includes(zone1[1].id), 'a tile below max is listed');
+  assert(!listed.includes(TILES.find((t) => t.zone === 'zone2').id), 'a locked tile is not listed');
+  assert.equal(listed.length, zone1.length - 1);
+
+  // Each row agrees with the single-tile helpers.
+  for (const resource of ['fish', 'kelp', 'driftwood', 'crops']) st.resources[resource] = 40;
+  for (const row of upgradeList(st)) {
+    assert.deepEqual(row.cost, levelUpCost(row.tile, row.level + 1));
+    assert.equal(row.ready, isLevelUpEligible(st, row.tile), `${row.tile.id} ready flag`);
+    assert(row.fraction >= 0 && row.fraction <= 1);
+  }
+
+  // Ready rows come first in board order; waiting rows follow, closest first.
+  const ordered = upgradeList(st);
+  const firstWaiting = ordered.findIndex((r) => !r.ready);
+  assert(firstWaiting > 0 && ordered.slice(firstWaiting).every((r) => !r.ready), 'ready rows are grouped first');
+  const order = (r) => TILES.indexOf(r.tile);
+  for (let i = 1; i < ordered.length; i++) {
+    const [a, b] = [ordered[i - 1], ordered[i]];
+    if (a.ready && b.ready) assert(order(a) < order(b), 'ready rows keep board order');
+    if (!a.ready && !b.ready) {
+      assert(a.fraction >= b.fraction, 'waiting rows go closest first');
+      if (a.fraction === b.fraction) assert(order(a) < order(b), 'ties keep board order');
+    }
+  }
+
+  // Everything maxed: nothing to upgrade.
+  for (const id of st.unlocked) st.levels[id] = MAX_LEVEL;
+  assert.equal(upgradeList(st).length, 0);
+
+  console.log('upgrade list tests passed');
 }

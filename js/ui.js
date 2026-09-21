@@ -11,6 +11,7 @@ import {
   HEAD_START_MAX_LEVEL,
   HEAD_START_TILES_PER_LEVEL,
   completionCount,
+  costProgressFraction,
   headStartCost,
   isFullyComplete,
   prestigeTokensEarned,
@@ -23,6 +24,7 @@ import {
 } from './state.js';
 import { formatCount, formatEta } from './format.js';
 import { VERSION } from './version.js';
+import { ZONES } from './zones.js';
 
 const elements = {};
 
@@ -288,13 +290,6 @@ function describeCost(cost) {
     .join(' + ');
 }
 
-function costProgressFraction(cost, state) {
-  const fractions = Object.entries(cost).map(([resource, amount]) =>
-    Math.min(1, state.resources[resource] / amount)
-  );
-  return Math.min(...fractions);
-}
-
 function describeUnlock(tile) {
   if (tile.unlock.type === 'cost') {
     return describeCost(tile.unlock.cost);
@@ -366,6 +361,73 @@ export function showTilePanel(tile, state, eligible, onUnlock, onLevelUp) {
 
 export function hideTilePanel() {
   elements.panel.classList.add('hidden');
+}
+
+// The quick-upgrade panel: every tile that can still be levelled, with a Level up button.
+export function initUpgrades(onLevelUp) {
+  elements.upgradesBtn = document.getElementById('upgrades-btn');
+  elements.upgradesBadge = document.getElementById('upgrades-badge');
+  elements.upgradesPanel = document.getElementById('upgrades-panel');
+  elements.upgradesReady = document.getElementById('upgrades-ready');
+  elements.upgradesList = document.getElementById('upgrades-list');
+
+  const setOpen = (open) => {
+    elements.upgradesPanel.classList.toggle('hidden', !open);
+    elements.upgradesBtn.classList.toggle('open', open);
+  };
+  elements.upgradesBtn.addEventListener('click', () => setOpen(elements.upgradesPanel.classList.contains('hidden')));
+  document.getElementById('upgrades-close-btn').addEventListener('click', () => setOpen(false));
+  elements.upgradesList.addEventListener('click', (event) => {
+    const button = event.target.closest('button[data-tile]');
+    if (button) onLevelUp(button.dataset.tile);
+  });
+}
+
+function upgradeRowHtml({ tile, level, cost, ready }) {
+  const costText = Object.entries(cost)
+    .map(([resource, amount]) => `${RESOURCE_ICONS[resource]} ${formatCount(amount)}`)
+    .join(' + ');
+  const zone = tile.zone === ZONES[0].id ? '' : `<span class="zone-chip">${ZONES.find((z) => z.id === tile.zone).name}</span>`;
+  return `<div class="upg-row">
+    <div class="upg-icon">${tileIcon(tile)}</div>
+    <div class="upg-body">
+      <div class="upg-name">${tile.name}${zone}</div>
+      <div class="upg-meta">Lv ${level} &rarr; ${level + 1} &middot; ${costText}</div>
+      ${ready ? '' : `<div class="upg-bar"><i data-bar="${tile.id}"></i></div>`}
+    </div>
+    ${ready ? `<button class="upg-buy" data-tile="${tile.id}">Level up</button>` : `<span class="upg-wait" data-wait="${tile.id}"></span>`}
+  </div>`;
+}
+
+let upgradesReadyShown = -1;
+let upgradesLayout = '';
+
+// Called every frame with upgradeList(state). The list is rebuilt only when its rows or their
+// ready state change; the waiting rows' percentages are updated in place, so a button is never
+// swapped out from under the cursor between mouse-down and mouse-up.
+export function updateUpgrades(rows) {
+  const ready = rows.filter((row) => row.ready).length;
+  if (ready !== upgradesReadyShown) {
+    upgradesReadyShown = ready;
+    elements.upgradesBadge.textContent = ready;
+    elements.upgradesBadge.classList.toggle('hidden', ready === 0);
+    elements.upgradesReady.textContent = ready ? `${ready} ready` : '';
+  }
+  if (elements.upgradesPanel.classList.contains('hidden')) return;
+
+  const layout = rows.map((row) => `${row.tile.id}:${row.level}:${row.ready ? 1 : 0}`).join(',');
+  if (layout !== upgradesLayout) {
+    upgradesLayout = layout;
+    elements.upgradesList.innerHTML = rows.length
+      ? rows.map(upgradeRowHtml).join('')
+      : '<p class="upg-empty">Every tile you have unlocked is at max level. Unlock more tiles to keep upgrading.</p>';
+  }
+  for (const row of rows) {
+    if (row.ready) continue;
+    const percent = Math.floor(row.fraction * 100);
+    elements.upgradesList.querySelector(`[data-wait="${row.tile.id}"]`).textContent = `${percent}%`;
+    elements.upgradesList.querySelector(`[data-bar="${row.tile.id}"]`).style.width = `${percent}%`;
+  }
 }
 
 export function initMenu({ onRestart, onRefresh, onExport, onImport, onShopBuy, settings, onSettingChange }) {

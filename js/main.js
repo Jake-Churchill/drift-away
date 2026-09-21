@@ -21,6 +21,7 @@ import {
   saveState,
   unlockIntensity,
   unlockTile,
+  upgradeList,
 } from './state.js';
 import {
   initScene,
@@ -41,6 +42,7 @@ import {
   hideTilePanel,
   initMenu,
   initPrestige,
+  initUpgrades,
   showOfflineModal,
   showResourcePopup,
   showTokenPopup,
@@ -48,6 +50,7 @@ import {
   updateBoardTint,
   updateNextUnlock,
   updatePrestigeDisplay,
+  updateUpgrades,
 } from './ui.js';
 import {
   playLevelUpImpactSound,
@@ -79,6 +82,8 @@ initUI(
   },
   goToTile
 );
+
+initUpgrades((tileId) => handleLevelUpClick(TILES.find((t) => t.id === tileId)));
 
 initMenu({
   onRestart: () => {
@@ -212,7 +217,8 @@ function handleLevelUpClick(tile) {
   const success = levelUpTile(state, tile);
   if (success) {
     saveState(state);
-    renderTilePanel(tile);
+    // Also called from the upgrades panel, where no tile panel should pop up.
+    if (selectedTileId === tile.id) renderTilePanel(tile);
     updateAchievementsDisplay(state);
     showResourcePopup(spent(cost));
     const intensity = levelUpIntensity(level + 1);
@@ -288,6 +294,7 @@ function loop(now) {
   // prestige doesn't repeat it), the line also says what to click.
   updateNextUnlock(next, !state.achievements.includes('first-steps'));
   updateBoardTint(statuses, next, settings.boardTint, projectTile);
+  updateUpgrades(upgradeList(state));
 
   timeSinceSave += elapsed;
   if (timeSinceSave >= 10) {

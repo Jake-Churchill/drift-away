@@ -504,6 +504,29 @@ export function levelUpTile(state, tile) {
   return true;
 }
 
+// How much of a cost is in hand, 0 to 1 (the scarcest resource decides).
+export function costProgressFraction(cost, state) {
+  const fractions = Object.entries(cost).map(([resource, amount]) =>
+    Math.min(1, state.resources[resource] / amount)
+  );
+  return Math.min(...fractions);
+}
+
+// Every unlocked tile that can still be levelled, for the quick-upgrade panel: affordable
+// ones first in board order, then the rest closest-to-affordable first (ties keep board order).
+export function upgradeList(state) {
+  const rows = [];
+  for (const tile of TILES) {
+    if (!state.unlocked.includes(tile.id)) continue;
+    const level = getLevel(state, tile.id);
+    if (level >= MAX_LEVEL) continue;
+    const cost = levelUpCost(tile, level + 1);
+    const fraction = costProgressFraction(cost, state);
+    rows.push({ tile, level, cost, fraction, ready: fraction >= 1 });
+  }
+  return rows.sort((a, b) => b.ready - a.ready || (a.ready ? 0 : b.fraction - a.fraction));
+}
+
 // Time away. The cap and the rate start at 8 hours and 50% and are raised in the Harbor Shop.
 export const OFFLINE_CAP_HOURS = [8, 12, 16, 24];
 const OFFLINE_RATES = [0.5, 0.65, 0.8];
