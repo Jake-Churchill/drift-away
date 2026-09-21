@@ -252,6 +252,16 @@ canvas.addEventListener('click', (event) => {
   renderTilePanel(tile);
 });
 
+// Double-clicking a locked tile unlocks it, the same as pressing its panel's Unlock button
+// (which does nothing while the tile isn't affordable yet).
+canvas.addEventListener('dblclick', (event) => {
+  const rect = canvas.getBoundingClientRect();
+  const gridPos = screenToGrid(event.clientX - rect.left, event.clientY - rect.top, rect.width, rect.height);
+  if (!gridPos) return;
+  const tile = TILES.find((t) => t.gridPos.row === gridPos.row && t.gridPos.col === gridPos.col);
+  if (tile && tile.zone === getCurrentZone() && !state.unlocked.includes(tile.id)) handleUnlockClick(tile);
+});
+
 let lastTickAt = Date.now();
 let timeSinceSave = 0;
 
