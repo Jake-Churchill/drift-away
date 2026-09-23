@@ -143,10 +143,15 @@ initPrestige(
     }
     return !!result;
   },
-  (upgrade) => {
+  (upgrade, qty = 1) => {
     const tokensBefore = state.prestige.tokens;
-    const success = upgrade === 'headStart' ? buyHeadStart(state) : buyPrestigeUpgrade(state, upgrade);
-    if (success) {
+    let purchases = 0;
+    for (let i = 0; i < qty; i++) {
+      const success = upgrade === 'headStart' ? buyHeadStart(state) : buyPrestigeUpgrade(state, upgrade);
+      if (!success) break;
+      purchases++;
+    }
+    if (purchases > 0) {
       saveState(state);
       updatePrestigeDisplay(state);
       showTokenPopup(-(tokensBefore - state.prestige.tokens));

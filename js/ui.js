@@ -662,6 +662,38 @@ export function hideMenu() {
   elements.menuOverlay.classList.add('hidden');
 }
 
+// A tap fires once immediately; holding repeats it (fast enough to feel like "quick buy",
+// slow enough not to double-spend a whole batch on one accidental extra tick).
+const HOLD_REPEAT_DELAY_MS = 400;
+const HOLD_REPEAT_INTERVAL_MS = 90;
+
+function wireHoldToRepeat(button, onFire) {
+  let timeoutId = null;
+  let intervalId = null;
+  const stop = () => {
+    clearTimeout(timeoutId);
+    clearInterval(intervalId);
+    timeoutId = null;
+    intervalId = null;
+  };
+  button.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0) return;
+    onFire();
+    timeoutId = setTimeout(() => {
+      intervalId = setInterval(onFire, HOLD_REPEAT_INTERVAL_MS);
+    }, HOLD_REPEAT_DELAY_MS);
+  });
+  button.addEventListener('pointerup', stop);
+  button.addEventListener('pointerleave', stop);
+  button.addEventListener('pointercancel', stop);
+}
+
+function wireQuickBuyButtons(row, onBuy) {
+  wireHoldToRepeat(row.buyBtn, () => onBuy(1));
+  wireHoldToRepeat(row.buyBtn5, () => onBuy(5));
+  wireHoldToRepeat(row.buyBtn10, () => onBuy(10));
+}
+
 export function initPrestige(onPrestige, onBuyUpgrade, onRefresh) {
   elements.prestigeBtn = document.getElementById('prestige-btn');
   elements.prestigeOverlay = document.getElementById('prestige-overlay');
@@ -681,15 +713,19 @@ export function initPrestige(onPrestige, onBuyUpgrade, onRefresh) {
       count: document.getElementById(`store-${resource}-count`),
       cost: document.getElementById(`store-${resource}-cost`),
       buyBtn: document.getElementById(`store-${resource}-buy-btn`),
+      buyBtn5: document.getElementById(`store-${resource}-buy5-btn`),
+      buyBtn10: document.getElementById(`store-${resource}-buy10-btn`),
     };
-    elements.storeRows[resource].buyBtn.addEventListener('click', () => onBuyUpgrade(resource));
+    wireQuickBuyButtons(elements.storeRows[resource], (qty) => onBuyUpgrade(resource, qty));
   }
   elements.headStartRow = {
     count: document.getElementById('store-headstart-count'),
     cost: document.getElementById('store-headstart-cost'),
     buyBtn: document.getElementById('store-headstart-buy-btn'),
+    buyBtn5: document.getElementById('store-headstart-buy5-btn'),
+    buyBtn10: document.getElementById('store-headstart-buy10-btn'),
   };
-  elements.headStartRow.buyBtn.addEventListener('click', () => onBuyUpgrade('headStart'));
+  wireQuickBuyButtons(elements.headStartRow, (qty) => onBuyUpgrade('headStart', qty));
 
   function showMain() {
     elements.prestigeConfirm.classList.add('hidden');
@@ -775,7 +811,10 @@ export function updatePrestigeDisplay(state) {
     // doesn't duplicate the icon.
     row.count.textContent = `+${purchaseCount * PRESTIGE_UPGRADE_PERCENT}%`;
     row.cost.textContent = `${cost} tokens`;
-    row.buyBtn.disabled = state.prestige.tokens < cost;
+    const poor = state.prestige.tokens < cost;
+    row.buyBtn.disabled = poor;
+    row.buyBtn5.disabled = poor;
+    row.buyBtn10.disabled = poor;
   }
 
   const level = state.prestige.headStart;
@@ -783,7 +822,10 @@ export function updatePrestigeDisplay(state) {
   const maxed = level >= HEAD_START_MAX_LEVEL;
   headStart.count.textContent = `Head start +${level * HEAD_START_TILES_PER_LEVEL}`;
   headStart.cost.textContent = maxed ? 'Max' : `${headStartCost(level)} tokens`;
-  headStart.buyBtn.disabled = maxed || state.prestige.tokens < headStartCost(level);
+  const headStartLocked = maxed || state.prestige.tokens < headStartCost(level);
+  headStart.buyBtn.disabled = headStartLocked;
+  headStart.buyBtn5.disabled = headStartLocked;
+  headStart.buyBtn10.disabled = headStartLocked;
 }
 
 const POPUP_DURATION_MS = 1200;
