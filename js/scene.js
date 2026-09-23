@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { TILES } from './tiles.js';
 import { ZONES } from './zones.js';
 import { buildZone2Prop } from './zone2-props.js';
+import { buildZone3Prop } from './zone3-props.js';
 import { buildCloudField, resizeCloudField } from './clouds.js';
 import { createFoamTexture, createWaterNormalTexture } from './textures.js';
 import { DEFAULT_PALETTE } from './palettes.js';
@@ -32,6 +33,11 @@ const LARGE_BOOSTER_IDS = new Set([
   'frozen_booster_drying_rack',
   'frozen_booster_composting_shed',
   'frozen_booster_lighthouse',
+  'abyssal_booster_windmill',
+  'abyssal_booster_smokehouse',
+  'abyssal_booster_drying_rack',
+  'abyssal_booster_composting_shed',
+  'abyssal_booster_lighthouse',
 ]);
 
 const LEVEL_SCALE = { 1: 1.0, 2: 1.15, 3: 1.3 };
@@ -63,6 +69,17 @@ const BADGE_ANCHOR_HEIGHT = {
   'zone2:frozen_booster_net_weavers': 0.6,
   'zone2:frozen_booster_composting_shed': 0.5,
   'zone2:frozen_booster_lighthouse': 1.75,
+  // Zone 3's redesigned props, measured the same way.
+  'zone3:fish': 0.85,
+  'zone3:kelp': 0.95,
+  'zone3:driftwood': 0.45,
+  'zone3:crops': 0.65,
+  'zone3:abyssal_booster_windmill': 0.95,
+  'zone3:abyssal_booster_smokehouse': 0.9,
+  'zone3:abyssal_booster_drying_rack': 0.65,
+  'zone3:abyssal_booster_net_weavers': 0.4,
+  'zone3:abyssal_booster_composting_shed': 0.6,
+  'zone3:abyssal_booster_lighthouse': 1.0,
 };
 const TRIM_THICKNESS = { 1: 0.03, 2: 0.045, 3: 0.06 };
 const TRIM_COLOR = { 1: BOOSTER_TRIM, 2: 0xf0c94f, 3: 0xfff0a0 };
@@ -772,6 +789,8 @@ function addProp(raftMesh, tile) {
     propGroup.position.y = WALL_HEIGHT;
     if (tile.zone === 'zone2') {
       buildZone2Prop(propGroup, tile, level);
+    } else if (tile.zone === 'zone3') {
+      buildZone3Prop(propGroup, tile, level);
     } else {
       switch (tile.family) {
         case 'fish': buildFishProp(propGroup, level); break;

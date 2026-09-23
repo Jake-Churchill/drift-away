@@ -93,6 +93,55 @@ export const TILES = [
   { id: 'frozen_booster_net_weavers', name: 'Ice Net Weavers', gridPos: { row: 0, col: 6 }, family: 'booster', kind: 'booster', produces: null, rate: null, boosts: [{ resource: 'fish', percent: 80 }, { resource: 'kelp', percent: 80 }], unlock: { type: 'cost', cost: { fish: 10800, driftwood: 8100 } }, zone: 'zone2' },
   { id: 'frozen_booster_composting_shed', name: 'Frozen Composting Shed', gridPos: { row: 3, col: 7 }, family: 'booster', kind: 'booster', produces: null, rate: null, boosts: [{ resource: 'crops', percent: 80 }, { resource: 'driftwood', percent: 80 }], unlock: { type: 'milestone', resource: 'driftwood', target: 8100 }, zone: 'zone2' },
   { id: 'frozen_booster_lighthouse', name: 'Aurora Lighthouse', gridPos: { row: 4, col: 6 }, family: 'booster', kind: 'booster', produces: null, rate: null, boosts: [{ resource: 'fish', percent: 60 }, { resource: 'kelp', percent: 60 }, { resource: 'driftwood', percent: 60 }, { resource: 'crops', percent: 60 }], unlock: { type: 'cost', cost: { kelp: 10800, driftwood: 8100 } }, zone: 'zone2' },
+
+  // ===== Zone 3: Abyssal Trench ===== (mirrors zone 2's grid shape at col+6;
+  // costs/milestones are 90x zone-2's, rates/boosts are 4x zone-2's -- the same
+  // ratio zone 2 itself used over zone 1)
+  // Fish family
+  { id: 'abyssal_fish_start', name: 'Anglerfish Trap', gridPos: { row: 0, col: 13 }, family: 'fish', kind: 'producer', produces: 'fish', rate: 16, boosts: null, unlock: { type: 'cost', cost: { driftwood: 405000, crops: 324000 } }, zone: 'zone3' },
+  { id: 'abyssal_fish_anchored_net', name: 'Sunken Anchor Net', gridPos: { row: 0, col: 16 }, family: 'fish', kind: 'producer', produces: 'fish', rate: 16, boosts: null, unlock: { type: 'cost', cost: { driftwood: 486000, crops: 405000 } }, zone: 'zone3' },
+  { id: 'abyssal_fish_trawling_raft', name: 'Trench Trawler', gridPos: { row: 2, col: 16 }, family: 'fish', kind: 'producer', produces: 'fish', rate: 19.2, boosts: null, unlock: { type: 'cost', cost: { driftwood: 202500 } }, zone: 'zone3' },
+  { id: 'abyssal_fish_tide_pool_trap', name: 'Vent-Side Trap', gridPos: { row: 5, col: 14 }, family: 'fish', kind: 'producer', produces: 'fish', rate: 19.2, boosts: null, unlock: { type: 'milestone', resource: 'crops', target: 2025000 }, zone: 'zone3' },
+  { id: 'abyssal_fish_deep_sea_longline', name: 'Deep Longline', gridPos: { row: 1, col: 17 }, family: 'fish', kind: 'producer', produces: 'fish', rate: 24, boosts: null, unlock: { type: 'cost', cost: { fish: 486000, driftwood: 324000 } }, zone: 'zone3' },
+  { id: 'abyssal_fish_grand_fishery', name: 'Grand Abyssal Fishery', gridPos: { row: 3, col: 12 }, family: 'fish', kind: 'producer', produces: 'fish', rate: 32, boosts: null, unlock: { type: 'cost', cost: { kelp: 567000, crops: 405000 } }, zone: 'zone3' },
+  { id: 'abyssal_fish_open_ocean_trawler', name: 'Open-Trench Trawler', gridPos: { row: 0, col: 15 }, family: 'fish', kind: 'producer', produces: 'fish', rate: 28.8, boosts: null, unlock: { type: 'milestone', resource: 'kelp', target: 324000 }, zone: 'zone3' },
+  { id: 'abyssal_fish_leviathan_net', name: 'Leviathan Maw', gridPos: { row: 4, col: 13 }, family: 'fish', kind: 'producer', produces: 'fish', rate: 40, boosts: null, unlock: { type: 'milestone', resource: 'fish', target: 1620000 }, zone: 'zone3' },
+
+  // Kelp family
+  { id: 'abyssal_kelp_nursery', name: 'Tube Worm Nursery', gridPos: { row: 2, col: 12 }, family: 'kelp', kind: 'producer', produces: 'kelp', rate: 19.2, boosts: null, unlock: { type: 'milestone', resource: 'crops', target: 1215000 }, zone: 'zone3' },
+  { id: 'abyssal_kelp_start', name: 'Bristle Worm Bed', gridPos: { row: 4, col: 14 }, family: 'kelp', kind: 'producer', produces: 'kelp', rate: 16, boosts: null, unlock: { type: 'cost', cost: { driftwood: 567000, crops: 486000 } }, zone: 'zone3' },
+  { id: 'abyssal_kelp_seaweed_raft', name: 'Vent Worm Raft', gridPos: { row: 1, col: 15 }, family: 'kelp', kind: 'producer', produces: 'kelp', rate: 16, boosts: null, unlock: { type: 'cost', cost: { driftwood: 243000 } }, zone: 'zone3' },
+  { id: 'abyssal_kelp_floating_garden', name: 'Floating Worm Garden', gridPos: { row: 1, col: 13 }, family: 'kelp', kind: 'producer', produces: 'kelp', rate: 19.2, boosts: null, unlock: { type: 'milestone', resource: 'kelp', target: 1215000 }, zone: 'zone3' },
+  { id: 'abyssal_kelp_deep_bed', name: 'Deep Worm Bed', gridPos: { row: 4, col: 16 }, family: 'kelp', kind: 'producer', produces: 'kelp', rate: 24, boosts: null, unlock: { type: 'cost', cost: { driftwood: 729000, crops: 567000 } }, zone: 'zone3' },
+  { id: 'abyssal_kelp_reef', name: 'Worm Reef', gridPos: { row: 3, col: 15 }, family: 'kelp', kind: 'producer', produces: 'kelp', rate: 32, boosts: null, unlock: { type: 'milestone', resource: 'driftwood', target: 486000 }, zone: 'zone3' },
+  { id: 'abyssal_kelp_open_water_farm', name: 'Open-Trench Worm Farm', gridPos: { row: 1, col: 12 }, family: 'kelp', kind: 'producer', produces: 'kelp', rate: 28.8, boosts: null, unlock: { type: 'cost', cost: { fish: 648000, driftwood: 567000 } }, zone: 'zone3' },
+  { id: 'abyssal_kelp_abyssal_forest', name: 'Abyssal Worm Forest', gridPos: { row: 2, col: 14 }, family: 'kelp', kind: 'producer', produces: 'kelp', rate: 40, boosts: null, unlock: { type: 'cost', cost: { driftwood: 324000 } }, zone: 'zone3' },
+
+  // Driftwood family
+  { id: 'abyssal_driftwood_start', name: 'Bone Collector', gridPos: { row: 2, col: 15 }, family: 'driftwood', kind: 'producer', produces: 'driftwood', rate: 8, boosts: null, unlock: { type: 'cost', cost: { crops: 324000 } }, zone: 'zone3' },
+  { id: 'abyssal_driftwood_salvage_raft', name: 'Sunken Salvage Raft', gridPos: { row: 5, col: 17 }, family: 'driftwood', kind: 'producer', produces: 'driftwood', rate: 9.6, boosts: null, unlock: { type: 'milestone', resource: 'fish', target: 4050000 }, zone: 'zone3' },
+  { id: 'abyssal_driftwood_debris_net', name: 'Skeletal Debris Net', gridPos: { row: 5, col: 16 }, family: 'driftwood', kind: 'producer', produces: 'driftwood', rate: 9.6, boosts: null, unlock: { type: 'milestone', resource: 'driftwood', target: 3240000 }, zone: 'zone3' },
+  { id: 'abyssal_driftwood_current_sweeper', name: 'Current-Swept Bones', gridPos: { row: 5, col: 15 }, family: 'driftwood', kind: 'producer', produces: 'driftwood', rate: 12.8, boosts: null, unlock: { type: 'cost', cost: { fish: 1215000, kelp: 1215000 } }, zone: 'zone3' },
+  { id: 'abyssal_driftwood_storm_wreckage', name: 'Storm-Sunk Wreckage', gridPos: { row: 3, col: 17 }, family: 'driftwood', kind: 'producer', produces: 'driftwood', rate: 16, boosts: null, unlock: { type: 'cost', cost: { driftwood: 324000 } }, zone: 'zone3' },
+  { id: 'abyssal_driftwood_flotsam_dredge', name: 'Bone Dredge', gridPos: { row: 2, col: 17 }, family: 'driftwood', kind: 'producer', produces: 'driftwood', rate: 16, boosts: null, unlock: { type: 'cost', cost: { crops: 364500 } }, zone: 'zone3' },
+  { id: 'abyssal_driftwood_shipwreck_salvage', name: 'Drowned Shipwreck', gridPos: { row: 3, col: 16 }, family: 'driftwood', kind: 'producer', produces: 'driftwood', rate: 20.8, boosts: null, unlock: { type: 'cost', cost: { driftwood: 283500, crops: 202500 } }, zone: 'zone3' },
+
+  // Crops family
+  { id: 'abyssal_crops_start', name: 'Vent Garden Plot', gridPos: { row: 5, col: 13 }, family: 'crops', kind: 'producer', produces: 'crops', rate: 8, boosts: null, unlock: { type: 'cost', cost: { fish: 810000, driftwood: 810000 } }, zone: 'zone3' },
+  { id: 'abyssal_crops_soil_barge', name: 'Mineral Soil Vent', gridPos: { row: 3, col: 14 }, family: 'crops', kind: 'producer', produces: 'crops', rate: 9.6, boosts: null, unlock: { type: 'cost', cost: { driftwood: 283500 } }, zone: 'zone3' },
+  { id: 'abyssal_crops_hanging_garden', name: 'Hanging Vent Garden', gridPos: { row: 4, col: 15 }, family: 'crops', kind: 'producer', produces: 'crops', rate: 9.6, boosts: null, unlock: { type: 'milestone', resource: 'fish', target: 972000 }, zone: 'zone3' },
+  { id: 'abyssal_crops_terraced_planter', name: 'Terraced Vent Beds', gridPos: { row: 0, col: 17 }, family: 'crops', kind: 'producer', produces: 'crops', rate: 12.8, boosts: null, unlock: { type: 'milestone', resource: 'kelp', target: 2430000 }, zone: 'zone3' },
+  { id: 'abyssal_crops_floating_orchard', name: 'Floating Spore Garden', gridPos: { row: 0, col: 14 }, family: 'crops', kind: 'producer', produces: 'crops', rate: 16, boosts: null, unlock: { type: 'cost', cost: { driftwood: 243000, crops: 162000 } }, zone: 'zone3' },
+  { id: 'abyssal_crops_paddy_raft', name: 'Vent Paddy', gridPos: { row: 4, col: 17 }, family: 'crops', kind: 'producer', produces: 'crops', rate: 16, boosts: null, unlock: { type: 'cost', cost: { driftwood: 1134000, crops: 972000 } }, zone: 'zone3' },
+  { id: 'abyssal_crops_vertical_farm', name: 'Vertical Vent Farm', gridPos: { row: 2, col: 13 }, family: 'crops', kind: 'producer', produces: 'crops', rate: 20.8, boosts: null, unlock: { type: 'cost', cost: { driftwood: 445500 } }, zone: 'zone3' },
+
+  // Booster family
+  { id: 'abyssal_booster_drying_rack', name: 'Bone Rack', gridPos: { row: 1, col: 16 }, family: 'booster', kind: 'booster', produces: null, rate: null, boosts: [{ resource: 'kelp', percent: 320 }, { resource: 'driftwood', percent: 320 }], unlock: { type: 'milestone', resource: 'crops', target: 324000 }, zone: 'zone3' },
+  { id: 'abyssal_booster_smokehouse', name: 'Vent Chimney', gridPos: { row: 5, col: 12 }, family: 'booster', kind: 'booster', produces: null, rate: null, boosts: [{ resource: 'fish', percent: 400 }], unlock: { type: 'cost', cost: { kelp: 1620000, driftwood: 1620000 } }, zone: 'zone3' },
+  { id: 'abyssal_booster_windmill', name: 'Current Turbine', gridPos: { row: 1, col: 14 }, family: 'booster', kind: 'booster', produces: null, rate: null, boosts: [{ resource: 'crops', percent: 400 }], unlock: { type: 'cost', cost: { driftwood: 162000 } }, zone: 'zone3' },
+  { id: 'abyssal_booster_net_weavers', name: 'Filter Web', gridPos: { row: 0, col: 12 }, family: 'booster', kind: 'booster', produces: null, rate: null, boosts: [{ resource: 'fish', percent: 320 }, { resource: 'kelp', percent: 320 }], unlock: { type: 'cost', cost: { fish: 972000, driftwood: 729000 } }, zone: 'zone3' },
+  { id: 'abyssal_booster_composting_shed', name: 'Ossuary', gridPos: { row: 3, col: 13 }, family: 'booster', kind: 'booster', produces: null, rate: null, boosts: [{ resource: 'crops', percent: 320 }, { resource: 'driftwood', percent: 320 }], unlock: { type: 'milestone', resource: 'driftwood', target: 729000 }, zone: 'zone3' },
+  { id: 'abyssal_booster_lighthouse', name: 'Anglerfish Lure', gridPos: { row: 4, col: 12 }, family: 'booster', kind: 'booster', produces: null, rate: null, boosts: [{ resource: 'fish', percent: 240 }, { resource: 'kelp', percent: 240 }, { resource: 'driftwood', percent: 240 }, { resource: 'crops', percent: 240 }], unlock: { type: 'cost', cost: { kelp: 972000, driftwood: 729000 } }, zone: 'zone3' },
 ];
 
 function neighborGridPositions(row, col) {

@@ -25,6 +25,7 @@ import {
   isEligible,
   isFullyComplete,
   isLevelUpEligible,
+  isLit,
   levelUpCost,
   levelUpIntensity,
   levelUpTile,
@@ -49,7 +50,7 @@ import {
 
 // --- Tile data integrity ---
 
-assert.equal(TILES.length, 72, 'expected exactly 72 tiles (36 zone-1 + 36 zone-2)');
+assert.equal(TILES.length, 108, 'expected exactly 108 tiles (36 zone-1 + 36 zone-2 + 36 zone-3)');
 
 const ids = TILES.map((t) => t.id);
 assert.equal(new Set(ids).size, TILES.length, 'tile ids must be unique');
@@ -79,8 +80,8 @@ const familyCounts = TILES.reduce((counts, t) => {
 }, {});
 assert.deepEqual(
   familyCounts,
-  { fish: 16, kelp: 16, driftwood: 14, crops: 14, booster: 12 },
-  'family counts doubled with zone 2 (8*2=16 fish/kelp, 7*2=14 driftwood/crops, 6*2=12 booster)'
+  { fish: 24, kelp: 24, driftwood: 21, crops: 21, booster: 18 },
+  'family counts tripled with zone 3 (8*3=24 fish/kelp, 7*3=21 driftwood/crops, 6*3=18 booster)'
 );
 
 console.log('tile data tests passed');
@@ -634,10 +635,10 @@ console.log('economy math tests passed');
 // --- ACHIEVEMENTS data integrity ---
 
 {
-  assert.equal(ACHIEVEMENTS.length, 27, 'expected exactly 27 achievements');
+  assert.equal(ACHIEVEMENTS.length, 30, 'expected exactly 30 achievements');
   assert.equal(
     new Set(ACHIEVEMENTS.map((a) => a.id)).size,
-    27,
+    30,
     'achievement ids must be unique'
   );
   for (const achievement of ACHIEVEMENTS) {
@@ -734,10 +735,9 @@ console.log('economy math tests passed');
   state.unlocked.push(nextTile.id);
   state.levels[nextTile.id] = MAX_LEVEL;
   const awarded = checkAchievements(state);
-  // The 36th unlocked tile also crosses the "Home Waters" tile-count milestone (2 gold).
-  assert.deepEqual(awarded.map((a) => a.id).sort(), ['halfway-there', 'tiles-36'], 'half the tiles maxed earns halfway-there');
+  assert.deepEqual(awarded.map((a) => a.id).sort(), ['halfway-there'], 'half the tiles maxed earns halfway-there');
   assert.equal(awarded.find((a) => a.id === 'halfway-there').reward, 2, 'halfway-there pays 2 gold');
-  assert.equal(state.gold, goldBefore + 2 + 2);
+  assert.equal(state.gold, goldBefore + 2);
 }
 
 {
@@ -1371,7 +1371,7 @@ console.log('achievement save migration tests passed');
 // --- the new achievements ---
 {
   const total = ACHIEVEMENTS.reduce((sum, a) => sum + a.reward, 0);
-  assert.equal(total, 85, 'gold available from achievements');
+  assert.equal(total, 103, 'gold available from achievements');
   assert.equal(new Set(ACHIEVEMENTS.map((a) => a.id)).size, ACHIEVEMENTS.length, 'ids are unique');
 
   const st = createInitialState();
@@ -1391,13 +1391,21 @@ console.log('achievement save migration tests passed');
 
   const counts = createInitialState();
   const ids = TILES.map((t) => t.id);
-  const expectAt = { 10: 'tiles-10', 25: 'tiles-25', 36: 'tiles-36', 50: 'tiles-50', 72: 'tiles-72' };
+  const expectAt = { 10: 'tiles-10', 25: 'tiles-25', 36: 'tiles-36', 50: 'tiles-50', 72: 'tiles-72', 108: 'tiles-108' };
   for (const [n, id] of Object.entries(expectAt)) {
     counts.unlocked = ids.slice(0, Number(n) - 1);
     assert(!fired(counts).has(id), `${id} not yet at ${n - 1} tiles`);
     counts.unlocked = ids.slice(0, Number(n));
     assert(fired(counts).has(id) || counts.achievements.includes(id), `${id} at ${n} tiles`);
   }
+
+  // 108 is now the real total — only the top tier's name may claim completion.
+  const tiles72 = ACHIEVEMENTS.find((a) => a.id === 'tiles-72');
+  const tiles108 = ACHIEVEMENTS.find((a) => a.id === 'tiles-108');
+  assert.equal(tiles72.description, 'Unlock 72 tiles', 'tiles-72 no longer claims "all" now that 108 exist');
+  assert.notEqual(tiles72.name, 'A Whole Ocean', 'the "complete" name moved to the real top tier');
+  assert.equal(tiles108.name, 'A Whole Ocean');
+  assert.equal(tiles108.description, 'Unlock all 108 tiles');
 
   const voyages = createInitialState();
   for (const [n, id] of [[1, 'voyage-1'], [3, 'voyage-3'], [5, 'voyage-5'], [10, 'voyage-10']]) {
@@ -1456,4 +1464,52 @@ console.log('achievement save migration tests passed');
   assert.equal(upgradeList(st).length, 0);
 
   console.log('upgrade list tests passed');
+}
+
+// --- Bioluminescence (zone 3): dim until a zone-3 booster is unlocked next door ---
+{
+  const litByBooster = TILES.find((t) => t.id === 'abyssal_fish_start');
+  const boosterNeighbor = TILES.find((t) => t.id === 'abyssal_booster_net_weavers');
+  assert(TILE_NEIGHBORS.get(litByBooster.id).includes(boosterNeighbor.id), 'fixture assumption: these two tiles are adjacent');
+
+  const noNeighborBooster = TILES.find((t) => t.id === 'abyssal_fish_tide_pool_trap');
+  assert(
+    !(TILE_NEIGHBORS.get(noNeighborBooster.id) || []).some((id) => TILES.find((t) => t.id === id)?.zone === 'zone3' && TILES.find((t) => t.id === id)?.kind === 'booster'),
+    'fixture assumption: this tile has no zone-3 booster neighbor'
+  );
+
+  // Non-zone-3 tiles and zone-3 boosters are never dim, regardless of neighbors or unlocks.
+  assert.equal(isLit(TILES.find((t) => t.id === 'fish_start'), []), true, 'a zone-1 tile is never dim');
+  assert.equal(isLit(TILES.find((t) => t.id === 'frozen_fish_start'), []), true, 'a zone-2 tile is never dim');
+  assert.equal(isLit(boosterNeighbor, []), true, 'a zone-3 booster is never dim itself');
+
+  // A zone-3 producer with no unlocked zone-3 booster neighbor is dim...
+  assert.equal(isLit(litByBooster, []), false, 'dim with nothing unlocked nearby');
+  assert.equal(isLit(litByBooster, [boosterNeighbor.id]), true, '...lit once that neighbor is unlocked');
+  assert.equal(isLit(noNeighborBooster, TILES.filter((t) => t.zone === 'zone3' && t.kind === 'booster').map((t) => t.id)), false, 'still dim: no zone-3 booster is actually adjacent to it, however many are unlocked elsewhere');
+
+  // The darkness penalty actually halves the rate, and lighting it doubles output back to normal.
+  // Uses a producer/booster pair whose resources don't overlap, so unlocking the booster only
+  // lights the producer and doesn't also raise its rate via the booster's own (raft-wide) percent
+  // — that's a separate, already-tested effect this assertion isn't about.
+  const dimProducer = TILES.find((t) => t.id === 'abyssal_fish_anchored_net');
+  const nonOverlappingBooster = TILES.find((t) => t.id === 'abyssal_booster_drying_rack');
+  assert(TILE_NEIGHBORS.get(dimProducer.id).includes(nonOverlappingBooster.id), 'fixture assumption: these two tiles are adjacent');
+  assert(!nonOverlappingBooster.boosts.some((b) => b.resource === dimProducer.produces), 'fixture assumption: this booster does not also boost fish');
+
+  const st = createInitialState();
+  st.unlocked = ['driftwood_start', dimProducer.id];
+  const dimRate = effectiveTileRate(dimProducer, st.unlocked, st.levels);
+  st.unlocked.push(nonOverlappingBooster.id);
+  const litRate = effectiveTileRate(dimProducer, st.unlocked, st.levels);
+  assert.equal(litRate, dimRate * 2, 'lighting a dim producer doubles its rate (the darkness penalty is 50%)');
+  assert.equal(dimRate, dimProducer.rate * 0.5, 'a dim, unboosted, level-1 producer runs at exactly half its listed rate');
+
+  // rateBreakdown and effectiveRate (the HUD/ETA/offline-progress path) reflect the same penalty.
+  const before = rateBreakdown(st, 'fish').base;
+  st.unlocked = st.unlocked.filter((id) => id !== nonOverlappingBooster.id);
+  const after = rateBreakdown(st, 'fish').base;
+  assert.equal(after, before / 2, 'rateBreakdown halves a dim zone-3 producer\'s contribution to the resource total');
+
+  console.log('bioluminescence tests passed');
 }

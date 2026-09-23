@@ -1,6 +1,6 @@
 # Tile Design
 
-All 72 tiles are defined in `js/tiles.js`: 36 per zone, each zone a 6×6 hex grid, placed side by side. Zone 1 ("Home Waters") is cols 0–5; zone 2 ("Frozen Reach") is cols 6–11. Every tile has a `zone` field (`zone1`/`zone2`); zone metadata (name, raft color) lives in `js/zones.js`. Within a zone, families are scattered rather than grouped (the layout was shuffled after the first version). This is a first-pass balance — not playtested — expect to retune specific numbers after actually playing it.
+All 108 tiles are defined in `js/tiles.js`: 36 per zone, each zone a 6×6 hex grid, placed side by side. Zone 1 ("Home Waters") is cols 0–5; zone 2 ("Frozen Reach") is cols 6–11; zone 3 ("Abyssal Trench") is cols 12–17. Every tile has a `zone` field (`zone1`/`zone2`/`zone3`); zone metadata (name, raft color) lives in `js/zones.js`. Within a zone, families are scattered rather than grouped (the layout was shuffled after the first version). This is a first-pass balance — not playtested — expect to retune specific numbers after actually playing it.
 
 There is exactly one starting tile, `driftwood_start` (unlock type `start`); every other tile's `unlock` field is a `cost` or `milestone` requirement as shown below. But meeting that requirement isn't sufficient by itself: a tile can only be unlocked once it's also adjacent (on the hex grid) to a tile that's already unlocked. That adjacency requirement is derived from `gridPos` in `js/tiles.js` (see `TILE_NEIGHBORS`) and isn't repeated per-row below — assume it applies to every non-start tile in these tables.
 
@@ -17,6 +17,16 @@ Zone 2 is entered through the col 5 / col 6 border: same-row `col ± 1` neighbor
 `tests/economy.test.mjs` pins the ×90/×4 relationship across all 36 pairs — if you deliberately retune zone 2, update the constants in the "zone-2 economy multiplier tests" section too.
 
 Known balance quirk (accepted, not a bug): level-up cost derives from `rate`/`percent` (see the end of this page), so zone-2 level-ups cost only ~4× zone 1's while unlocks cost 90×. Level-ups are cheap relative to unlocks in zone 2.
+
+## Zone 3 rules (how it relates to zone 2, and its own mechanic)
+
+Every zone-3 tile mirrors one zone-2 tile the same way zone 2 mirrors zone 1: id prefixed `abyssal_` (`frozen_fish_start` → `abyssal_fish_start`), same family/kind/`produces`, `gridPos` shifted +6 more columns, re-themed name. Numbers scale from the zone-2 mirror by the *same* ×90/×4 ratio zone 2 itself used over zone 1 (so ×8100/×16 cumulative from zone 1) — the same rule applied twice, not a new one, chosen for consistency over guessing a bigger number; this has **not** been simulated the way zone 2's pricing was, and should be before it's considered final (see the zone-3 spec's Testing Plan).
+
+Zone 3 also adds **bioluminescence**, the game's first zone-specific mechanic beyond a reskin: a zone-3 *producer* runs at half rate until a zone-3 *booster* is unlocked hex-adjacent to it (any of the six archetypes, not one dedicated tile — see `isLit` in `js/state.js`). Zone-3 boosters, and every zone-1/zone-2 tile, are never affected. The ex-"Lighthouse" role is reskinned as the "Anglerfish Lure" and is the mechanic's flagship (the only booster with a real dynamic light in the scene), but mechanically it's no different from the other five — all six cast light on their own neighbors.
+
+Zone 3 is entered through the col 11 / col 12 border, the same adjacency rule as every other zone border. It resets with everything else on prestige — including which producers are lit, since that's derived from `state.unlocked` fresh each time, not separately tracked.
+
+`tests/economy.test.mjs`'s "bioluminescence" section tests `isLit` and the darkness penalty directly; there's no equivalent of the zone-2 "×90/×4 pinned" test for zone 3 yet, since those numbers are still first-pass.
 
 ## Zone 1 — Home Waters
 
@@ -133,6 +143,64 @@ Known balance quirk (accepted, not a bug): level-up cost derives from `rate`/`pe
 | `frozen_booster_net_weavers` | Ice Net Weavers | 0,6 | +80% fish, +80% kelp | cost: 10800 fish + 8100 driftwood |
 | `frozen_booster_composting_shed` | Frozen Composting Shed | 3,7 | +80% crops, +80% driftwood | milestone: lifetime driftwood ≥ 8100 |
 | `frozen_booster_lighthouse` | Aurora Lighthouse | 4,6 | +60% fish, +60% kelp, +60% driftwood, +60% crops | cost: 10800 kelp + 8100 driftwood |
+
+## Zone 3 — Abyssal Trench
+
+### Fish (8 — base resource: fish)
+| id | name | pos (r,c) | rate/s | unlock |
+|---|---|---|---|---|
+| `abyssal_fish_start` | Anglerfish Trap | 0,13 | 16 | cost: 405,000 driftwood + 324,000 crops |
+| `abyssal_fish_anchored_net` | Sunken Anchor Net | 0,16 | 16 | cost: 486,000 driftwood + 405,000 crops |
+| `abyssal_fish_trawling_raft` | Trench Trawler | 2,16 | 19.2 | cost: 202,500 driftwood |
+| `abyssal_fish_tide_pool_trap` | Vent-Side Trap | 5,14 | 19.2 | milestone: lifetime crops ≥ 2,025,000 |
+| `abyssal_fish_deep_sea_longline` | Deep Longline | 1,17 | 24 | cost: 486,000 fish + 324,000 driftwood |
+| `abyssal_fish_grand_fishery` | Grand Abyssal Fishery | 3,12 | 32 | cost: 567,000 kelp + 405,000 crops |
+| `abyssal_fish_open_ocean_trawler` | Open-Trench Trawler | 0,15 | 28.8 | milestone: lifetime kelp ≥ 324,000 |
+| `abyssal_fish_leviathan_net` | Leviathan Maw | 4,13 | 40 | milestone: lifetime fish ≥ 1,620,000 |
+
+### Kelp (8 — base resource: kelp)
+| id | name | pos (r,c) | rate/s | unlock |
+|---|---|---|---|---|
+| `abyssal_kelp_nursery` | Tube Worm Nursery | 2,12 | 19.2 | milestone: lifetime crops ≥ 1,215,000 |
+| `abyssal_kelp_start` | Bristle Worm Bed | 4,14 | 16 | cost: 567,000 driftwood + 486,000 crops |
+| `abyssal_kelp_seaweed_raft` | Vent Worm Raft | 1,15 | 16 | cost: 243,000 driftwood |
+| `abyssal_kelp_floating_garden` | Floating Worm Garden | 1,13 | 19.2 | milestone: lifetime kelp ≥ 1,215,000 |
+| `abyssal_kelp_deep_bed` | Deep Worm Bed | 4,16 | 24 | cost: 729,000 driftwood + 567,000 crops |
+| `abyssal_kelp_reef` | Worm Reef | 3,15 | 32 | milestone: lifetime driftwood ≥ 486,000 |
+| `abyssal_kelp_open_water_farm` | Open-Trench Worm Farm | 1,12 | 28.8 | cost: 648,000 fish + 567,000 driftwood |
+| `abyssal_kelp_abyssal_forest` | Abyssal Worm Forest | 2,14 | 40 | cost: 324,000 driftwood |
+
+### Driftwood (7 — base resource: driftwood)
+| id | name | pos (r,c) | rate/s | unlock |
+|---|---|---|---|---|
+| `abyssal_driftwood_start` | Bone Collector | 2,15 | 8 | cost: 324,000 crops |
+| `abyssal_driftwood_salvage_raft` | Sunken Salvage Raft | 5,17 | 9.6 | milestone: lifetime fish ≥ 4,050,000 |
+| `abyssal_driftwood_debris_net` | Skeletal Debris Net | 5,16 | 9.6 | milestone: lifetime driftwood ≥ 3,240,000 |
+| `abyssal_driftwood_current_sweeper` | Current-Swept Bones | 5,15 | 12.8 | cost: 1,215,000 fish + 1,215,000 kelp |
+| `abyssal_driftwood_storm_wreckage` | Storm-Sunk Wreckage | 3,17 | 16 | cost: 324,000 driftwood |
+| `abyssal_driftwood_flotsam_dredge` | Bone Dredge | 2,17 | 16 | cost: 364,500 crops |
+| `abyssal_driftwood_shipwreck_salvage` | Drowned Shipwreck | 3,16 | 20.8 | cost: 283,500 driftwood + 202,500 crops |
+
+### Crops (7 — base resource: crops)
+| id | name | pos (r,c) | rate/s | unlock |
+|---|---|---|---|---|
+| `abyssal_crops_start` | Vent Garden Plot | 5,13 | 8 | cost: 810,000 fish + 810,000 driftwood |
+| `abyssal_crops_soil_barge` | Mineral Soil Vent | 3,14 | 9.6 | cost: 283,500 driftwood |
+| `abyssal_crops_hanging_garden` | Hanging Vent Garden | 4,15 | 9.6 | milestone: lifetime fish ≥ 972,000 |
+| `abyssal_crops_terraced_planter` | Terraced Vent Beds | 0,17 | 12.8 | milestone: lifetime kelp ≥ 2,430,000 |
+| `abyssal_crops_floating_orchard` | Floating Spore Garden | 0,14 | 16 | cost: 243,000 driftwood + 162,000 crops |
+| `abyssal_crops_paddy_raft` | Vent Paddy | 4,17 | 16 | cost: 1,134,000 driftwood + 972,000 crops |
+| `abyssal_crops_vertical_farm` | Vertical Vent Farm | 2,13 | 20.8 | cost: 445,500 driftwood |
+
+### Booster (6 — no production of their own)
+| id | name | pos (r,c) | effect | unlock |
+|---|---|---|---|---|
+| `abyssal_booster_drying_rack` | Bone Rack | 1,16 | +320% kelp, +320% driftwood | milestone: lifetime crops ≥ 324,000 |
+| `abyssal_booster_smokehouse` | Vent Chimney | 5,12 | +400% fish | cost: 1,620,000 kelp + 1,620,000 driftwood |
+| `abyssal_booster_windmill` | Current Turbine | 1,14 | +400% crops | cost: 162,000 driftwood |
+| `abyssal_booster_net_weavers` | Filter Web | 0,12 | +320% fish, +320% kelp | cost: 972,000 fish + 729,000 driftwood |
+| `abyssal_booster_composting_shed` | Ossuary | 3,13 | +320% crops, +320% driftwood | milestone: lifetime driftwood ≥ 729,000 |
+| `abyssal_booster_lighthouse` | Anglerfish Lure | 4,12 | +240% fish, +240% kelp, +240% driftwood, +240% crops | cost: 972,000 kelp + 729,000 driftwood |
 
 ## If retuning balance
 

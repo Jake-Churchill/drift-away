@@ -14,6 +14,7 @@ import {
   costProgressFraction,
   headStartCost,
   isFullyComplete,
+  isLit,
   prestigeTokensEarned,
   prestigeUpgradeCost,
   PRESTIGE_UPGRADE_PERCENT,
@@ -316,9 +317,16 @@ function boosterHint(tile, state) {
   return `You have no ${icons} tiles yet. This boosts every ${resources.join(' or ')} tile you build, wherever it sits.`;
 }
 
+// Zone 3's bioluminescence: a producer with no unlocked booster hex-adjacent to it runs dim.
+function dimHint(tile, state) {
+  if (tile.kind !== 'producer' || tile.zone !== 'zone3' || !state.unlocked.includes(tile.id)) return '';
+  if (isLit(tile, state.unlocked)) return '';
+  return 'Dim — production is halved until a bioluminescent structure is unlocked next to it.';
+}
+
 export function showTilePanel(tile, state, eligible, onUnlock, onLevelUp) {
   elements.panel.classList.remove('hidden');
-  const hint = boosterHint(tile, state);
+  const hint = boosterHint(tile, state) || dimHint(tile, state);
   elements.panelHint.textContent = hint;
   elements.panelHint.classList.toggle('hidden', hint === '');
   elements.panelIcon.textContent = tileIcon(tile);

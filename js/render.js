@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { TILES } from './tiles.js';
-import { getLevel, isDiscovered, isEligible } from './state.js';
+import { getLevel, isDiscovered, isEligible, isLit } from './state.js';
 import { buildScene } from './scene.js';
 import { updateCloudField, renderCloudField, setCloudTint } from './clouds.js';
 import { DEFAULT_PALETTE, PALETTES } from './palettes.js';
@@ -185,6 +185,18 @@ export function updateScene(state, time, { boardTint }) {
     for (const lvl of [1, 2, 3]) {
       objects.propGroups[lvl].visible = lvl === level;
       if (objects.trimMeshes) objects.trimMeshes[lvl].visible = lvl === level;
+    }
+
+    // Zone 3's bioluminescence: a producer's materials were built in their normal ("lit")
+    // appearance (see js/zone3-props.js's track()) with both states remembered on each one, so a
+    // dim producer is just a color/emissive swap here, not a rebuild — and it can flip back and
+    // forth as the player unlocks or (on prestige/restart) loses a nearby booster.
+    if (unlocked && tile.zone === 'zone3' && tile.kind === 'producer') {
+      const lit = isLit(tile, state.unlocked);
+      for (const d of objects.propGroups[level].userData.darken || []) {
+        d.material.color.setHex(lit ? d.litColor : d.dimColor);
+        d.material.emissiveIntensity = lit ? d.litEmissiveIntensity : d.dimEmissiveIntensity;
+      }
     }
 
     if (!unlocked && discovered) {

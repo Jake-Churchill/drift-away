@@ -40,6 +40,23 @@ export function levelMultiplier(level) {
   return 1 + (level - 1) * 0.5;
 }
 
+// Zone 3's mechanic: a zone-3 producer runs at half rate until a zone-3 booster is unlocked
+// hex-adjacent to it (any of the six archetypes, not one dedicated tile — with only one of each
+// scattered across 36 tiles, a single light source would leave most of the zone permanently dim).
+// Every other tile (all of zone 1/2, and zone-3 boosters themselves) is always "lit".
+const DARKNESS_PENALTY = 0.5;
+export function isLit(tile, unlockedIds) {
+  if (tile.zone !== 'zone3' || tile.kind !== 'producer') return true;
+  return (TILE_NEIGHBORS.get(tile.id) || []).some((id) => {
+    if (!unlockedIds.includes(id)) return false;
+    const neighbor = TILES.find((t) => t.id === id);
+    return neighbor?.zone === 'zone3' && neighbor.kind === 'booster';
+  });
+}
+function darknessFactor(tile, unlockedIds) {
+  return isLit(tile, unlockedIds) ? 1 : DARKNESS_PENALTY;
+}
+
 function boostPercentFor(resource, unlockedIds, levels = {}) {
   return TILES
     .filter((t) => unlockedIds.includes(t.id) && t.kind === 'booster')
@@ -51,7 +68,7 @@ function boostPercentFor(resource, unlockedIds, levels = {}) {
 export function effectiveRate(resource, unlockedIds, levels = {}, prestigeUpgrades = {}, ballastPercent = 0) {
   const baseSum = TILES
     .filter((t) => unlockedIds.includes(t.id) && t.kind === 'producer' && t.produces === resource)
-    .reduce((sum, t) => sum + t.rate * levelMultiplier(levels[t.id] || 1), 0);
+    .reduce((sum, t) => sum + t.rate * levelMultiplier(levels[t.id] || 1) * darknessFactor(t, unlockedIds), 0);
   const boosterMultiplier = 1 + boostPercentFor(resource, unlockedIds, levels) / 100;
   const prestigeMultiplier = 1 + (PRESTIGE_UPGRADE_PERCENT * (prestigeUpgrades[resource] || 0)) / 100;
   return baseSum * boosterMultiplier * prestigeMultiplier * (1 + ballastPercent / 100);
@@ -61,7 +78,7 @@ export function effectiveTileRate(tile, unlockedIds, levels = {}, prestigeUpgrad
   const level = levels[tile.id] || 1;
   const boosterMultiplier = 1 + boostPercentFor(tile.produces, unlockedIds, levels) / 100;
   const prestigeMultiplier = 1 + (PRESTIGE_UPGRADE_PERCENT * (prestigeUpgrades[tile.produces] || 0)) / 100;
-  return tile.rate * levelMultiplier(level) * boosterMultiplier * prestigeMultiplier * (1 + ballastPercent / 100);
+  return tile.rate * levelMultiplier(level) * boosterMultiplier * prestigeMultiplier * darknessFactor(tile, unlockedIds) * (1 + ballastPercent / 100);
 }
 
 // A resource's income for this game state: everything that applies, ballast included.
@@ -78,7 +95,7 @@ export function rateBreakdown(state, resource) {
   for (const tile of TILES) {
     if (!state.unlocked.includes(tile.id)) continue;
     const multiplier = levelMultiplier(getLevel(state, tile.id));
-    if (tile.kind === 'producer' && tile.produces === resource) base += tile.rate * multiplier;
+    if (tile.kind === 'producer' && tile.produces === resource) base += tile.rate * multiplier * darknessFactor(tile, state.unlocked);
     if (tile.kind === 'booster') {
       for (const b of tile.boosts) {
         if (b.resource !== resource) continue;
@@ -273,6 +290,23 @@ export const ACHIEVEMENTS = [
         (t) => state.unlocked.includes(t.id) && getLevel(state, t.id) >= MAX_LEVEL
       ),
   },
+  {
+    id: 'abyssal-trench-discovered',
+    name: 'The Abyssal Trench',
+    description: 'Unlock your first tile in the Abyssal Trench',
+    reward: 3,
+    condition: (state) => state.unlocked.some((id) => TILES.find((t) => t.id === id)?.zone === 'zone3'),
+  },
+  {
+    id: 'abyssal-trench-complete',
+    name: 'Master of the Abyss',
+    description: 'Max out every tile in the Abyssal Trench',
+    reward: 10,
+    condition: (state) =>
+      TILES.filter((t) => t.zone === 'zone3').every(
+        (t) => state.unlocked.includes(t.id) && getLevel(state, t.id) >= MAX_LEVEL
+      ),
+  },
 ];
 
 // Tiered follow-ups, so there is always a next one to reach: bigger lifetime totals per resource,
@@ -289,7 +323,7 @@ for (const resource of RESOURCES) {
     });
   }
 }
-for (const [count, name, reward] of [[10, 'Small Fleet', 1], [25, 'Growing Raft', 2], [36, 'Home Waters', 2], [50, 'Far Horizons', 3], [72, 'A Whole Ocean', 4]]) {
+for (const [count, name, reward] of [[10, 'Small Fleet', 1], [25, 'Growing Raft', 2], [36, 'Home Waters', 2], [50, 'Far Horizons', 3], [72, 'Two Seas Charted', 4], [108, 'A Whole Ocean', 5]]) {
   ACHIEVEMENTS.push({
     id: `tiles-${count}`,
     name,
