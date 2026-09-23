@@ -894,8 +894,31 @@ function buildMarkerMesh(tile) {
   return markerMesh;
 }
 
-function buildWater(anisotropy) {
-  const waterGeometry = new THREE.PlaneGeometry(80, 80, 1, 1);
+// Open sea kept beyond the outermost tile on every side, so the water never runs out before the
+// fog does. Tuned against zone 1 alone (whose ~18-unit-wide grid it dwarfed) and still generous
+// once applied around the whole multi-zone map instead of just one zone's box.
+const WATER_MARGIN = 40;
+
+// The map only ever grows by appending zones to the right (see ZONES), so a plane sized once at
+// scene build time from the *current* TILES stays correct after the next zone is added -- no
+// separate update needed then, same as the cloud field already does.
+function worldTileBounds() {
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+  for (const tile of TILES) {
+    const { x, z } = hexLocalPosition(tile.gridPos.row, tile.gridPos.col);
+    minX = Math.min(minX, x);
+    maxX = Math.max(maxX, x);
+    minZ = Math.min(minZ, z);
+    maxZ = Math.max(maxZ, z);
+  }
+  return { minX, maxX, minZ, maxZ };
+}
+
+function buildWater(anisotropy, width, depth, centerX, centerZ) {
+  const waterGeometry = new THREE.PlaneGeometry(width, depth, 1, 1);
   waterGeometry.rotateX(-Math.PI / 2);
   const waterUniforms = { uTime: { value: 0 }, uNormal: { value: createWaterNormalTexture(anisotropy) } };
   const waterMaterial = new THREE.MeshStandardMaterial({ color: DEFAULT_PALETTE.water, roughness: 0.14, metalness: 0 });
@@ -921,7 +944,7 @@ function buildWater(anisotropy) {
       );
   };
   const waterMesh = new THREE.Mesh(waterGeometry, waterMaterial);
-  waterMesh.position.y = -0.05;
+  waterMesh.position.set(centerX, -0.05, centerZ);
   waterMesh.receiveShadow = true;
   return { waterMesh, waterUniforms };
 }
@@ -985,7 +1008,14 @@ export function buildScene(canvas) {
   scene.add(sun);
 
   const anisotropy = renderer.capabilities.getMaxAnisotropy();
-  const { waterMesh, waterUniforms } = buildWater(anisotropy);
+  const bounds = worldTileBounds();
+  const { waterMesh, waterUniforms } = buildWater(
+    anisotropy,
+    bounds.maxX - bounds.minX + WATER_MARGIN * 2,
+    bounds.maxZ - bounds.minZ + WATER_MARGIN * 2,
+    (bounds.maxX + bounds.minX) / 2,
+    (bounds.maxZ + bounds.minZ) / 2
+  );
   scene.add(waterMesh);
   const foamMesh = buildFoam(anisotropy);
   scene.add(foamMesh);
