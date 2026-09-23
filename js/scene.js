@@ -273,30 +273,35 @@ function buildFishProp(group, level) {
 }
 
 // ---------- KELP ----------
-function buildKelpBlade(colorHex, segments, baseHeight) {
+// Each segment is centered on the local Y-axis and tilted in place by rotation.z (never itself
+// moved off-axis) — flattened into a blade cross-section via scale.z, which a Z-rotation can't
+// undo since a Z-rotation leaves the Z-extent alone, and leaning to a sine curve instead of a
+// one-directional increasing one for a natural S-curve sway instead of a fixed C-curve.
+function buildKelpBlade(colorHex, segments, baseHeight, phase) {
   const bladeGroup = new THREE.Group();
-  const mat = new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.7 });
+  const mat = new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.6, side: THREE.DoubleSide });
   let y = 0;
-  let lean = 0;
+  const leanAt = (t) => Math.sin(t * Math.PI * 1.3 + phase) * 0.45;
   for (let i = 0; i < segments; i++) {
     const t = i / (segments - 1);
     const segHeight = baseHeight / segments;
-    const topR = 0.06 * (1 - t) + 0.012;
-    const botR = 0.06 * (1 - (i - 1) / segments) + 0.012;
+    const topR = 0.07 * (1 - t) + 0.014;
+    const botR = 0.07 * (1 - (i - 1) / segments) + 0.014;
+    const lean = leanAt(t);
     const seg = new THREE.Mesh(new THREE.CylinderGeometry(topR, Math.max(botR, topR + 0.005), segHeight, 6), mat);
+    seg.scale.z = 0.2;
     seg.position.y = y + segHeight / 2;
     seg.rotation.z = lean;
     seg.castShadow = true;
     bladeGroup.add(seg);
     y += segHeight * Math.cos(lean);
-    lean += 0.12;
   }
-  const bladder = new THREE.Mesh(
-    new THREE.SphereGeometry(0.045, 8, 8),
-    new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.5 })
-  );
-  bladder.position.set(0.05, baseHeight * 0.55, 0);
-  bladeGroup.add(bladder);
+  const bladderMat = new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.4 });
+  for (const t of [0.45, 0.75, 1.0]) {
+    const bladder = new THREE.Mesh(new THREE.SphereGeometry(0.04, 8, 8), bladderMat);
+    bladder.position.set(Math.sin(leanAt(t)) * 0.1, baseHeight * t, 0);
+    bladeGroup.add(bladder);
+  }
   return bladeGroup;
 }
 
@@ -305,19 +310,33 @@ const KELP_LEVEL_BLADES = {
   3: [{ color: 0x6fbb88, x: -0.44, h: 0.5 }, { color: 0x2f7248, x: 0.44, h: 0.68 }],
 };
 
+// Three rows front-to-back instead of one line of blades, so the bed reads as a patch with
+// depth rather than a row of trees. The front/back rows are shorter and z-offset; x positions
+// are staggered between rows so blades don't line up directly behind one another.
 function buildKelpProp(group, level) {
   const specs = [
-    { color: 0x3f8a5c, x: -0.28, h: 0.62 },
-    { color: 0x4c9a6a, x: 0, h: 0.75 },
-    { color: 0x5aab78, x: 0.28, h: 0.58 },
-    ...(KELP_LEVEL_BLADES[level] || []),
+    // back row
+    { color: 0x2f7248, x: -0.18, z: -0.24, h: 0.5, phase: 0.6 },
+    { color: 0x3f8a5c, x: 0.14, z: -0.22, h: 0.56, phase: 2.1 },
+    // middle row (the original three, unchanged positions)
+    { color: 0x3f8a5c, x: -0.28, z: 0, h: 0.62, phase: 0 },
+    { color: 0x4c9a6a, x: 0, z: 0, h: 0.75, phase: 1.4 },
+    { color: 0x5aab78, x: 0.28, z: 0, h: 0.58, phase: 2.8 },
+    // front row
+    { color: 0x5aab78, x: -0.08, z: 0.24, h: 0.52, phase: 3.6 },
+    { color: 0x6fbb88, x: 0.24, z: 0.22, h: 0.46, phase: 5.0 },
+    ...(KELP_LEVEL_BLADES[level] || []).map((b, i) => ({ ...b, z: i % 2 === 0 ? -0.2 : 0.2, phase: 5.8 + i * 1.3 })),
   ];
   for (const s of specs) {
-    const blade = buildKelpBlade(s.color, 5, s.h);
-    blade.position.x = s.x;
+    const blade = buildKelpBlade(s.color, 8, s.h, s.phase);
+    blade.position.set(s.x, 0, s.z);
     blade.rotation.y = s.x * 0.6;
     group.add(blade);
   }
+  // Holdfast: a small dark root-like blob anchoring the blades to the raft.
+  const holdfast = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), new THREE.MeshStandardMaterial({ color: 0x2b4a34, roughness: 0.8 }));
+  holdfast.scale.set(1, 0.5, 1);
+  group.add(holdfast);
 }
 
 // ---------- DRIFTWOOD ----------
@@ -369,52 +388,70 @@ function buildDriftwoodProp(group, level) {
 }
 
 // ---------- CROPS (dense wheat/sorghum cluster) ----------
-function buildGrainHead(mat, h) {
-  // A tapering stack of beaded segments, mimicking a dense seed-head
-  // instead of one smooth capsule.
-  const headGroup = new THREE.Group();
-  const sizes = [0.05, 0.045, 0.038, 0.03, 0.02];
-  let y = 0;
-  for (const s of sizes) {
-    const seg = new THREE.Mesh(new THREE.SphereGeometry(s, 6, 5), mat);
-    seg.scale.set(1, 1.25, 1);
-    seg.position.y = y;
-    seg.castShadow = true;
-    headGroup.add(seg);
-    y += s * 1.5;
+// A bearded wheat ear (a slim head with thin awn bristles) instead of a stack of beads, which
+// read more like a corn cob than wheat.
+function buildWheatEar(headMat, awnMat, h) {
+  const earGroup = new THREE.Group();
+  const ear = new THREE.Mesh(new THREE.SphereGeometry(1, 8, 8), headMat);
+  ear.scale.set(0.045, 0.15, 0.045);
+  ear.position.y = 0.08;
+  earGroup.add(ear);
+  const awnCount = 9;
+  for (let i = 0; i < awnCount; i++) {
+    const t = i / (awnCount - 1);
+    const y = t * 0.15;
+    const side = i % 2 === 0 ? 1 : -1;
+    const awn = new THREE.Mesh(new THREE.CylinderGeometry(0.0015, 0.004, 0.16, 3), awnMat);
+    awn.position.set(0, y, 0);
+    awn.rotation.z = side * (0.55 + t * 0.15);
+    awn.translateY(0.08);
+    earGroup.add(awn);
   }
-  headGroup.position.y = h;
-  return headGroup;
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.02, 0.05, 5), headMat);
+  tip.position.y = 0.185;
+  earGroup.add(tip);
+  earGroup.position.y = h;
+  return earGroup;
 }
 
 const CROPS_HEAD_COLOR = { 1: 0xe9c85a, 2: 0xd9a83a, 3: 0xc98f2a };
-const CROPS_STALK_COUNT = { 1: 14, 2: 17, 3: 20 };
+// Wider spread and more stalks than the old radius formula, so the field covers most of the
+// raft instead of a clump in the middle. The ear/stalk-top add an outward lean offset on top of
+// this (up to ~0.11 local units), so the base radius leaves headroom under the hex's edge rather
+// than reaching it on its own.
+const CROPS_STALK_COUNT = { 1: 18, 2: 23, 3: 28 };
 
 function buildCropsProp(group, level) {
-  const stalkMat = new THREE.MeshStandardMaterial({ color: 0xac9138, roughness: 0.65 });
+  const stalkTopMat = new THREE.MeshStandardMaterial({ color: 0xac9138, roughness: 0.65 });
+  const stalkBaseMat = new THREE.MeshStandardMaterial({ color: 0x7c9a3e, roughness: 0.7 });
   const headMat = new THREE.MeshStandardMaterial({ color: CROPS_HEAD_COLOR[level], roughness: 0.5 });
+  const awnMat = new THREE.MeshStandardMaterial({ color: CROPS_HEAD_COLOR[level], roughness: 0.6 });
   const leafMat = new THREE.MeshStandardMaterial({ color: 0x8f8a3a, roughness: 0.6, side: THREE.DoubleSide });
 
   const count = CROPS_STALK_COUNT[level];
   for (let i = 0; i < count; i++) {
     const angle = (i / count) * Math.PI * 2 + (i % 3) * 0.4;
-    const radius = 0.10 + (i % 4) * 0.065;
+    const radius = 0.12 + (i % 4) * 0.10;
     const x = Math.cos(angle) * radius;
     const z = Math.sin(angle) * radius * 0.6;
     const lean = (((i * 7) % 5) - 2) * 0.09;
     const h = 0.46 + (i % 3) * 0.09;
 
-    const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.007, 0.015, h, 5), stalkMat);
-    stalk.position.set(x, h / 2, z);
-    stalk.rotation.z = lean;
-    stalk.rotation.x = (((i * 5) % 4) - 1.5) * 0.05;
-    stalk.castShadow = true;
-    group.add(stalk);
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.015, h * 0.4, 5), stalkBaseMat);
+    base.position.set(x, h * 0.2, z);
+    base.rotation.z = lean;
+    base.castShadow = true;
+    group.add(base);
+    const top = new THREE.Mesh(new THREE.CylinderGeometry(0.007, 0.009, h * 0.62, 5), stalkTopMat);
+    top.position.set(x + Math.sin(lean) * h * 0.42, h * 0.72, z);
+    top.rotation.z = lean;
+    top.castShadow = true;
+    group.add(top);
 
-    const head = buildGrainHead(headMat, h);
-    head.position.set(x + Math.sin(lean) * h, 0, z);
-    head.rotation.z = lean;
-    group.add(head);
+    const ear = buildWheatEar(headMat, awnMat, h);
+    ear.position.set(x + Math.sin(lean) * h, 0, z);
+    ear.rotation.z = lean;
+    group.add(ear);
   }
 
   // A few broad leaf blades poking out at the base for texture.

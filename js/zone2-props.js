@@ -279,30 +279,40 @@ function buildFishProp(group, level) {
 // leaning segments with float bladders" construction as zone 1's blade,
 // just taller, curved, and rimed.
 // ===================================================================
+// z follows the original x*-0.28 diagonal stagger, except the two added rear/front blades,
+// which sit well outside that range — a real front and back row instead of a subtle diagonal
+// (the same depth zone 1's kelp got).
 const RIMED_KELP_BLADES = {
   1: [
-    { c: 0x2f6f6b, x: -0.40, h: 0.92 }, { c: 0x3c8a80, x: -0.20, h: 1.16 },
-    { c: 0x4e9f93, x: 0.00, h: 1.34 }, { c: 0x35796f, x: 0.20, h: 1.10 },
-    { c: 0x59aa9b, x: 0.40, h: 0.88 },
+    { c: 0x2f6f6b, x: -0.40, z: 0.112, h: 0.92, phase: 0 }, { c: 0x3c8a80, x: -0.20, z: 0.056, h: 1.16, phase: 1.4 },
+    { c: 0x4e9f93, x: 0.00, z: 0, h: 1.34, phase: 2.8 }, { c: 0x35796f, x: 0.20, z: -0.056, h: 1.10, phase: 4.2 },
+    { c: 0x59aa9b, x: 0.40, z: -0.112, h: 0.88, phase: 5.6 },
+    { c: 0x3c8a80, x: -0.06, z: -0.34, h: 0.78, phase: 0.7 }, // back row
+    { c: 0x4e9f93, x: 0.06, z: 0.34, h: 0.7, phase: 3.5 },    // front row
   ],
-  2: [{ c: 0x6fc4b2, x: -0.54, h: 1.00 }],
-  3: [{ c: 0x6fc4b2, x: -0.54, h: 1.00 }, { c: 0x257e74, x: 0.50, h: 1.24 }],
+  2: [{ c: 0x6fc4b2, x: -0.54, z: 0.151, h: 1.00, phase: 6.9 }],
+  3: [{ c: 0x6fc4b2, x: -0.54, z: 0.151, h: 1.00, phase: 6.9 }, { c: 0x257e74, x: 0.50, z: -0.14, h: 1.24, phase: 8.3 }],
 };
 
-function buildRimedBlade(colorHex, segments, baseHeight) {
+// Sine-based lean instead of a one-directional increasing one, for a natural S-curve sway
+// instead of a fixed C-curve (same change zone 1's kelp got); flattened into a blade
+// cross-section via scale.z, which a Z-rotation can't undo since it leaves the Z-extent alone.
+function buildRimedBlade(colorHex, segments, baseHeight, phase = 0) {
   const bladeGroup = new THREE.Group();
   const mat = new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.62 });
   const rimeMat = iceMat(FROST_WHITE, 0.95);
   let y = 0;
   let x = 0;
-  let lean = 0;
+  const leanAt = (t) => Math.sin(t * Math.PI * 1.3 + phase) * 0.42;
   for (let i = 0; i < segments; i++) {
     const t = i / (segments - 1);
     const segHeight = baseHeight / segments;
     const topR = 0.052 * (1 - t) + 0.011;
     const botR = topR + 0.011;
+    const lean = leanAt(t);
 
     const seg = new THREE.Mesh(new THREE.CylinderGeometry(topR, botR, segHeight, 6), mat);
+    seg.scale.z = 0.4;
     seg.position.set(x, y + segHeight / 2, 0);
     seg.rotation.z = lean;
     seg.castShadow = true;
@@ -329,7 +339,6 @@ function buildRimedBlade(colorHex, segments, baseHeight) {
 
     x += Math.sin(lean) * segHeight;
     y += segHeight * Math.cos(lean);
-    lean += 0.10;
   }
 
   // Frost-glazed float bladders (zone 1's kelp has one bare bladder).
@@ -368,8 +377,8 @@ function buildKelpProp(group, level) {
 
   const specs = [...RIMED_KELP_BLADES[1], ...(level >= 2 ? RIMED_KELP_BLADES[level] : [])];
   for (const s of specs) {
-    const blade = buildRimedBlade(s.c, 6, s.h);
-    blade.position.set(s.x, 0.06, s.x * -0.28);
+    const blade = buildRimedBlade(s.c, 6, s.h, s.phase);
+    blade.position.set(s.x, 0.06, s.z);
     blade.rotation.y = s.x * 1.1;
     group.add(blade);
   }
@@ -467,7 +476,10 @@ function buildDriftwoodProp(group, level) {
 // ===================================================================
 const FROST_CROP_HEAD = { 1: 0xd9ecf2, 2: 0xa9d8ea, 3: 0x7cc6e8 };
 const FROST_CROP_STALK = 0x9db4b8;
-const FROST_CROP_COUNT = { 1: 16, 2: 19, 3: 22 };
+// Wider spread and a few more stalks than before, so the plot covers more of its snow mound
+// (the same change zone 1's wheat got) while staying clear of both the hex edge and the
+// ice-pane windbreak ring at radius 0.34.
+const FROST_CROP_COUNT = { 1: 18, 2: 22, 3: 26 };
 const FROST_PANE_HEIGHT = { 1: 0.44, 2: 0.50, 3: 0.56 };
 
 function buildFrostHead(mat, tipMat, h) {
@@ -506,7 +518,7 @@ function buildCropsProp(group, level) {
   const count = FROST_CROP_COUNT[level];
   for (let i = 0; i < count; i++) {
     const angle = (i / count) * Math.PI * 2 + (i % 3) * 0.4;
-    const radius = 0.08 + (i % 4) * 0.055;
+    const radius = 0.10 + (i % 4) * 0.075;
     const x = Math.cos(angle) * radius;
     const z = Math.sin(angle) * radius * 0.7;
     const lean = (((i * 7) % 5) - 2) * 0.08;
