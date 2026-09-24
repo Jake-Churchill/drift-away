@@ -67,9 +67,11 @@ function contourPoints(centers, rho, step) {
 
 const easeInOut = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 
-// zoneTiles: Map zoneId -> [{ id, x, z }] in world coordinates. cameraTargets: one framing target
-// per zone, in zone order, used to work out how far the field has to reach.
-export function buildCloudField({ zoneIds, zoneTiles, landRadius, viewHalfHeight, cameraTargets, cameraOffset }) {
+// zoneTiles: Map zoneId -> [{ id, x, z }] in world coordinates. sailEdges: every pair of zone
+// framing targets a direct sail can actually cross (the "next unlock" shortcut can jump straight
+// between any two discovered zones, not just consecutive ones), used to work out how far the
+// field has to reach along every path the camera can actually travel.
+export function buildCloudField({ zoneIds, zoneTiles, landRadius, viewHalfHeight, sailEdges, cameraOffset }) {
   const scene = new THREE.Scene();
   const target = new THREE.WebGLRenderTarget(1, 1, { samples: 4 });
 
@@ -114,10 +116,9 @@ export function buildCloudField({ zoneIds, zoneTiles, landRadius, viewHalfHeight
   viewCam.updateMatrixWorld();
   const viewRot = new THREE.Matrix3().setFromMatrix4(viewCam.matrixWorldInverse);
   const sampleTargets = [];
-  cameraTargets.forEach((t, i) => {
-    if (i === 0) sampleTargets.push(t.clone());
-    else for (let s = 1; s <= 6; s++) sampleTargets.push(cameraTargets[i - 1].clone().lerp(t, s / 6));
-  });
+  for (const [from, to] of sailEdges) {
+    for (let s = 0; s <= 6; s++) sampleTargets.push(from.clone().lerp(to, s / 6));
+  }
   const halfH = viewHalfHeight + VIEW_MARGIN;
   const halfW = halfH * MAX_ASPECT;
   const canBeVisible = (x, z) =>

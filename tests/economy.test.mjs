@@ -18,6 +18,8 @@ import {
   effectiveRate,
   effectiveTileRate,
   encodeSave,
+  generatorFullRate,
+  generatorRate,
   getLevel,
   HEAD_START_MAX_LEVEL,
   headStartCost,
@@ -50,7 +52,7 @@ import {
 
 // --- Tile data integrity ---
 
-assert.equal(TILES.length, 108, 'expected exactly 108 tiles (36 zone-1 + 36 zone-2 + 36 zone-3)');
+assert.equal(TILES.length, 144, 'expected exactly 144 tiles (36 zone-1 + 36 zone-2 + 36 zone-3 + 36 zone-4)');
 
 const ids = TILES.map((t) => t.id);
 assert.equal(new Set(ids).size, TILES.length, 'tile ids must be unique');
@@ -80,8 +82,8 @@ const familyCounts = TILES.reduce((counts, t) => {
 }, {});
 assert.deepEqual(
   familyCounts,
-  { fish: 24, kelp: 24, driftwood: 21, crops: 21, booster: 18 },
-  'family counts tripled with zone 3 (8*3=24 fish/kelp, 7*3=21 driftwood/crops, 6*3=18 booster)'
+  { fish: 24, kelp: 24, driftwood: 21, crops: 21, booster: 24, planks: 10, kelp_rope: 10, bread: 10 },
+  'zone 4 adds 10 each of planks/kelp_rope/bread plus 6 more boosters (18+6=24), no new fish/kelp/driftwood/crops tiles'
 );
 
 console.log('tile data tests passed');
@@ -114,8 +116,15 @@ assert.deepEqual(
 
 assert.deepEqual(
   [...TILE_NEIGHBORS.get('fish_start')].sort(),
-  ['booster_net_weavers', 'crops_floating_orchard', 'kelp_floating_garden', 'kelp_open_water_farm'],
-  'fish_start (0,1) has exactly these 4 neighbors (grid-edge tile, fewer than 6)'
+  [
+    'booster_net_weavers',
+    'crops_floating_orchard',
+    'kelp_floating_garden',
+    'kelp_open_water_farm',
+    'timberline_ropeworks_1',
+    'timberline_sawmill_1',
+  ],
+  'fish_start (0,1) now borders zone 4 to the north too, on top of its 4 zone-1 neighbors'
 );
 
 console.log('adjacency tests passed');
@@ -136,7 +145,9 @@ const GEOM_NEIGHBOR_DISTANCE = GEOM_HEX_WIDTH; // same-row and diagonal-row neig
 const GEOM_DISTANCE_TOLERANCE = 1e-6;
 
 function hexCenter(row, col) {
-  const x = col * GEOM_HEX_WIDTH + (row % 2 === 1 ? GEOM_HEX_WIDTH / 2 : 0);
+  // row % 2 === 1 breaks for negative rows (zone 4 sits at rows -6..-1) -- see the matching fix
+  // and comment on hexLocalPosition in js/scene.js.
+  const x = col * GEOM_HEX_WIDTH + (row % 2 !== 0 ? GEOM_HEX_WIDTH / 2 : 0);
   const z = row * GEOM_ROW_SPACING;
   return { x, z };
 }
@@ -167,13 +178,13 @@ console.log('geometry-derived adjacency tests passed');
   const state = createInitialState();
   assert.deepEqual(
     state.resources,
-    { fish: 0, kelp: 0, driftwood: 0, crops: 0 },
-    'resources shape must match pre-refactor output exactly'
+    { fish: 0, kelp: 0, driftwood: 0, crops: 0, planks: 0, kelp_rope: 0, bread: 0 },
+    'resources shape includes zone 4 goods alongside the base 4'
   );
   assert.deepEqual(
     state.lifetime,
-    { fish: 0, kelp: 0, driftwood: 0, crops: 0 },
-    'lifetime shape must match pre-refactor output exactly'
+    { fish: 0, kelp: 0, driftwood: 0, crops: 0, planks: 0, kelp_rope: 0, bread: 0 },
+    'lifetime shape includes zone 4 goods alongside the base 4'
   );
   assert.deepEqual(state.unlocked, ['driftwood_start'], 'only the single start tile is unlocked');
   assert.deepEqual(state.levels, {}, 'no tile starts above level 1');
@@ -417,8 +428,16 @@ console.log('completion tracking tests passed');
     { fish: 2, kelp: 0, driftwood: 0, crops: 0 },
     'purchased upgrades carry over unchanged'
   );
-  assert.deepEqual(result.state.resources, { fish: 0, kelp: 0, driftwood: 0, crops: 0 }, 'resources reset');
-  assert.deepEqual(result.state.lifetime, { fish: 0, kelp: 0, driftwood: 0, crops: 0 }, 'lifetime totals reset');
+  assert.deepEqual(
+    result.state.resources,
+    { fish: 0, kelp: 0, driftwood: 0, crops: 0, planks: 0, kelp_rope: 0, bread: 0 },
+    'resources reset, including zone 4 goods'
+  );
+  assert.deepEqual(
+    result.state.lifetime,
+    { fish: 0, kelp: 0, driftwood: 0, crops: 0, planks: 0, kelp_rope: 0, bread: 0 },
+    'lifetime totals reset, including zone 4 goods'
+  );
   assert.deepEqual(result.state.unlocked, ['driftwood_start'], 'unlocked tiles reset to just the start tile');
   assert.deepEqual(result.state.levels, {}, 'levels reset');
   assert.deepEqual(state.resources, resourcesBefore, 'the input state object is not mutated');
@@ -635,10 +654,10 @@ console.log('economy math tests passed');
 // --- ACHIEVEMENTS data integrity ---
 
 {
-  assert.equal(ACHIEVEMENTS.length, 30, 'expected exactly 30 achievements');
+  assert.equal(ACHIEVEMENTS.length, 33, 'expected exactly 33 achievements');
   assert.equal(
     new Set(ACHIEVEMENTS.map((a) => a.id)).size,
-    30,
+    33,
     'achievement ids must be unique'
   );
   for (const achievement of ACHIEVEMENTS) {
@@ -719,7 +738,10 @@ console.log('economy math tests passed');
 }
 
 {
-  // halfway-there fires at ceil(TOTAL_TILE_COUNT / 2) maxed tiles
+  // halfway-there fires at ceil(TOTAL_TILE_COUNT / 2) maxed tiles. With 144 tiles that's exactly
+  // 72 -- also exactly all of zone 1 + zone 2 (the first 72 entries in TILES) and exactly the
+  // tiles-72 tier, so all three fire together here; that's a coincidence of the current tile
+  // count, not something this test tries to avoid (zone 3's own version hit the same overlap).
   const half = Math.ceil(TOTAL_TILE_COUNT / 2);
   const state = createInitialState();
   const maxed = TILES.slice(0, half - 1);
@@ -735,9 +757,13 @@ console.log('economy math tests passed');
   state.unlocked.push(nextTile.id);
   state.levels[nextTile.id] = MAX_LEVEL;
   const awarded = checkAchievements(state);
-  assert.deepEqual(awarded.map((a) => a.id).sort(), ['halfway-there'], 'half the tiles maxed earns halfway-there');
+  assert.deepEqual(
+    awarded.map((a) => a.id).sort(),
+    ['frozen-reach-complete', 'halfway-there', 'tiles-72'],
+    'half the tiles maxed earns halfway-there, and happens to also complete zone 2 and hit tiles-72'
+  );
   assert.equal(awarded.find((a) => a.id === 'halfway-there').reward, 2, 'halfway-there pays 2 gold');
-  assert.equal(state.gold, goldBefore + 2);
+  assert.equal(state.gold, goldBefore + 2 + 8 + 4, 'halfway-there + frozen-reach-complete + tiles-72');
 }
 
 {
@@ -783,8 +809,16 @@ console.log('achievement award tests passed');
     state.achievements,
     'the carried-over list is a copy, not a shared reference to the old state'
   );
-  assert.deepEqual(result.state.resources, { fish: 0, kelp: 0, driftwood: 0, crops: 0 }, 'resources still reset');
-  assert.deepEqual(result.state.lifetime, { fish: 0, kelp: 0, driftwood: 0, crops: 0 }, 'lifetime totals still reset');
+  assert.deepEqual(
+    result.state.resources,
+    { fish: 0, kelp: 0, driftwood: 0, crops: 0, planks: 0, kelp_rope: 0, bread: 0 },
+    'resources still reset, including zone 4 goods'
+  );
+  assert.deepEqual(
+    result.state.lifetime,
+    { fish: 0, kelp: 0, driftwood: 0, crops: 0, planks: 0, kelp_rope: 0, bread: 0 },
+    'lifetime totals still reset, including zone 4 goods'
+  );
   assert.deepEqual(result.state.unlocked, ['driftwood_start'], 'unlocked tiles still reset');
   assert.deepEqual(result.state.levels, {}, 'levels still reset');
 }
@@ -1363,7 +1397,12 @@ console.log('achievement save migration tests passed');
   }
   const big = doPrestige(finished(HEAD_START_MAX_LEVEL)).state;
   assert.equal(big.unlocked.length, 1 + 2 * HEAD_START_MAX_LEVEL);
-  assert(big.unlocked.every((id) => TILES.find((t) => t.id === id).zone === 'zone1'), 'the head start stays in home waters');
+  // Zone 4 borders zone 1 directly and its entry tiles are deliberately zone-1-cheap, so a large
+  // enough head start now legitimately spills into it too, not just deeper into zone 1.
+  assert(
+    big.unlocked.every((id) => ['zone1', 'zone4'].includes(TILES.find((t) => t.id === id).zone)),
+    'the head start stays in the zones reachable straight off the start tile (zone 1 and zone 4)'
+  );
 
   console.log('head start tests passed');
 }
@@ -1371,7 +1410,7 @@ console.log('achievement save migration tests passed');
 // --- the new achievements ---
 {
   const total = ACHIEVEMENTS.reduce((sum, a) => sum + a.reward, 0);
-  assert.equal(total, 103, 'gold available from achievements');
+  assert.equal(total, 122, 'gold available from achievements');
   assert.equal(new Set(ACHIEVEMENTS.map((a) => a.id)).size, ACHIEVEMENTS.length, 'ids are unique');
 
   const st = createInitialState();
@@ -1391,7 +1430,7 @@ console.log('achievement save migration tests passed');
 
   const counts = createInitialState();
   const ids = TILES.map((t) => t.id);
-  const expectAt = { 10: 'tiles-10', 25: 'tiles-25', 36: 'tiles-36', 50: 'tiles-50', 72: 'tiles-72', 108: 'tiles-108' };
+  const expectAt = { 10: 'tiles-10', 25: 'tiles-25', 36: 'tiles-36', 50: 'tiles-50', 72: 'tiles-72', 108: 'tiles-108', 144: 'tiles-144' };
   for (const [n, id] of Object.entries(expectAt)) {
     counts.unlocked = ids.slice(0, Number(n) - 1);
     assert(!fired(counts).has(id), `${id} not yet at ${n - 1} tiles`);
@@ -1399,13 +1438,14 @@ console.log('achievement save migration tests passed');
     assert(fired(counts).has(id) || counts.achievements.includes(id), `${id} at ${n} tiles`);
   }
 
-  // 108 is now the real total — only the top tier's name may claim completion.
-  const tiles72 = ACHIEVEMENTS.find((a) => a.id === 'tiles-72');
+  // 144 is now the real total — only the top tier's name may claim completion.
   const tiles108 = ACHIEVEMENTS.find((a) => a.id === 'tiles-108');
-  assert.equal(tiles72.description, 'Unlock 72 tiles', 'tiles-72 no longer claims "all" now that 108 exist');
-  assert.notEqual(tiles72.name, 'A Whole Ocean', 'the "complete" name moved to the real top tier');
-  assert.equal(tiles108.name, 'A Whole Ocean');
-  assert.equal(tiles108.description, 'Unlock all 108 tiles');
+  const tiles144 = ACHIEVEMENTS.find((a) => a.id === 'tiles-144');
+  assert.equal(tiles108.description, 'Unlock 108 tiles', 'tiles-108 no longer claims "all" now that 144 exist');
+  assert.notEqual(tiles108.name, 'A Whole Ocean', 'the old "complete" name moved off this tier');
+  assert.notEqual(tiles108.name, 'The Whole Map', 'the new "complete" name belongs to the real top tier');
+  assert.equal(tiles144.name, 'The Whole Map');
+  assert.equal(tiles144.description, 'Unlock all 144 tiles');
 
   const voyages = createInitialState();
   for (const [n, id] of [[1, 'voyage-1'], [3, 'voyage-3'], [5, 'voyage-5'], [10, 'voyage-10']]) {
@@ -1512,4 +1552,92 @@ console.log('achievement save migration tests passed');
   assert.equal(after, before / 2, 'rateBreakdown halves a dim zone-3 producer\'s contribution to the resource total');
 
   console.log('bioluminescence tests passed');
+}
+
+// --- Generators (zone 4): consume existing resources to make planks/kelp_rope/bread ---
+{
+  const sawmill1 = TILES.find((t) => t.id === 'timberline_sawmill_1');
+  const sawmill2 = TILES.find((t) => t.id === 'timberline_sawmill_2');
+  const ropeworks1 = TILES.find((t) => t.id === 'timberline_ropeworks_1');
+  const toolShed = TILES.find((t) => t.id === 'timberline_booster_tool_shed');
+  assert.deepEqual(sawmill1.consumes, { driftwood: 1.2 }, 'fixture assumption: Driftwood Sawpit consumes 1.2 driftwood/s for 0.6 planks/s');
+  assert.deepEqual(ropeworks1.consumes, { kelp: 0.65, driftwood: 0.5 }, 'fixture assumption: Kelp Ropewalk has two inputs');
+
+  // Full rate: abundant input, no throttling.
+  {
+    const state = createInitialState();
+    state.unlocked = [sawmill1.id];
+    state.resources.driftwood = 1000;
+    assert.equal(generatorRate(state, sawmill1), 0.6, 'unthrottled, a level-1 sawmill runs at its listed rate');
+    assert.equal(generatorRate(state, sawmill1), generatorFullRate(state, sawmill1), 'full rate matches the throttled rate when input is abundant');
+    tick(state, 2);
+    assert.equal(state.resources.planks, 1.2, 'planks gained = rate * dt (0.6 * 2)');
+    assert.equal(Math.round(state.resources.driftwood * 10) / 10, 997.6, 'driftwood spent = consume rate * dt (1.2 * 2)');
+    assert.equal(state.lifetime.planks, 1.2, 'lifetime tracks generator output too');
+  }
+
+  // Scarcity: a single generator throttles proportionally to what's actually in stock.
+  {
+    const state = createInitialState();
+    state.unlocked = [sawmill1.id];
+    state.resources.driftwood = 0.6; // half of the 1.2 desired for a 1s tick
+    assert.equal(generatorRate(state, sawmill1), 0.3, 'half the driftwood in stock halves the output');
+    tick(state, 1);
+    assert.equal(state.resources.planks, 0.3);
+    assert.equal(Math.round(state.resources.driftwood * 1e9) / 1e9, 0, 'the pool is drained to exactly zero, never negative');
+  }
+
+  // Two generators sharing a scarce input are throttled by the same fraction each -- not
+  // first-come-first-served, where one would run full and the other starve.
+  {
+    const state = createInitialState();
+    state.unlocked = [sawmill1.id, sawmill2.id];
+    state.resources.driftwood = 1.25; // half of 1.2 + 1.3 = 2.5 combined demand for a 1s tick
+    assert.equal(generatorRate(state, sawmill1), 0.3, 'sawmill 1 gets exactly half its full 0.6 rate');
+    assert.equal(generatorRate(state, sawmill2), 0.325, 'sawmill 2 gets exactly half its full 0.65 rate too, not zero');
+    tick(state, 1);
+    assert.equal(Math.round(state.resources.planks * 1000) / 1000, 0.625, '0.3 + 0.325');
+    assert.equal(Math.round(state.resources.driftwood * 1e9) / 1e9, 0, 'combined draw exactly matches the shared pool');
+  }
+
+  // A multi-input generator is capped by whichever input is scarcest -- and, per the documented
+  // first-pass simplification, still draws its own full (unthrottled) share of a non-limiting
+  // input rather than also scaling that draw down to match.
+  {
+    const state = createInitialState();
+    state.unlocked = [ropeworks1.id];
+    state.resources.kelp = 0.325; // half of the 0.65 desired
+    state.resources.driftwood = 1000; // abundant
+    assert.equal(generatorRate(state, ropeworks1), 0.25, 'output capped by the scarcer input (kelp), half of the full 0.5 rate');
+    tick(state, 1);
+    assert.equal(state.resources.kelp_rope, 0.25);
+    assert.equal(Math.round(state.resources.kelp * 1e9) / 1e9, 0, 'kelp (the limiting input) is drained exactly to zero');
+    assert.equal(Math.round((1000 - state.resources.driftwood) * 1e9) / 1e9, 0.25, 'driftwood is drawn at its own full rate (0.5) throttled by the kelp factor (0.5) = 0.25, not further reduced');
+  }
+
+  // Leveling up a generator costs its own output resource, the same convention as a producer.
+  {
+    assert.deepEqual(levelUpCost(sawmill1, 2), { planks: 18 }, 'round(0.6 rate * 30 base * step-1 multiplier 1)');
+    assert.deepEqual(levelUpCost(sawmill1, 3), { planks: 45 }, 'round(0.6 rate * 30 base * step-2 multiplier 2.5)');
+  }
+
+  // rateBreakdown/boosterIsIdle count generator output (unthrottled) the same way they count a
+  // producer's, so a zone-4 booster correctly stops reporting itself as idle once its resource
+  // has any source at all -- even one that (as above) hasn't necessarily produced anything yet.
+  {
+    const state = createInitialState();
+    assert.equal(boosterIsIdle(state, toolShed), true, 'no planks source yet');
+    state.unlocked = [toolShed.id, sawmill1.id];
+    assert.equal(boosterIsIdle(state, toolShed), false, 'a sawmill exists now, so the booster has something to boost');
+  }
+
+  // Discovering zone 4 fires its own achievement, same pattern as zone 2/3.
+  {
+    const state = createInitialState();
+    state.unlocked.push(sawmill1.id);
+    const awarded = checkAchievements(state).map((a) => a.id);
+    assert(awarded.includes('timberline-coast-discovered'), 'unlocking a zone-4 tile awards timberline-coast-discovered');
+  }
+
+  console.log('zone 4 generator tests passed');
 }

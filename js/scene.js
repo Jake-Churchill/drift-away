@@ -3,6 +3,7 @@ import { TILES } from './tiles.js';
 import { ZONES } from './zones.js';
 import { buildZone2Prop } from './zone2-props.js';
 import { buildZone3Prop } from './zone3-props.js';
+import { buildZone4Prop } from './zone4-props.js';
 import { buildCloudField, resizeCloudField } from './clouds.js';
 import { createFoamTexture, createWaterNormalTexture } from './textures.js';
 import { DEFAULT_PALETTE } from './palettes.js';
@@ -38,6 +39,11 @@ const LARGE_BOOSTER_IDS = new Set([
   'abyssal_booster_drying_rack',
   'abyssal_booster_composting_shed',
   'abyssal_booster_lighthouse',
+  'timberline_booster_tool_shed',
+  'timberline_booster_drying_frames',
+  'timberline_booster_grain_silo',
+  'timberline_booster_timber_yard',
+  'timberline_booster_millhouse',
 ]);
 
 const LEVEL_SCALE = { 1: 1.0, 2: 1.15, 3: 1.3 };
@@ -80,6 +86,17 @@ const BADGE_ANCHOR_HEIGHT = {
   'zone3:abyssal_booster_net_weavers': 0.4,
   'zone3:abyssal_booster_composting_shed': 0.6,
   'zone3:abyssal_booster_lighthouse': 1.0,
+  // Zone 4's generators/boosters, measured the same way (no zone-1 archetype to fall back to --
+  // planks/kelp_rope/bread have no equivalent there).
+  'zone4:planks': 1.1,
+  'zone4:kelp_rope': 1.3,
+  'zone4:bread': 1.3,
+  'zone4:timberline_booster_tool_shed': 0.75,
+  'zone4:timberline_booster_drying_frames': 0.8,
+  'zone4:timberline_booster_grain_silo': 1.25,
+  'zone4:timberline_booster_timber_yard': 0.85,
+  'zone4:timberline_booster_provision_store': 0.7,
+  'zone4:timberline_booster_millhouse': 1.5,
 };
 const TRIM_THICKNESS = { 1: 0.03, 2: 0.045, 3: 0.06 };
 const TRIM_COLOR = { 1: BOOSTER_TRIM, 2: 0xf0c94f, 3: 0xfff0a0 };
@@ -126,7 +143,11 @@ function gridBounds() {
 
 function hexLocalPosition(row, col) {
   const bounds = gridBounds();
-  const x = col * HEX_WIDTH + (row % 2 === 1 ? HEX_WIDTH / 2 : 0) + HEX_WIDTH / 2 - bounds.width / 2;
+  // row % 2 === 1 silently breaks for negative rows (JS's % keeps the sign of the dividend, so
+  // -1 % 2 is -1, not 1) -- zone 4 sits at rows -6..-1, so this must check oddness, not equality
+  // to positive 1, or every odd-numbered row up there renders at the wrong horizontal offset.
+  const isOddRow = row % 2 !== 0;
+  const x = col * HEX_WIDTH + (isOddRow ? HEX_WIDTH / 2 : 0) + HEX_WIDTH / 2 - bounds.width / 2;
   const z = row * ROW_SPACING + HEX_HEIGHT / 2 - bounds.depth / 2;
   return { x, z };
 }
@@ -791,6 +812,8 @@ function addProp(raftMesh, tile) {
       buildZone2Prop(propGroup, tile, level);
     } else if (tile.zone === 'zone3') {
       buildZone3Prop(propGroup, tile, level);
+    } else if (tile.zone === 'zone4') {
+      buildZone4Prop(propGroup, tile);
     } else {
       switch (tile.family) {
         case 'fish': buildFishProp(propGroup, level); break;
@@ -1068,12 +1091,23 @@ export function buildScene(canvas) {
       }),
     ])
   );
+  // Every zone borders the previous one in ZONES order (reached by sailing along that chain) --
+  // except zone 4, which branches off zone 1's north edge directly. A future zone that similarly
+  // branches off an existing zone rather than extending the chain needs its own edge added here,
+  // so the cloud field's "can this point ever be seen" sampling covers every sail the "next
+  // unlock" shortcut can actually trigger, not just consecutive-zone sails.
+  const sailEdges = [];
+  for (let i = 1; i < ZONES.length; i++) {
+    sailEdges.push([cameraPositions.get(ZONES[i - 1].id).target, cameraPositions.get(ZONES[i].id).target]);
+  }
+  sailEdges.push([cameraPositions.get('zone1').target, cameraPositions.get('zone4').target]);
+
   const cloudField = buildCloudField({
     zoneIds: ZONES.map((zone) => zone.id),
     zoneTiles: zoneTileCenters,
     landRadius: HEX_RADIUS,
     viewHalfHeight: CAMERA_FRUSTUM_HALF_SIZE,
-    cameraTargets: ZONES.map((zone) => cameraPositions.get(zone.id).target),
+    sailEdges,
     cameraOffset: CAMERA_OFFSET,
   });
 

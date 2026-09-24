@@ -3,6 +3,12 @@ import { ZONES } from './zones.js';
 import { PALETTES } from './palettes.js';
 
 export const RESOURCES = ['fish', 'kelp', 'driftwood', 'crops'];
+// Zone 4's own resources: a separate layer from RESOURCES, so they get no prestige upgrade row,
+// don't count toward lifetime-based achievements, and don't appear in the main HUD bar. They
+// still live in state.resources/state.lifetime alongside the base 4 -- isEligible/unlockTile/
+// levelUpCost all key off state.resources generically already, so goods-denominated costs and
+// level-ups just work without touching that code.
+export const GOODS = ['planks', 'kelp_rope', 'bread'];
 export const SAVE_KEY = 'driftaway_save_v1';
 
 const STEP_MULTIPLIER = { 2: 1, 3: 2.5 };
@@ -20,8 +26,8 @@ export function createInitialShop() {
 }
 
 export function createInitialState() {
-  const resources = Object.fromEntries(RESOURCES.map((r) => [r, 0]));
-  const lifetime = Object.fromEntries(RESOURCES.map((r) => [r, 0]));
+  const resources = Object.fromEntries([...RESOURCES, ...GOODS].map((r) => [r, 0]));
+  const lifetime = Object.fromEntries([...RESOURCES, ...GOODS].map((r) => [r, 0]));
   const unlocked = TILES.filter((t) => t.unlock.type === 'start').map((t) => t.id);
   return {
     version: 1,
@@ -96,6 +102,10 @@ export function rateBreakdown(state, resource) {
     if (!state.unlocked.includes(tile.id)) continue;
     const multiplier = levelMultiplier(getLevel(state, tile.id));
     if (tile.kind === 'producer' && tile.produces === resource) base += tile.rate * multiplier * darknessFactor(tile, state.unlocked);
+    // Generators (zone 4) count toward "is anything making this yet" the same way producers do --
+    // unthrottled, since the scarcity throttle in applyGenerators is circular with this base sum
+    // (this feeds boosterIsIdle and a booster's own "+X/s now" display, not the tick itself).
+    if (tile.kind === 'generator' && tile.produces === resource) base += tile.rate * multiplier;
     if (tile.kind === 'booster') {
       for (const b of tile.boosts) {
         if (b.resource !== resource) continue;
@@ -307,6 +317,23 @@ export const ACHIEVEMENTS = [
         (t) => state.unlocked.includes(t.id) && getLevel(state, t.id) >= MAX_LEVEL
       ),
   },
+  {
+    id: 'timberline-coast-discovered',
+    name: 'The Timberline Coast',
+    description: 'Unlock your first tile in the Timberline Coast',
+    reward: 3,
+    condition: (state) => state.unlocked.some((id) => TILES.find((t) => t.id === id)?.zone === 'zone4'),
+  },
+  {
+    id: 'timberline-coast-complete',
+    name: 'Master of the Coast',
+    description: 'Max out every tile in the Timberline Coast',
+    reward: 10,
+    condition: (state) =>
+      TILES.filter((t) => t.zone === 'zone4').every(
+        (t) => state.unlocked.includes(t.id) && getLevel(state, t.id) >= MAX_LEVEL
+      ),
+  },
 ];
 
 // Tiered follow-ups, so there is always a next one to reach: bigger lifetime totals per resource,
@@ -323,7 +350,7 @@ for (const resource of RESOURCES) {
     });
   }
 }
-for (const [count, name, reward] of [[10, 'Small Fleet', 1], [25, 'Growing Raft', 2], [36, 'Home Waters', 2], [50, 'Far Horizons', 3], [72, 'Two Seas Charted', 4], [108, 'A Whole Ocean', 5]]) {
+for (const [count, name, reward] of [[10, 'Small Fleet', 1], [25, 'Growing Raft', 2], [36, 'Home Waters', 2], [50, 'Far Horizons', 3], [72, 'Two Seas Charted', 4], [108, 'Three Seas Charted', 5], [144, 'The Whole Map', 6]]) {
   ACHIEVEMENTS.push({
     id: `tiles-${count}`,
     name,
@@ -511,7 +538,7 @@ export function buyPrestigeUpgrade(state, resource) {
 
 export function levelUpCost(tile, targetLevel) {
   const stepMult = STEP_MULTIPLIER[targetLevel];
-  if (tile.kind === 'producer') {
+  if (tile.kind === 'producer' || tile.kind === 'generator') {
     return { [tile.produces]: Math.round(tile.rate * PRODUCER_UPGRADE_BASE * stepMult) };
   }
   return Object.fromEntries(
@@ -574,6 +601,70 @@ export function offlineRate(state) {
   return OFFLINE_RATES[state.shop.tidesLevel];
 }
 
+// Zone 4's mechanic: a generator (kind 'generator') doesn't produce from nothing like every
+// other tile -- it consumes existing resources to make a new one (planks/kelp_rope/bread). It
+// draws on the shared pool alongside everything else (unlocks, other generators), so if unlocked
+// generators together want more of an input than is in stock, every one of them drawing on that
+// resource is throttled by the same fraction rather than first-come-first-served -- the pool
+// never goes negative, and each generator's own output is capped by whichever of its inputs is
+// scarcest. A generator with two inputs can end up drawing slightly more of its non-limiting
+// input than its (lower, capped) output actually needed that tick -- a known first-pass
+// simplification; see docs/superpowers/specs/2026-09-24-drift-away-zone4-design.md.
+function generatorTiles(unlockedIds) {
+  return TILES.filter((t) => unlockedIds.includes(t.id) && t.kind === 'generator');
+}
+
+function generatorMultiplier(tile, unlockedIds, levels) {
+  const boostPercent = boostPercentFor(tile.produces, unlockedIds, levels);
+  return levelMultiplier(levels[tile.id] || 1) * (1 + boostPercent / 100);
+}
+
+function generatorScarcityFactors(state) {
+  const generators = generatorTiles(state.unlocked);
+  const inputResources = [...new Set(generators.flatMap((t) => Object.keys(t.consumes)))];
+  const factors = {};
+  for (const resource of inputResources) {
+    const desired = generators.reduce((sum, t) => {
+      const rate = t.consumes[resource];
+      return rate ? sum + rate * generatorMultiplier(t, state.unlocked, state.levels) : sum;
+    }, 0);
+    factors[resource] = desired > 0 ? Math.min(1, state.resources[resource] / desired) : 1;
+  }
+  return factors;
+}
+
+function generatorThrottle(tile, factors) {
+  const inputs = Object.keys(tile.consumes);
+  return inputs.length === 0 ? 1 : Math.min(...inputs.map((r) => factors[r]));
+}
+
+// A generator's current per-second output, throttled by whichever input is scarcest right now.
+export function generatorRate(state, tile) {
+  const throttle = generatorThrottle(tile, generatorScarcityFactors(state));
+  return tile.rate * generatorMultiplier(tile, state.unlocked, state.levels) * throttle;
+}
+
+// The same, ignoring scarcity -- what the generator would produce with a full input pool.
+export function generatorFullRate(state, tile) {
+  return tile.rate * generatorMultiplier(tile, state.unlocked, state.levels);
+}
+
+function applyGenerators(state, dt) {
+  const generators = generatorTiles(state.unlocked);
+  if (generators.length === 0) return;
+  const factors = generatorScarcityFactors(state);
+  for (const tile of generators) {
+    const multiplier = generatorMultiplier(tile, state.unlocked, state.levels);
+    const throttle = generatorThrottle(tile, factors);
+    for (const [resource, rate] of Object.entries(tile.consumes)) {
+      state.resources[resource] -= rate * multiplier * throttle * dt;
+    }
+    const output = tile.rate * multiplier * throttle * dt;
+    state.resources[tile.produces] += output;
+    state.lifetime[tile.produces] += output;
+  }
+}
+
 export function applyOfflineProgress(state, elapsedSeconds) {
   if (elapsedSeconds < MIN_OFFLINE_SECONDS) return null;
   const seconds = Math.min(elapsedSeconds, offlineCapSeconds(state));
@@ -585,6 +676,7 @@ export function applyOfflineProgress(state, elapsedSeconds) {
     state.lifetime[resource] += amount;
     gains[resource] = amount;
   }
+  applyGenerators(state, seconds * rate);
   checkAchievements(state);
   return { gains, seconds, away: elapsedSeconds, rate };
 }
@@ -595,6 +687,7 @@ export function tick(state, dt) {
     state.resources[resource] += amount;
     state.lifetime[resource] += amount;
   }
+  applyGenerators(state, dt);
   checkAchievements(state);
   return state;
 }

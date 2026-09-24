@@ -71,6 +71,35 @@ html, body {
   margin-left: 3px;
 }
 
+#goods-bar {
+  position: fixed;
+  top: 112px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 14px;
+  background: rgba(16, 38, 58, 0.75);
+  color: #f4ead2;
+  padding: 5px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1;
+}
+
+#goods-bar.hidden {
+  display: none;
+}
+
+#goods-bar .resource-main {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+#goods-bar .count {
+  font-variant-numeric: tabular-nums;
+}
+
 #rate-tip {
   position: fixed;
   z-index: 5;

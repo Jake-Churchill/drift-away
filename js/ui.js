@@ -1,9 +1,12 @@
 import {
   ACHIEVEMENTS,
   RESOURCES,
+  GOODS,
   boosterGain,
   boosterIsIdle,
   effectiveTileRate,
+  generatorFullRate,
+  generatorRate,
   getLevel,
   levelMultiplier,
   levelUpCost,
@@ -26,17 +29,20 @@ import {
 import { formatCount, formatEta } from './format.js';
 import { VERSION } from './version.js';
 import { ZONES } from './zones.js';
+import { TILES } from './tiles.js';
 
 const elements = {};
 
 // Gold isn't one of the produced RESOURCES, so nothing that iterates RESOURCES
 // picks it up — it's here only so the feedback popups can look up its icon the
-// same way they look up the four resource icons.
-const RESOURCE_ICONS = { fish: '🐟', kelp: '🌿', driftwood: '🪵', crops: '🌾', gold: '🪙' };
+// same way they look up the four resource icons. Zone 4's goods (GOODS) are here for the same
+// reason: they flow through this same generic cost/eta/popup text even though they don't get
+// their own HUD bar slot.
+const RESOURCE_ICONS = { fish: '🐟', kelp: '🌿', driftwood: '🪵', crops: '🌾', gold: '🪙', planks: '🟫', kelp_rope: '🪢', bread: '🍞' };
 const TOKEN_ICON = '⭐';
 
 function tileIcon(tile) {
-  if (tile.kind === 'producer') return RESOURCE_ICONS[tile.produces];
+  if (tile.kind === 'producer' || tile.kind === 'generator') return RESOURCE_ICONS[tile.produces];
   return tile.boosts.map((b) => RESOURCE_ICONS[b.resource]).join('');
 }
 
@@ -49,6 +55,11 @@ export function initUI(onClose, onNextUnlockClick) {
   // Gold is a reward counter, not one of the produced RESOURCES, so it sits
   // outside the loop above even though it shares the resource bar's markup.
   elements.goldCount = document.getElementById('count-gold');
+  elements.goodsBar = document.getElementById('goods-bar');
+  elements.goodsCounts = {};
+  for (const good of GOODS) {
+    elements.goodsCounts[good] = document.getElementById(`count-${good}`);
+  }
   elements.rates = {};
   for (const resource of RESOURCES) {
     elements.rates[resource] = document.getElementById(`rate-${resource}`);
@@ -222,6 +233,14 @@ export function updateResourceBar(state) {
     elements.rates[resource].innerHTML = `+${info.total.toFixed(1)}/s${boost}`;
   }
   elements.goldCount.textContent = state.gold.toLocaleString();
+
+  const zone4Discovered = state.unlocked.some((id) => TILES.find((t) => t.id === id)?.zone === 'zone4');
+  elements.goodsBar.classList.toggle('hidden', !zone4Discovered);
+  if (zone4Discovered) {
+    for (const good of GOODS) {
+      elements.goodsCounts[good].textContent = formatCount(state.resources[good]);
+    }
+  }
 }
 
 // "ready now (+2 more)", "in 4m 12s", or "needs 🌾 income" for a nextUnlock() result.
@@ -305,9 +324,27 @@ function describeProduction(tile, state) {
     const share = Math.round((mine / rateBreakdown(state, tile.produces).total) * 100);
     return `Produces ${Number(mine.toFixed(2))} ${tile.produces}/s \u00b7 ${share}% of your ${tile.produces}`;
   }
+  if (tile.kind === 'generator') {
+    const rate = generatorRate(state, tile);
+    const inputs = Object.keys(tile.consumes).join(' + ');
+    return `Consumes ${inputs} \u2192 produces ${Number(rate.toFixed(2))} ${tile.produces}/s`;
+  }
   return tile.boosts
     .map((b) => `+${Number((b.percent * levelMultiplier(level)).toFixed(2))}% ${b.resource} (+${boosterGain(state, tile, b.resource).toFixed(2)}/s now)`)
     .join(', ');
+}
+
+// Zone 4's generators are throttled when demand for an input outruns the shared stock (see
+// applyGenerators in state.js) -- this is the same idea as zone 3's dim hint, but continuous
+// rather than a flat on/off penalty, so it's reported as a shortfall rather than "halved".
+function starvedHint(tile, state) {
+  if (tile.kind !== 'generator' || !state.unlocked.includes(tile.id)) return '';
+  const rate = generatorRate(state, tile);
+  const fullRate = generatorFullRate(state, tile);
+  if (fullRate <= 0 || rate >= fullRate * 0.999) return '';
+  const percent = Math.round((rate / fullRate) * 100);
+  const inputs = Object.keys(tile.consumes).map((r) => RESOURCE_ICONS[r]).join('/');
+  return `Starved \u2014 running at ${percent}% of full rate. Needs more ${inputs} income to keep up.`;
 }
 
 function boosterHint(tile, state) {
@@ -326,7 +363,7 @@ function dimHint(tile, state) {
 
 export function showTilePanel(tile, state, eligible, onUnlock, onLevelUp) {
   elements.panel.classList.remove('hidden');
-  const hint = boosterHint(tile, state) || dimHint(tile, state);
+  const hint = boosterHint(tile, state) || dimHint(tile, state) || starvedHint(tile, state);
   elements.panelHint.textContent = hint;
   elements.panelHint.classList.toggle('hidden', hint === '');
   elements.panelIcon.textContent = tileIcon(tile);

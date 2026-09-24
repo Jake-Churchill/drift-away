@@ -1,6 +1,6 @@
 # Tile Design
 
-All 108 tiles are defined in `js/tiles.js`: 36 per zone, each zone a 6×6 hex grid, placed side by side. Zone 1 ("Home Waters") is cols 0–5; zone 2 ("Frozen Reach") is cols 6–11; zone 3 ("Abyssal Trench") is cols 12–17. Every tile has a `zone` field (`zone1`/`zone2`/`zone3`); zone metadata (name, raft color) lives in `js/zones.js`. Within a zone, families are scattered rather than grouped (the layout was shuffled after the first version). This is a first-pass balance — not playtested — expect to retune specific numbers after actually playing it.
+All 144 tiles are defined in `js/tiles.js`: 36 per zone, each zone a 6×6 hex grid. Zone 1 ("Home Waters") is cols 0–5; zone 2 ("Frozen Reach") is cols 6–11; zone 3 ("Abyssal Trench") is cols 12–17 — all three side by side. Zone 4 ("Timberline Coast") breaks that eastward chain: it's rows -6..-1 at the *same* cols 0–5 as zone 1, sitting north of it instead. Every tile has a `zone` field (`zone1`/`zone2`/`zone3`/`zone4`); zone metadata (name, raft color) lives in `js/zones.js`. Within a zone, families are scattered rather than grouped (the layout was shuffled after the first version). This is a first-pass balance — not playtested — expect to retune specific numbers after actually playing it.
 
 There is exactly one starting tile, `driftwood_start` (unlock type `start`); every other tile's `unlock` field is a `cost` or `milestone` requirement as shown below. But meeting that requirement isn't sufficient by itself: a tile can only be unlocked once it's also adjacent (on the hex grid) to a tile that's already unlocked. That adjacency requirement is derived from `gridPos` in `js/tiles.js` (see `TILE_NEIGHBORS`) and isn't repeated per-row below — assume it applies to every non-start tile in these tables.
 
@@ -27,6 +27,40 @@ Zone 3 also adds **bioluminescence**, the game's first zone-specific mechanic be
 Zone 3 is entered through the col 11 / col 12 border, the same adjacency rule as every other zone border. It resets with everything else on prestige — including which producers are lit, since that's derived from `state.unlocked` fresh each time, not separately tracked.
 
 `tests/economy.test.mjs`'s "bioluminescence" section tests `isLit` and the darkness penalty directly; there's no equivalent of the zone-2 "×90/×4 pinned" test for zone 3 yet, since those numbers are still first-pass.
+
+## Zone 4 rules (how it relates to zone 1, and its own mechanic)
+
+Zone 4 doesn't mirror a previous zone tile-for-tile the way zone 2/3 do — it's a different kind
+of tile entirely. Every non-booster tile is a **generator** (`kind: 'generator'`): it has both a
+`produces` resource, like a normal producer, and a `consumes` map of existing resources it draws
+on every tick to make it. Three families (10 tiles each): Sawmill (driftwood → planks),
+Ropeworks (kelp + driftwood → kelp_rope), Bakehouse (crops + driftwood → bread). Driftwood is the
+shared input across all three, deliberately, so it's the zone's real bottleneck.
+
+Cost and rate scale with **distance from zone 1** (`ring = -row`, 1 = bordering row -1, 6 =
+farthest at row -6), not a flat per-zone multiplier: rings 1-3 cost the base 4 resources at
+`4^(ring-1)`× a zone-1-level baseline, rings 4-6 shift to costing the generator's own output
+resource (planks/kelp_rope/bread) at `4^(ring-4)`× a baseline — a bootstrap loop, since those
+resources don't exist until you've built the cheap near tiles first. Rate (and consumption, at a
+fixed ratio, preserving the conversion) scales `1.6^(ring-1)`×. First-pass, not simulated — see
+`docs/superpowers/specs/2026-09-24-drift-away-zone4-design.md`.
+
+**planks/kelp_rope/bread are a separate layer**, exported as `GOODS` in `js/state.js`: they live
+in `state.resources`/`state.lifetime` next to the base 4 (so cost/eligibility/level-up code needs
+no changes) but aren't in `RESOURCES` — no prestige upgrade row, no lifetime achievements, no
+main HUD bar slot, just their own small strip that appears once the player unlocks their first
+zone-4 tile.
+
+When several unlocked generators draw on the same scarce input, each is throttled by the same
+proportional factor (not first-come-first-served) so the shared pool never goes negative; a
+generator with two inputs is capped by whichever is scarcer. See `applyGenerators` in
+`js/state.js` and the "Generators (zone 4)" tests in `tests/economy.test.mjs`.
+
+Zone 4 is entered through the row 0 / row -1 border (zone 1's own north edge) — the same hex
+adjacency rule as every other zone border, just row-wise instead of column-wise. Unlike zone 2/3,
+it's reachable in parallel with them, not gated behind them: it borders zone 1 directly, so a
+fresh game can rush its cheap ring-1 tiles immediately. It resets with everything else on
+prestige, including the goods stockpile.
 
 ## Zone 1 — Home Waters
 
@@ -201,6 +235,60 @@ Zone 3 is entered through the col 11 / col 12 border, the same adjacency rule as
 | `abyssal_booster_net_weavers` | Filter Web | 0,12 | +320% fish, +320% kelp | cost: 972,000 fish + 729,000 driftwood |
 | `abyssal_booster_composting_shed` | Ossuary | 3,13 | +320% crops, +320% driftwood | milestone: lifetime driftwood ≥ 729,000 |
 | `abyssal_booster_lighthouse` | Anglerfish Lure | 4,12 | +240% fish, +240% kelp, +240% driftwood, +240% crops | cost: 972,000 kelp + 729,000 driftwood |
+
+## Zone 4 — Timberline Coast
+
+### Sawmill (planks) (10)
+| id | name | pos (r,c) | rate/s | consumes/s | unlock |
+|---|---|---|---|---|---|
+| `timberline_sawmill_1` | Driftwood Sawpit | -1,0 | 0.6 | 1.2 driftwood | cost: 30 driftwood |
+| `timberline_sawmill_2` | Timber Saw | -1,3 | 0.65 | 1.3 driftwood | cost: 35 driftwood |
+| `timberline_sawmill_3` | Plank Press | -2,4 | 1.11 | 2.22 driftwood | cost: 156 driftwood |
+| `timberline_sawmill_4` | Ripsaw Platform | -3,2 | 1.9 | 3.8 driftwood | cost: 696 driftwood |
+| `timberline_sawmill_5` | Millrace Saw | -3,5 | 2.03 | 4.06 driftwood | cost: 768 driftwood |
+| `timberline_sawmill_6` | Twin-Blade Mill | -4,3 | 3.44 | 6.88 driftwood | cost: 48 planks |
+| `timberline_sawmill_7` | Highland Sawworks | -4,0 | 3.64 | 7.28 driftwood | cost: 52 planks |
+| `timberline_sawmill_8` | Grand Timber Mill | -5,1 | 6.13 | 12.26 driftwood | cost: 221 planks |
+| `timberline_sawmill_9` | Open-Coast Sawmill | -6,5 | 10.32 | 20.64 driftwood | cost: 941 planks |
+| `timberline_sawmill_10` | Old-Growth Mill | -6,2 | 10.82 | 21.64 driftwood | cost: 998 planks |
+
+### Ropeworks (kelp_rope) (10)
+| id | name | pos (r,c) | rate/s | consumes/s | unlock |
+|---|---|---|---|---|---|
+| `timberline_ropeworks_1` | Kelp Ropewalk | -1,1 | 0.5 | 0.65 kelp + 0.5 driftwood | cost: 24 driftwood + 16 kelp |
+| `timberline_ropeworks_2` | Twisting Frame | -1,4 | 0.54 | 0.7 kelp + 0.54 driftwood | cost: 28 driftwood + 18 kelp |
+| `timberline_ropeworks_3` | Fiber Spinner | -2,1 | 0.93 | 1.21 kelp + 0.93 driftwood | cost: 125 driftwood + 83 kelp |
+| `timberline_ropeworks_4` | Driftline Works | -2,5 | 0.99 | 1.29 kelp + 0.99 driftwood | cost: 139 driftwood + 93 kelp |
+| `timberline_ropeworks_5` | Coilworks | -3,0 | 1.69 | 2.2 kelp + 1.69 driftwood | cost: 614 driftwood + 410 kelp |
+| `timberline_ropeworks_6` | Highland Ropewalk | -4,4 | 2.87 | 3.73 kelp + 2.87 driftwood | cost: 38 kelp_rope |
+| `timberline_ropeworks_7` | Grand Ropewalk | -4,2 | 3.03 | 3.94 kelp + 3.03 driftwood | cost: 41 kelp_rope |
+| `timberline_ropeworks_8` | Open-Coast Cordage | -5,4 | 5.11 | 6.64 kelp + 5.11 driftwood | cost: 177 kelp_rope |
+| `timberline_ropeworks_9` | Braided Works | -5,2 | 5.37 | 6.98 kelp + 5.37 driftwood | cost: 188 kelp_rope |
+| `timberline_ropeworks_10` | Old Tackle Yard | -6,3 | 9.02 | 11.73 kelp + 9.02 driftwood | cost: 799 kelp_rope |
+
+### Bakehouse (bread) (10)
+| id | name | pos (r,c) | rate/s | consumes/s | unlock |
+|---|---|---|---|---|---|
+| `timberline_bakehouse_1` | Coastal Bakehouse | -1,2 | 0.5 | 0.65 crops + 0.5 driftwood | cost: 24 driftwood + 16 crops |
+| `timberline_bakehouse_2` | Clay Oven | -2,0 | 0.86 | 1.12 crops + 0.86 driftwood | cost: 110 driftwood + 74 crops |
+| `timberline_bakehouse_3` | Hearth House | -2,3 | 0.93 | 1.21 crops + 0.93 driftwood | cost: 125 driftwood + 83 crops |
+| `timberline_bakehouse_4` | Millstone Bakery | -3,3 | 1.59 | 2.07 crops + 1.59 driftwood | cost: 557 driftwood + 371 crops |
+| `timberline_bakehouse_5` | Driftwood Cookhouse | -3,1 | 1.69 | 2.2 crops + 1.69 driftwood | cost: 614 driftwood + 410 crops |
+| `timberline_bakehouse_6` | Highland Bakehouse | -4,5 | 2.87 | 3.73 crops + 2.87 driftwood | cost: 38 bread |
+| `timberline_bakehouse_7` | Grand Bakehouse | -5,5 | 4.85 | 6.31 crops + 4.85 driftwood | cost: 165 bread |
+| `timberline_bakehouse_8` | Open-Coast Ovens | -5,0 | 5.11 | 6.64 crops + 5.11 driftwood | cost: 177 bread |
+| `timberline_bakehouse_9` | Stone Hearth | -6,1 | 8.6 | 11.18 crops + 8.6 driftwood | cost: 753 bread |
+| `timberline_bakehouse_10` | Old Rising House | -6,4 | 9.02 | 11.73 crops + 9.02 driftwood | cost: 799 bread |
+
+### Booster (6)
+| id | name | pos (r,c) | effect | unlock |
+|---|---|---|---|---|
+| `timberline_booster_tool_shed` | Tool Shed | -1,5 | +25% planks | cost: 35 driftwood |
+| `timberline_booster_drying_frames` | Drying Frames | -2,2 | +25% kelp_rope | cost: 140 driftwood |
+| `timberline_booster_grain_silo` | Grain Silo | -3,4 | +25% bread | cost: 560 driftwood |
+| `timberline_booster_timber_yard` | Timber Yard | -4,1 | +20% planks, +20% kelp_rope | cost: 20 planks |
+| `timberline_booster_provision_store` | Provision Store | -5,3 | +20% kelp_rope, +20% bread | cost: 80 kelp_rope |
+| `timberline_booster_millhouse` | Millhouse | -6,0 | +15% planks, +15% kelp_rope, +15% bread | cost: 320 planks |
 
 ## If retuning balance
 
