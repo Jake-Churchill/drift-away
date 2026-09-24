@@ -22,9 +22,9 @@ make a new one, instead of producing from nothing like every other tile in the g
 ## Non-Goals
 
 - Deep balance tuning. Every number here is first-pass, unsimulated, same caveat as zone 2/3's
-  own early multipliers (which needed correction after the fact).
-- Full integration with prestige/achievements/HUD for the new resources — deliberately kept as a
-  separate, self-contained layer (see below).
+  own early multipliers (which needed correction after the fact). Baron/magnate achievement
+  targets (25,000/100,000 lifetime) are the same generic thresholds every resource gets — not
+  retuned for how fast planks/kelp_rope/bread actually accumulate.
 
 ## Spatial layout
 
@@ -102,14 +102,32 @@ Recipes (the two the user specified verbatim; kelp rope's recipe is this session
 Driftwood is the shared input across all three chains, deliberately — it becomes zone 4's real
 bottleneck, in tension with spending it on more zone1-3 unlocks.
 
-**Separate layer, by design:** `planks`/`kelp_rope`/`bread` (exported as `GOODS` in
-`js/state.js`) live in the same `state.resources`/`state.lifetime` objects as the base 4 (so all
-the existing generic cost/eligibility/level-up machinery — `isEligible`, `unlockTile`,
-`levelUpCost`, `unlockEta` — works on them with no changes), but are **not** in the `RESOURCES`
-array. That means: no prestige upgrade row, no lifetime-based achievements, no main HUD bar
-slot. They reset to 0 on prestige the same way everything else does (via
-`createInitialState()`), and they get their own small "goods bar" strip (`#goods-bar` in
-`index.html`) that only appears once the player has unlocked their first zone-4 tile.
+**Same rules as the base 4 (updated from the original design):** `planks`/`kelp_rope`/`bread`
+(exported as `GOODS` in `js/state.js`) live in the same `state.resources`/`state.lifetime`
+objects as the base 4, and are now folded directly into the `RESOURCES` array itself. All the
+existing generic cost/eligibility/level-up machinery — `isEligible`, `unlockTile`, `levelUpCost`,
+`unlockEta` — already worked on them with no changes, since it keys off `state.resources`
+generically rather than the `RESOURCES` list. They reset to 0 on prestige the same way everything
+else does (via `createInitialState()`).
+
+Originally shipped as a deliberately separate layer — no prestige row, no lifetime achievements,
+no HUD bar slot, shown only in their own small strip once zone 4 was discovered — and changed on
+request shortly after to give them full parity: a main HUD bar slot with a rate line from the
+start, a prestige upgrade row (`createInitialPrestige`'s `upgrades` object now has all 7 keys), and
+baron/magnate lifetime achievements (`for (const resource of RESOURCES)` already generated those
+generically, so this fell out for free once `RESOURCES` included them). Two things had to change
+to make that correct rather than just cosmetic:
+- `rateBreakdown`'s generator branch was overstating the HUD rate (it used unthrottled capacity,
+  fine for an internal idle-check but wrong once shown as the literal "+X/s" number) — fixed to
+  use the actual scarcity-throttled rate.
+- `boosterIsIdle` depended on that same `rateBreakdown` base, so throttling it correctly would
+  have made every freshly-unlocked, not-yet-fed generator's booster look idle again. Decoupled
+  into its own existence check (does an unlocked producer/generator for this resource exist at
+  all), independent of its current rate.
+
+`resourceLabel`/`resourceTitle` (in both `state.js` and `ui.js`, small enough to duplicate rather
+than share) turn `kelp_rope` into `kelp rope`/`Kelp Rope` for achievement names/descriptions, the
+hover tooltip, and cost/hint text — the one multi-word resource name in the game.
 
 ## Tile roster (36 tiles: 10 + 10 + 10 generators, 6 boosters)
 
@@ -150,7 +168,10 @@ needed its own per-level detail.
 zone-4 tile maxed), matching the zone2/zone3 pair shape. The tile-count tier list gained a new
 144 entry ("The Whole Map", +6) and the old 108 entry was renamed from "A Whole Ocean" to "Three
 Seas Charted" (it's no longer the true total, and "ocean" no longer fits now that a land zone
-exists) — same rename pattern zone 3 applied to zone 2's own 72-tile tier.
+exists) — same rename pattern zone 3 applied to zone 2's own 72-tile tier. Once `GOODS` joined
+`RESOURCES` (see above), the existing generic baron/magnate loop also generated 6 more
+achievements (Planks/Kelp Rope/Bread Baron/Magnate) with no code change of its own — 39
+achievements in all, ~137 gold available, up from 33/~122 right after the zone shipped.
 
 ## Testing
 

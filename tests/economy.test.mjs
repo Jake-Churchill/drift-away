@@ -196,8 +196,8 @@ console.log('geometry-derived adjacency tests passed');
   const state = createInitialState();
   assert.deepEqual(
     state.prestige,
-    { tokens: 0, upgrades: { fish: 0, kelp: 0, driftwood: 0, crops: 0 }, headStart: 0, count: 0 },
-    'a fresh game starts with zero prestige tokens, no upgrades purchased, and no prestiges done'
+    { tokens: 0, upgrades: { fish: 0, kelp: 0, driftwood: 0, crops: 0, planks: 0, kelp_rope: 0, bread: 0 }, headStart: 0, count: 0 },
+    'a fresh game starts with zero prestige tokens (including zone 4 goods), no upgrades purchased, and no prestiges done'
   );
 }
 
@@ -399,7 +399,7 @@ console.log('completion tracking tests passed');
 
 {
   const state = createInitialState();
-  state.lifetime = { fish: 500, kelp: 500, driftwood: 1000, crops: 1000 };
+  state.lifetime = { fish: 500, kelp: 500, driftwood: 1000, crops: 1000, planks: 0, kelp_rope: 0, bread: 0 };
   assert.equal(prestigeTokensEarned(state), 3, 'floor((500+500+1000+1000) / 1000) = 3');
 }
 
@@ -413,7 +413,7 @@ console.log('completion tracking tests passed');
   const state = createInitialState();
   state.unlocked = TILES.map((t) => t.id);
   for (const t of TILES) state.levels[t.id] = MAX_LEVEL;
-  state.lifetime = { fish: 1000, kelp: 1000, driftwood: 1000, crops: 1000 };
+  state.lifetime = { fish: 1000, kelp: 1000, driftwood: 1000, crops: 1000, planks: 0, kelp_rope: 0, bread: 0 };
   state.prestige.tokens = 7; // simulate a prior prestige
   state.prestige.upgrades.fish = 2;
   const resourcesBefore = { ...state.resources };
@@ -425,7 +425,7 @@ console.log('completion tracking tests passed');
   assert.equal(result.state.prestige.tokens, 11, 'earned tokens add to the carried-over balance (7 + 4)');
   assert.deepEqual(
     result.state.prestige.upgrades,
-    { fish: 2, kelp: 0, driftwood: 0, crops: 0 },
+    { fish: 2, kelp: 0, driftwood: 0, crops: 0, planks: 0, kelp_rope: 0, bread: 0 },
     'purchased upgrades carry over unchanged'
   );
   assert.deepEqual(
@@ -654,10 +654,10 @@ console.log('economy math tests passed');
 // --- ACHIEVEMENTS data integrity ---
 
 {
-  assert.equal(ACHIEVEMENTS.length, 33, 'expected exactly 33 achievements');
+  assert.equal(ACHIEVEMENTS.length, 39, 'expected exactly 39 achievements');
   assert.equal(
     new Set(ACHIEVEMENTS.map((a) => a.id)).size,
-    33,
+    39,
     'achievement ids must be unique'
   );
   for (const achievement of ACHIEVEMENTS) {
@@ -1410,7 +1410,7 @@ console.log('achievement save migration tests passed');
 // --- the new achievements ---
 {
   const total = ACHIEVEMENTS.reduce((sum, a) => sum + a.reward, 0);
-  assert.equal(total, 122, 'gold available from achievements');
+  assert.equal(total, 137, 'gold available from achievements');
   assert.equal(new Set(ACHIEVEMENTS.map((a) => a.id)).size, ACHIEVEMENTS.length, 'ids are unique');
 
   const st = createInitialState();
@@ -1621,14 +1621,27 @@ console.log('achievement save migration tests passed');
     assert.deepEqual(levelUpCost(sawmill1, 3), { planks: 45 }, 'round(0.6 rate * 30 base * step-2 multiplier 2.5)');
   }
 
-  // rateBreakdown/boosterIsIdle count generator output (unthrottled) the same way they count a
-  // producer's, so a zone-4 booster correctly stops reporting itself as idle once its resource
-  // has any source at all -- even one that (as above) hasn't necessarily produced anything yet.
+  // rateBreakdown's generator branch reports the actual *throttled* rate (matching generatorRate
+  // exactly), not the unthrottled capacity -- the HUD's "+X/s" line has to match reality.
+  {
+    const state = createInitialState();
+    state.unlocked = [sawmill1.id];
+    state.resources.driftwood = 0.6; // half of the 1.2 desired for a 1s-equivalent factor
+    const info = rateBreakdown(state, 'planks');
+    assert.equal(info.base, generatorRate(state, sawmill1), 'rateBreakdown.base matches the throttled generatorRate exactly');
+    assert.equal(info.base, 0.3, 'half the driftwood in stock halves the reported rate, same as the tick math');
+  }
+
+  // boosterIsIdle is decoupled from that throttled rate on purpose: a freshly-unlocked generator
+  // with nothing to consume yet reports a real 0 rate above, but it isn't "idle" in the sense
+  // this asks about -- it already exists and will produce as soon as its input income catches
+  // up, so a zone-4 booster must not report itself as idle in that state either.
   {
     const state = createInitialState();
     assert.equal(boosterIsIdle(state, toolShed), true, 'no planks source yet');
-    state.unlocked = [toolShed.id, sawmill1.id];
-    assert.equal(boosterIsIdle(state, toolShed), false, 'a sawmill exists now, so the booster has something to boost');
+    state.unlocked = [toolShed.id, sawmill1.id]; // driftwood is 0, so sawmill1's rate is 0 too
+    assert.equal(generatorRate(state, sawmill1), 0, 'fixture assumption: the sawmill is fully throttled to zero here');
+    assert.equal(boosterIsIdle(state, toolShed), false, 'a sawmill exists now, even fully throttled, so the booster is not idle');
   }
 
   // Discovering zone 4 fires its own achievement, same pattern as zone 2/3.

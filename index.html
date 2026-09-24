@@ -9,24 +9,24 @@
 <body>
   <canvas id="game-canvas"></canvas>
   <div id="board-pills"></div>
-  <div id="resource-bar">
-    <div class="resource" data-resource="fish"><div class="resource-main"><span class="icon">🐟</span><span class="count" id="count-fish">0</span></div><div class="resource-rate" id="rate-fish"></div></div>
-    <div class="resource" data-resource="kelp"><div class="resource-main"><span class="icon">🌿</span><span class="count" id="count-kelp">0</span></div><div class="resource-rate" id="rate-kelp"></div></div>
-    <div class="resource" data-resource="driftwood"><div class="resource-main"><span class="icon">🪵</span><span class="count" id="count-driftwood">0</span></div><div class="resource-rate" id="rate-driftwood"></div></div>
-    <div class="resource" data-resource="crops"><div class="resource-main"><span class="icon">🌾</span><span class="count" id="count-crops">0</span></div><div class="resource-rate" id="rate-crops"></div></div>
-    <div class="resource"><div class="resource-main"><span class="icon">🪙</span><span class="count" id="count-gold">0</span></div></div>
-  </div>
-  <div id="goods-bar" class="hidden">
-    <div class="resource" data-resource="planks"><div class="resource-main"><span class="icon">🟫</span><span class="count" id="count-planks">0</span></div></div>
-    <div class="resource" data-resource="kelp_rope"><div class="resource-main"><span class="icon">🪢</span><span class="count" id="count-kelp_rope">0</span></div></div>
-    <div class="resource" data-resource="bread"><div class="resource-main"><span class="icon">🍞</span><span class="count" id="count-bread">0</span></div></div>
+  <div id="hud-top">
+    <div id="resource-bar">
+      <div class="resource" data-resource="fish"><div class="resource-main"><span class="icon">🐟</span><span class="count" id="count-fish">0</span></div><div class="resource-rate" id="rate-fish"></div></div>
+      <div class="resource" data-resource="kelp"><div class="resource-main"><span class="icon">🌿</span><span class="count" id="count-kelp">0</span></div><div class="resource-rate" id="rate-kelp"></div></div>
+      <div class="resource" data-resource="driftwood"><div class="resource-main"><span class="icon">🪵</span><span class="count" id="count-driftwood">0</span></div><div class="resource-rate" id="rate-driftwood"></div></div>
+      <div class="resource" data-resource="crops"><div class="resource-main"><span class="icon">🌾</span><span class="count" id="count-crops">0</span></div><div class="resource-rate" id="rate-crops"></div></div>
+      <div class="resource" data-resource="planks"><div class="resource-main"><span class="icon">🟫</span><span class="count" id="count-planks">0</span></div><div class="resource-rate" id="rate-planks"></div></div>
+      <div class="resource" data-resource="kelp_rope"><div class="resource-main"><span class="icon">🪢</span><span class="count" id="count-kelp_rope">0</span></div><div class="resource-rate" id="rate-kelp_rope"></div></div>
+      <div class="resource" data-resource="bread"><div class="resource-main"><span class="icon">🍞</span><span class="count" id="count-bread">0</span></div><div class="resource-rate" id="rate-bread"></div></div>
+      <div class="resource"><div class="resource-main"><span class="icon">🪙</span><span class="count" id="count-gold">0</span></div></div>
+    </div>
+    <div id="next-unlock" class="hidden">
+      <div id="next-unlock-text"></div>
+      <div id="next-unlock-bar"><i></i></div>
+      <span id="next-unlock-hint" class="hidden">Click any tile beside your raft to see what it needs.</span>
+    </div>
   </div>
   <div id="rate-tip" class="hidden"></div>
-  <div id="next-unlock" class="hidden">
-    <div id="next-unlock-text"></div>
-    <div id="next-unlock-bar"><i></i></div>
-    <span id="next-unlock-hint" class="hidden">Click any tile beside your raft to see what it needs.</span>
-  </div>
   <div id="feedback-layer"></div>
   <div id="tile-panel" class="hidden">
     <button id="tile-panel-close-btn" aria-label="Close">×</button>
@@ -138,6 +138,30 @@
           <button id="store-crops-buy-btn" aria-label="Buy crops upgrade">+1</button>
           <button id="store-crops-buy5-btn" aria-label="Buy 5 crops upgrades">+5</button>
           <button id="store-crops-buy10-btn" aria-label="Buy 10 crops upgrades">+10</button>
+        </div>
+        <div class="store-row">
+          <span class="store-icon">🟫</span>
+          <span id="store-planks-count"></span>
+          <span id="store-planks-cost"></span>
+          <button id="store-planks-buy-btn" aria-label="Buy planks upgrade">+1</button>
+          <button id="store-planks-buy5-btn" aria-label="Buy 5 planks upgrades">+5</button>
+          <button id="store-planks-buy10-btn" aria-label="Buy 10 planks upgrades">+10</button>
+        </div>
+        <div class="store-row">
+          <span class="store-icon">🪢</span>
+          <span id="store-kelp_rope-count"></span>
+          <span id="store-kelp_rope-cost"></span>
+          <button id="store-kelp_rope-buy-btn" aria-label="Buy kelp rope upgrade">+1</button>
+          <button id="store-kelp_rope-buy5-btn" aria-label="Buy 5 kelp rope upgrades">+5</button>
+          <button id="store-kelp_rope-buy10-btn" aria-label="Buy 10 kelp rope upgrades">+10</button>
+        </div>
+        <div class="store-row">
+          <span class="store-icon">🍞</span>
+          <span id="store-bread-count"></span>
+          <span id="store-bread-cost"></span>
+          <button id="store-bread-buy-btn" aria-label="Buy bread upgrade">+1</button>
+          <button id="store-bread-buy5-btn" aria-label="Buy 5 bread upgrades">+5</button>
+          <button id="store-bread-buy10-btn" aria-label="Buy 10 bread upgrades">+10</button>
         </div>
         <div class="store-row">
           <span class="store-icon">⛵</span>

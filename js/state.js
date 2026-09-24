@@ -2,14 +2,22 @@ import { TILES, TILE_NEIGHBORS } from './tiles.js';
 import { ZONES } from './zones.js';
 import { PALETTES } from './palettes.js';
 
-export const RESOURCES = ['fish', 'kelp', 'driftwood', 'crops'];
-// Zone 4's own resources: a separate layer from RESOURCES, so they get no prestige upgrade row,
-// don't count toward lifetime-based achievements, and don't appear in the main HUD bar. They
-// still live in state.resources/state.lifetime alongside the base 4 -- isEligible/unlockTile/
-// levelUpCost all key off state.resources generically already, so goods-denominated costs and
-// level-ups just work without touching that code.
+const BASE_RESOURCES = ['fish', 'kelp', 'driftwood', 'crops'];
+// Zone 4's own resources. Folded into RESOURCES (not kept separate) so they follow the exact same
+// rules as the base 4 everywhere that iterates RESOURCES: HUD bar + rate line, prestige upgrade
+// rows, baron/magnate lifetime achievements, and counting toward prestige tokens earned.
 export const GOODS = ['planks', 'kelp_rope', 'bread'];
+export const RESOURCES = [...BASE_RESOURCES, ...GOODS];
 export const SAVE_KEY = 'driftaway_save_v1';
+
+// 'kelp_rope' -> 'kelp rope' -> 'Kelp Rope', for achievement names/descriptions. A no-op for
+// every other resource, which has no underscore to begin with.
+function resourceLabel(resource) {
+  return resource.split('_').join(' ');
+}
+function resourceTitle(resource) {
+  return resourceLabel(resource).replace(/\b\w/g, (c) => c.toUpperCase());
+}
 
 const STEP_MULTIPLIER = { 2: 1, 3: 2.5 };
 export const MAX_LEVEL = Math.max(...Object.keys(STEP_MULTIPLIER).map(Number));
@@ -17,7 +25,7 @@ const PRODUCER_UPGRADE_BASE = 30;
 const BOOSTER_UPGRADE_BASE = 6;
 
 export function createInitialPrestige() {
-  return { tokens: 0, upgrades: { fish: 0, kelp: 0, driftwood: 0, crops: 0 }, headStart: 0, count: 0 };
+  return { tokens: 0, upgrades: Object.fromEntries(RESOURCES.map((r) => [r, 0])), headStart: 0, count: 0 };
 }
 
 // What gold has bought. Like gold itself it survives a prestige.
@@ -26,8 +34,8 @@ export function createInitialShop() {
 }
 
 export function createInitialState() {
-  const resources = Object.fromEntries([...RESOURCES, ...GOODS].map((r) => [r, 0]));
-  const lifetime = Object.fromEntries([...RESOURCES, ...GOODS].map((r) => [r, 0]));
+  const resources = Object.fromEntries(RESOURCES.map((r) => [r, 0]));
+  const lifetime = Object.fromEntries(RESOURCES.map((r) => [r, 0]));
   const unlocked = TILES.filter((t) => t.unlock.type === 'start').map((t) => t.id);
   return {
     version: 1,
@@ -98,14 +106,18 @@ export function rateBreakdown(state, resource) {
   let base = 0;
   let boostPercent = 0;
   const boosters = [];
+  // Computed once (not per-tile below): resolves the scarcity throttle every unlocked generator
+  // is currently running at, so a zone-4 resource's HUD rate reflects actual current income, not
+  // the unthrottled capacity. The generator's own boost is applied to `base` below just like a
+  // producer's darkness factor is, and the *same* boost is folded into `total` again via
+  // `boostPercent` -- fine, since generatorThrottle/generatorScarcityFactors don't themselves
+  // depend on this resource's boost, only on level+boost of whatever's consuming each input.
+  const generatorFactors = generatorScarcityFactors(state);
   for (const tile of TILES) {
     if (!state.unlocked.includes(tile.id)) continue;
     const multiplier = levelMultiplier(getLevel(state, tile.id));
     if (tile.kind === 'producer' && tile.produces === resource) base += tile.rate * multiplier * darknessFactor(tile, state.unlocked);
-    // Generators (zone 4) count toward "is anything making this yet" the same way producers do --
-    // unthrottled, since the scarcity throttle in applyGenerators is circular with this base sum
-    // (this feeds boosterIsIdle and a booster's own "+X/s now" display, not the tick itself).
-    if (tile.kind === 'generator' && tile.produces === resource) base += tile.rate * multiplier;
+    if (tile.kind === 'generator' && tile.produces === resource) base += tile.rate * multiplier * generatorThrottle(tile, generatorFactors);
     if (tile.kind === 'booster') {
       for (const b of tile.boosts) {
         if (b.resource !== resource) continue;
@@ -127,8 +139,14 @@ export function rateBreakdown(state, resource) {
 }
 
 // True when nothing the booster affects has a producer yet, so unlocking it would change nothing.
+// A booster is idle if nothing it boosts exists yet. Checked by existence (an unlocked producer
+// or generator targeting the resource), not by current rate: a freshly-unlocked generator with
+// nothing to consume yet still has a real 0 throttled rate, but it isn't "idle" in the sense this
+// is asking about -- it already exists and will produce as soon as its input income catches up.
 export function boosterIsIdle(state, tile) {
-  return tile.boosts.every((b) => rateBreakdown(state, b.resource).base === 0);
+  return tile.boosts.every(
+    (b) => !TILES.some((t) => state.unlocked.includes(t.id) && (t.kind === 'producer' || t.kind === 'generator') && t.produces === b.resource)
+  );
 }
 
 // What one booster adds to a resource right now, per second.
@@ -339,12 +357,12 @@ export const ACHIEVEMENTS = [
 // Tiered follow-ups, so there is always a next one to reach: bigger lifetime totals per resource,
 // tile counts, and how many times the player has prestiged.
 for (const resource of RESOURCES) {
-  const name = `${resource[0].toUpperCase()}${resource.slice(1)}`;
+  const name = resourceTitle(resource);
   for (const [suffix, title, target, reward] of [['baron', 'Baron', 25000, 2], ['magnate', 'Magnate', 100000, 3]]) {
     ACHIEVEMENTS.push({
       id: `${resource}-${suffix}`,
       name: `${name} ${title}`,
-      description: `Earn ${target.toLocaleString('en-US')} lifetime ${resource}`,
+      description: `Earn ${target.toLocaleString('en-US')} lifetime ${resourceLabel(resource)}`,
       reward,
       condition: (state) => state.lifetime[resource] >= target,
     });
@@ -649,9 +667,12 @@ export function generatorFullRate(state, tile) {
   return tile.rate * generatorMultiplier(tile, state.unlocked, state.levels);
 }
 
+// Returns how much of each output resource was actually produced this call, so offline progress
+// can fold it into its gains summary the same way it does for the base 4.
 function applyGenerators(state, dt) {
   const generators = generatorTiles(state.unlocked);
-  if (generators.length === 0) return;
+  const produced = {};
+  if (generators.length === 0) return produced;
   const factors = generatorScarcityFactors(state);
   for (const tile of generators) {
     const multiplier = generatorMultiplier(tile, state.unlocked, state.levels);
@@ -662,7 +683,9 @@ function applyGenerators(state, dt) {
     const output = tile.rate * multiplier * throttle * dt;
     state.resources[tile.produces] += output;
     state.lifetime[tile.produces] += output;
+    produced[tile.produces] = (produced[tile.produces] || 0) + output;
   }
+  return produced;
 }
 
 export function applyOfflineProgress(state, elapsedSeconds) {
@@ -676,7 +699,9 @@ export function applyOfflineProgress(state, elapsedSeconds) {
     state.lifetime[resource] += amount;
     gains[resource] = amount;
   }
-  applyGenerators(state, seconds * rate);
+  for (const [resource, amount] of Object.entries(applyGenerators(state, seconds * rate))) {
+    gains[resource] = (gains[resource] || 0) + amount;
+  }
   checkAchievements(state);
   return { gains, seconds, away: elapsedSeconds, rate };
 }

@@ -29,15 +29,13 @@ import {
 import { formatCount, formatEta } from './format.js';
 import { VERSION } from './version.js';
 import { ZONES } from './zones.js';
-import { TILES } from './tiles.js';
 
 const elements = {};
 
 // Gold isn't one of the produced RESOURCES, so nothing that iterates RESOURCES
 // picks it up — it's here only so the feedback popups can look up its icon the
-// same way they look up the four resource icons. Zone 4's goods (GOODS) are here for the same
-// reason: they flow through this same generic cost/eta/popup text even though they don't get
-// their own HUD bar slot.
+// same way they look up every resource icon (fish/kelp/driftwood/crops and zone 4's
+// planks/kelp_rope/bread, which are RESOURCES entries too and need no special-casing here).
 const RESOURCE_ICONS = { fish: '🐟', kelp: '🌿', driftwood: '🪵', crops: '🌾', gold: '🪙', planks: '🟫', kelp_rope: '🪢', bread: '🍞' };
 const TOKEN_ICON = '⭐';
 
@@ -55,11 +53,6 @@ export function initUI(onClose, onNextUnlockClick) {
   // Gold is a reward counter, not one of the produced RESOURCES, so it sits
   // outside the loop above even though it shares the resource bar's markup.
   elements.goldCount = document.getElementById('count-gold');
-  elements.goodsBar = document.getElementById('goods-bar');
-  elements.goodsCounts = {};
-  for (const good of GOODS) {
-    elements.goodsCounts[good] = document.getElementById(`count-${good}`);
-  }
   elements.rates = {};
   for (const resource of RESOURCES) {
     elements.rates[resource] = document.getElementById(`rate-${resource}`);
@@ -129,8 +122,10 @@ function showRateTip(resource, event) {
     if (dim) row.className = 'dim';
     tip.appendChild(row);
   };
-  line(`${resource[0].toUpperCase()}${resource.slice(1)} ${info.total.toFixed(2)}/s`);
-  line(`Producers ${info.base.toFixed(2)}/s`);
+  const label = resourceLabel(resource);
+  const title = label.replace(/\b\w/g, (c) => c.toUpperCase());
+  line(`${title} ${info.total.toFixed(2)}/s`);
+  line(`${GOODS.includes(resource) ? 'Generators' : 'Producers'} ${info.base.toFixed(2)}/s`);
   if (info.boosters.length > 0) {
     line(`Boosters +${Math.round(info.boostPercent)}%`);
     for (const b of info.boosters) line(`${b.name} +${Number(b.percent.toFixed(1))}%`, true);
@@ -233,14 +228,6 @@ export function updateResourceBar(state) {
     elements.rates[resource].innerHTML = `+${info.total.toFixed(1)}/s${boost}`;
   }
   elements.goldCount.textContent = state.gold.toLocaleString();
-
-  const zone4Discovered = state.unlocked.some((id) => TILES.find((t) => t.id === id)?.zone === 'zone4');
-  elements.goodsBar.classList.toggle('hidden', !zone4Discovered);
-  if (zone4Discovered) {
-    for (const good of GOODS) {
-      elements.goodsCounts[good].textContent = formatCount(state.resources[good]);
-    }
-  }
 }
 
 // "ready now (+2 more)", "in 4m 12s", or "needs 🌾 income" for a nextUnlock() result.
@@ -304,9 +291,14 @@ export function updateBoardTint(statuses, next, enabled, project) {
   }
 }
 
+// 'kelp_rope' -> 'kelp rope', for display text. A no-op for every other resource.
+function resourceLabel(resource) {
+  return resource.split('_').join(' ');
+}
+
 function describeCost(cost) {
   return Object.entries(cost)
-    .map(([resource, amount]) => `${amount} ${resource}`)
+    .map(([resource, amount]) => `${amount} ${resourceLabel(resource)}`)
     .join(' + ');
 }
 
@@ -314,7 +306,7 @@ function describeUnlock(tile) {
   if (tile.unlock.type === 'cost') {
     return describeCost(tile.unlock.cost);
   }
-  return `Reach ${tile.unlock.target} lifetime ${tile.unlock.resource}`;
+  return `Reach ${tile.unlock.target} lifetime ${resourceLabel(tile.unlock.resource)}`;
 }
 
 function describeProduction(tile, state) {
@@ -326,11 +318,11 @@ function describeProduction(tile, state) {
   }
   if (tile.kind === 'generator') {
     const rate = generatorRate(state, tile);
-    const inputs = Object.keys(tile.consumes).join(' + ');
-    return `Consumes ${inputs} \u2192 produces ${Number(rate.toFixed(2))} ${tile.produces}/s`;
+    const inputs = Object.keys(tile.consumes).map(resourceLabel).join(' + ');
+    return `Consumes ${inputs} \u2192 produces ${Number(rate.toFixed(2))} ${resourceLabel(tile.produces)}/s`;
   }
   return tile.boosts
-    .map((b) => `+${Number((b.percent * levelMultiplier(level)).toFixed(2))}% ${b.resource} (+${boosterGain(state, tile, b.resource).toFixed(2)}/s now)`)
+    .map((b) => `+${Number((b.percent * levelMultiplier(level)).toFixed(2))}% ${resourceLabel(b.resource)} (+${boosterGain(state, tile, b.resource).toFixed(2)}/s now)`)
     .join(', ');
 }
 
@@ -351,7 +343,7 @@ function boosterHint(tile, state) {
   if (tile.kind !== 'booster' || !boosterIsIdle(state, tile)) return '';
   const resources = tile.boosts.map((b) => b.resource);
   const icons = resources.map((r) => RESOURCE_ICONS[r]).join('');
-  return `You have no ${icons} tiles yet. This boosts every ${resources.join(' or ')} tile you build, wherever it sits.`;
+  return `You have no ${icons} tiles yet. This boosts every ${resources.map(resourceLabel).join(' or ')} tile you build, wherever it sits.`;
 }
 
 // Zone 3's bioluminescence: a producer with no unlocked booster hex-adjacent to it runs dim.

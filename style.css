@@ -15,18 +15,46 @@ html, body {
   height: 100vh;
 }
 
-#resource-bar {
+/* Fixed wrapper for the resource bar and the next-unlock banner below it, so the two stack in
+   normal flow -- if the resource bar wraps to more rows (see below), next-unlock naturally moves
+   down with it instead of needing its own hardcoded top offset.
+   `left`+`right` (not `left:50%`+`transform`) define this box: with no explicit width, a fixed
+   element with both set sizes itself to fill exactly the gap between them, so it can *never*
+   reach under the upgrades/prestige/menu button cluster pinned to the top-right (that cluster's
+   outer edge sits 148px from the right edge of the screen) -- centering happens *inside* this
+   already-safe box via `align-items`, instead of trying to derive a max-width that keeps a
+   50%-centered box clear of a right-side-only obstacle (which either overshoots on the right at
+   some widths or wastes space on the left at others). The box itself is wider than its visible
+   content, so it needs pointer-events:none with the children opting back in, or it would block
+   clicks to the canvas in the empty space on either side of the centered bar. */
+#hud-top {
   position: fixed;
   top: 12px;
-  left: 50%;
-  transform: translateX(-50%);
+  left: 12px;
+  right: 160px;
   display: flex;
-  gap: 18px;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  z-index: 3;
+  pointer-events: none;
+}
+
+#hud-top > * {
+  pointer-events: auto;
+}
+
+#resource-bar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: clamp(6px, 2.5vw, 18px);
+  max-width: 100%; /* never wider than #hud-top's already-safe box -- wrap instead */
   background: rgba(16, 38, 58, 0.9);
   color: #f4ead2;
-  padding: 8px 18px;
+  padding: clamp(5px, 1.5vw, 8px) clamp(8px, 3vw, 18px);
   border-radius: 8px;
-  font-size: 16px;
+  font-size: clamp(10px, 2.2vw, 16px);
   line-height: 1;
 }
 
@@ -71,35 +99,6 @@ html, body {
   margin-left: 3px;
 }
 
-#goods-bar {
-  position: fixed;
-  top: 112px;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  gap: 14px;
-  background: rgba(16, 38, 58, 0.75);
-  color: #f4ead2;
-  padding: 5px 14px;
-  border-radius: 8px;
-  font-size: 13px;
-  line-height: 1;
-}
-
-#goods-bar.hidden {
-  display: none;
-}
-
-#goods-bar .resource-main {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-
-#goods-bar .count {
-  font-variant-numeric: tabular-nums;
-}
-
 #rate-tip {
   position: fixed;
   z-index: 5;
@@ -122,17 +121,16 @@ html, body {
 }
 
 #next-unlock {
-  position: fixed;
-  top: 70px;
-  left: 50%;
-  transform: translateX(-50%);
-  min-width: 260px;
-  max-width: 90vw;
+  /* No min-width: min-width always wins over max-width when they conflict, which would force
+     this back under the button cluster on a narrow screen. Sizing is fit-content, capped to
+     #hud-top's already button-safe width (see there) and to a sane upper bound on big screens. */
+  width: fit-content;
+  max-width: min(400px, 100%);
   padding: 6px 14px;
   background: rgba(16, 38, 58, 0.9);
   color: #f4ead2;
   border-radius: 8px;
-  font-size: 12.5px;
+  font-size: clamp(10.5px, 2.6vw, 12.5px);
   text-align: center;
   cursor: pointer;
 }

@@ -45,11 +45,12 @@ resources don't exist until you've built the cheap near tiles first. Rate (and c
 fixed ratio, preserving the conversion) scales `1.6^(ring-1)`×. First-pass, not simulated — see
 `docs/superpowers/specs/2026-09-24-drift-away-zone4-design.md`.
 
-**planks/kelp_rope/bread are a separate layer**, exported as `GOODS` in `js/state.js`: they live
-in `state.resources`/`state.lifetime` next to the base 4 (so cost/eligibility/level-up code needs
-no changes) but aren't in `RESOURCES` — no prestige upgrade row, no lifetime achievements, no
-main HUD bar slot, just their own small strip that appears once the player unlocks their first
-zone-4 tile.
+**planks/kelp_rope/bread follow exactly the same rules as the base 4**, exported as `GOODS` in
+`js/state.js` and folded into `RESOURCES` itself (not kept as a separate layer, which is how they
+started — see the design doc's history): main HUD bar with a rate line from the start, a prestige
+upgrade row, baron/magnate lifetime achievements, and they count toward prestige tokens earned.
+`resourceLabel`/`resourceTitle` turn `kelp_rope` into `kelp rope`/`Kelp Rope` wherever a resource
+name is shown as text, since it's the one multi-word resource name in the game.
 
 When several unlocked generators draw on the same scarce input, each is throttled by the same
 proportional factor (not first-come-first-served) so the shared pool never goes negative; a
