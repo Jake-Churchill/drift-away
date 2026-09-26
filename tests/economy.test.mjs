@@ -1397,11 +1397,11 @@ console.log('achievement save migration tests passed');
   }
   const big = doPrestige(finished(HEAD_START_MAX_LEVEL)).state;
   assert.equal(big.unlocked.length, 1 + 2 * HEAD_START_MAX_LEVEL);
-  // Zone 4 borders zone 1 directly and its entry tiles are deliberately zone-1-cheap, so a large
+  // Zone 3 (Timberline) borders zone 1 directly and its entry tiles are deliberately zone-1-cheap, so a large
   // enough head start now legitimately spills into it too, not just deeper into zone 1.
   assert(
-    big.unlocked.every((id) => ['zone1', 'zone4'].includes(TILES.find((t) => t.id === id).zone)),
-    'the head start stays in the zones reachable straight off the start tile (zone 1 and zone 4)'
+    big.unlocked.every((id) => ['zone1', 'zone3'].includes(TILES.find((t) => t.id === id).zone)),
+    'the head start stays in the zones reachable straight off the start tile (zone 1 and zone 3)'
   );
 
   console.log('head start tests passed');
@@ -1514,7 +1514,7 @@ console.log('achievement save migration tests passed');
 
   const noNeighborBooster = TILES.find((t) => t.id === 'abyssal_fish_tide_pool_trap');
   assert(
-    !(TILE_NEIGHBORS.get(noNeighborBooster.id) || []).some((id) => TILES.find((t) => t.id === id)?.zone === 'zone3' && TILES.find((t) => t.id === id)?.kind === 'booster'),
+    !(TILE_NEIGHBORS.get(noNeighborBooster.id) || []).some((id) => TILES.find((t) => t.id === id)?.zone === 'zone4' && TILES.find((t) => t.id === id)?.kind === 'booster'),
     'fixture assumption: this tile has no zone-3 booster neighbor'
   );
 
@@ -1526,7 +1526,7 @@ console.log('achievement save migration tests passed');
   // A zone-3 producer with no unlocked zone-3 booster neighbor is dim...
   assert.equal(isLit(litByBooster, []), false, 'dim with nothing unlocked nearby');
   assert.equal(isLit(litByBooster, [boosterNeighbor.id]), true, '...lit once that neighbor is unlocked');
-  assert.equal(isLit(noNeighborBooster, TILES.filter((t) => t.zone === 'zone3' && t.kind === 'booster').map((t) => t.id)), false, 'still dim: no zone-3 booster is actually adjacent to it, however many are unlocked elsewhere');
+  assert.equal(isLit(noNeighborBooster, TILES.filter((t) => t.zone === 'zone4' && t.kind === 'booster').map((t) => t.id)), false, 'still dim: no zone-3 booster is actually adjacent to it, however many are unlocked elsewhere');
 
   // The darkness penalty actually halves the rate, and lighting it doubles output back to normal.
   // Uses a producer/booster pair whose resources don't overlap, so unlocking the booster only

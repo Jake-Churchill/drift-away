@@ -427,7 +427,7 @@ function buildBoosterProp(group, tileId, level) {
   }
 }
 
-export function buildZone3Prop(propGroup, tile, level) {
+export function buildAbyssalProp(propGroup, tile, level) {
   switch (tile.family) {
     case 'fish': buildFishProp(propGroup, level); break;
     case 'kelp': buildKelpProp(propGroup, level); break;

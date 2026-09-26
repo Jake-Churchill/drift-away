@@ -187,11 +187,11 @@ export function updateScene(state, time, { boardTint }) {
       if (objects.trimMeshes) objects.trimMeshes[lvl].visible = lvl === level;
     }
 
-    // Zone 3's bioluminescence: a producer's materials were built in their normal ("lit")
-    // appearance (see js/zone3-props.js's track()) with both states remembered on each one, so a
+    // The Abyssal Trench's bioluminescence: a producer's materials were built in their normal ("lit")
+    // appearance (see js/abyssal-props.js's track()) with both states remembered on each one, so a
     // dim producer is just a color/emissive swap here, not a rebuild — and it can flip back and
     // forth as the player unlocks or (on prestige/restart) loses a nearby booster.
-    if (unlocked && tile.zone === 'zone3' && tile.kind === 'producer') {
+    if (unlocked && tile.zone === 'zone4' && tile.kind === 'producer') {
       const lit = isLit(tile, state.unlocked);
       for (const d of objects.propGroups[level].userData.darken || []) {
         d.material.color.setHex(lit ? d.litColor : d.dimColor);

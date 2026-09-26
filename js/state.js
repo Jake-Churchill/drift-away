@@ -54,17 +54,17 @@ export function levelMultiplier(level) {
   return 1 + (level - 1) * 0.5;
 }
 
-// Zone 3's mechanic: a zone-3 producer runs at half rate until a zone-3 booster is unlocked
-// hex-adjacent to it (any of the six archetypes, not one dedicated tile — with only one of each
-// scattered across 36 tiles, a single light source would leave most of the zone permanently dim).
-// Every other tile (all of zone 1/2, and zone-3 boosters themselves) is always "lit".
+// The Abyssal Trench's mechanic (zone 4): one of its producers runs at half rate until one of its
+// boosters is unlocked hex-adjacent to it (any of the six archetypes, not one dedicated tile — with
+// only one of each scattered across 36 tiles, a single light source would leave most of the zone
+// permanently dim). Every other tile (all of zones 1-3, and the trench's own boosters) is always "lit".
 const DARKNESS_PENALTY = 0.5;
 export function isLit(tile, unlockedIds) {
-  if (tile.zone !== 'zone3' || tile.kind !== 'producer') return true;
+  if (tile.zone !== 'zone4' || tile.kind !== 'producer') return true;
   return (TILE_NEIGHBORS.get(tile.id) || []).some((id) => {
     if (!unlockedIds.includes(id)) return false;
     const neighbor = TILES.find((t) => t.id === id);
-    return neighbor?.zone === 'zone3' && neighbor.kind === 'booster';
+    return neighbor?.zone === 'zone4' && neighbor.kind === 'booster';
   });
 }
 function darknessFactor(tile, unlockedIds) {
@@ -323,7 +323,7 @@ export const ACHIEVEMENTS = [
     name: 'The Abyssal Trench',
     description: 'Unlock your first tile in the Abyssal Trench',
     reward: 3,
-    condition: (state) => state.unlocked.some((id) => TILES.find((t) => t.id === id)?.zone === 'zone3'),
+    condition: (state) => state.unlocked.some((id) => TILES.find((t) => t.id === id)?.zone === 'zone4'),
   },
   {
     id: 'abyssal-trench-complete',
@@ -331,7 +331,7 @@ export const ACHIEVEMENTS = [
     description: 'Max out every tile in the Abyssal Trench',
     reward: 10,
     condition: (state) =>
-      TILES.filter((t) => t.zone === 'zone3').every(
+      TILES.filter((t) => t.zone === 'zone4').every(
         (t) => state.unlocked.includes(t.id) && getLevel(state, t.id) >= MAX_LEVEL
       ),
   },
@@ -340,7 +340,7 @@ export const ACHIEVEMENTS = [
     name: 'The Timberline Coast',
     description: 'Unlock your first tile in the Timberline Coast',
     reward: 3,
-    condition: (state) => state.unlocked.some((id) => TILES.find((t) => t.id === id)?.zone === 'zone4'),
+    condition: (state) => state.unlocked.some((id) => TILES.find((t) => t.id === id)?.zone === 'zone3'),
   },
   {
     id: 'timberline-coast-complete',
@@ -348,7 +348,7 @@ export const ACHIEVEMENTS = [
     description: 'Max out every tile in the Timberline Coast',
     reward: 10,
     condition: (state) =>
-      TILES.filter((t) => t.zone === 'zone4').every(
+      TILES.filter((t) => t.zone === 'zone3').every(
         (t) => state.unlocked.includes(t.id) && getLevel(state, t.id) >= MAX_LEVEL
       ),
   },

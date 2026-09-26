@@ -406,7 +406,7 @@ const BOOSTER_BUILDERS = {
   timberline_booster_millhouse: buildMillhouse,
 };
 
-export function buildZone4Prop(propGroup, tile) {
+export function buildTimberlineProp(propGroup, tile) {
   if (tile.family === 'planks') return buildSawmill(propGroup);
   if (tile.family === 'kelp_rope') return buildRopeworks(propGroup);
   if (tile.family === 'bread') return buildBakehouse(propGroup);

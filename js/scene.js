@@ -2,8 +2,8 @@ import * as THREE from 'three';
 import { TILES } from './tiles.js';
 import { ZONES } from './zones.js';
 import { buildZone2Prop } from './zone2-props.js';
-import { buildZone3Prop } from './zone3-props.js';
-import { buildZone4Prop } from './zone4-props.js';
+import { buildAbyssalProp } from './abyssal-props.js';
+import { buildTimberlineProp } from './timberline-props.js';
 import { buildCloudField, resizeCloudField } from './clouds.js';
 import { createFoamTexture, createWaterNormalTexture } from './textures.js';
 import { DEFAULT_PALETTE } from './palettes.js';
@@ -76,27 +76,27 @@ const BADGE_ANCHOR_HEIGHT = {
   'zone2:frozen_booster_composting_shed': 0.5,
   'zone2:frozen_booster_lighthouse': 1.75,
   // Zone 3's redesigned props, measured the same way.
-  'zone3:fish': 0.85,
-  'zone3:kelp': 0.95,
-  'zone3:driftwood': 0.45,
-  'zone3:crops': 0.65,
-  'zone3:abyssal_booster_windmill': 0.95,
-  'zone3:abyssal_booster_smokehouse': 0.9,
-  'zone3:abyssal_booster_drying_rack': 0.65,
-  'zone3:abyssal_booster_net_weavers': 0.4,
-  'zone3:abyssal_booster_composting_shed': 0.6,
-  'zone3:abyssal_booster_lighthouse': 1.0,
+  'zone4:fish': 0.85,
+  'zone4:kelp': 0.95,
+  'zone4:driftwood': 0.45,
+  'zone4:crops': 0.65,
+  'zone4:abyssal_booster_windmill': 0.95,
+  'zone4:abyssal_booster_smokehouse': 0.9,
+  'zone4:abyssal_booster_drying_rack': 0.65,
+  'zone4:abyssal_booster_net_weavers': 0.4,
+  'zone4:abyssal_booster_composting_shed': 0.6,
+  'zone4:abyssal_booster_lighthouse': 1.0,
   // Zone 4's generators/boosters, measured the same way (no zone-1 archetype to fall back to --
   // planks/kelp_rope/bread have no equivalent there).
-  'zone4:planks': 1.1,
-  'zone4:kelp_rope': 1.3,
-  'zone4:bread': 1.3,
-  'zone4:timberline_booster_tool_shed': 0.75,
-  'zone4:timberline_booster_drying_frames': 0.8,
-  'zone4:timberline_booster_grain_silo': 1.25,
-  'zone4:timberline_booster_timber_yard': 0.85,
-  'zone4:timberline_booster_provision_store': 0.7,
-  'zone4:timberline_booster_millhouse': 1.5,
+  'zone3:planks': 1.1,
+  'zone3:kelp_rope': 1.3,
+  'zone3:bread': 1.3,
+  'zone3:timberline_booster_tool_shed': 0.75,
+  'zone3:timberline_booster_drying_frames': 0.8,
+  'zone3:timberline_booster_grain_silo': 1.25,
+  'zone3:timberline_booster_timber_yard': 0.85,
+  'zone3:timberline_booster_provision_store': 0.7,
+  'zone3:timberline_booster_millhouse': 1.5,
 };
 const TRIM_THICKNESS = { 1: 0.03, 2: 0.045, 3: 0.06 };
 const TRIM_COLOR = { 1: BOOSTER_TRIM, 2: 0xf0c94f, 3: 0xfff0a0 };
@@ -811,9 +811,9 @@ function addProp(raftMesh, tile) {
     if (tile.zone === 'zone2') {
       buildZone2Prop(propGroup, tile, level);
     } else if (tile.zone === 'zone3') {
-      buildZone3Prop(propGroup, tile, level);
+      buildTimberlineProp(propGroup, tile);
     } else if (tile.zone === 'zone4') {
-      buildZone4Prop(propGroup, tile);
+      buildAbyssalProp(propGroup, tile, level);
     } else {
       switch (tile.family) {
         case 'fish': buildFishProp(propGroup, level); break;
@@ -1096,11 +1096,10 @@ export function buildScene(canvas) {
   // branches off an existing zone rather than extending the chain needs its own edge added here,
   // so the cloud field's "can this point ever be seen" sampling covers every sail the "next
   // unlock" shortcut can actually trigger, not just consecutive-zone sails.
-  const sailEdges = [];
-  for (let i = 1; i < ZONES.length; i++) {
-    sailEdges.push([cameraPositions.get(ZONES[i - 1].id).target, cameraPositions.get(ZONES[i].id).target]);
-  }
-  sailEdges.push([cameraPositions.get('zone1').target, cameraPositions.get('zone4').target]);
+  const sailEdges = [['zone1', 'zone2'], ['zone1', 'zone3'], ['zone2', 'zone4']].map(([a, b]) => [
+    cameraPositions.get(a).target,
+    cameraPositions.get(b).target,
+  ]);
 
   const cloudField = buildCloudField({
     zoneIds: ZONES.map((zone) => zone.id),
