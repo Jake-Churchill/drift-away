@@ -1,6 +1,14 @@
 # Tile Design
 
-**v2.0 map (current).** Everything below the "v2 map" section still describes the tiles' families, rates, costs and mechanics, but its positions ("cols 0–5", "`gridPos`", "+6 columns", "row 0 / row -1 border") are the v1 6×6 slots and no longer apply: `js/tiles.js` gives every tile a `cells` array instead, and the two last zones swapped numbers (**zone 3 is now the Timberline Coast, zone 4 the Abyssal Trench**; the old "Zone 3 rules" and "Zone 4 rules" sections below are the Abyssal Trench and the Timberline Coast respectively). Tile ids did not change.
+**v2.0 map (current).** Everything below the "v2 map" section is the v1 per-zone write-up. Its families, rates, consumption, boosts and milestone targets still hold, and tile ids did not change, but these parts are superseded:
+
+- **Positions and borders.** "cols 0–5", "`gridPos`", the `pos (r,c)` columns, "+6 columns" and the "col 5 / col 6", "col 11 / col 12" and "row 0 / row -1" borders are the v1 6×6 slots. `js/tiles.js` gives every tile a `cells` array instead.
+- **Zone numbers.** The last two zones swapped: **zone 3 is now the Timberline Coast, zone 4 the Abyssal Trench**. The old "Zone 3" sections below are the Abyssal Trench and the old "Zone 4" sections the Timberline Coast.
+- **Timberline unlock costs.** The ring 4–6 rows still priced in planks/kelp_rope/bread now cost base resources only (e.g. `timberline_sawmill_6` is 3300 driftwood, not 48 planks; the Millhouse 35840 driftwood, not 320 planks).
+- **Abyssal unlock costs.** Every cost-gated Abyssal row now also requires planks and kelp_rope (e.g. `abyssal_fish_start` adds 490 planks + 340 kelp_rope).
+- **Prose.** Where the adjacency rule, bioluminescence range, Timberline's bootstrap loop or how Timberline is reached changed, the paragraph carries a "v2:" note.
+
+For exact costs, `js/tiles.js` is authoritative; the tables below are not updated.
 
 ## v2 map
 
@@ -13,7 +21,7 @@
 - **Head start.** Grants N clusters (skipping idle boosters) plus whatever blanks are needed to reach them, free.
 - **Tests.** `tests/economy.test.mjs` pins the counts, the cluster shape (3 mutually-adjacent cells), that no cluster touches another, full reachability from the start, that the Abyssal Trench is unreachable without Frozen Reach, the per-zone blank costs and the changed cluster costs. `tests/hex.test.mjs` covers the hex helpers and `buildTileIndex`.
 
-There is exactly one starting tile, `driftwood_start` (unlock type `start`); every other tile's `unlock` field is a `cost` or `milestone` requirement as shown below. But meeting that requirement isn't sufficient by itself: a tile can only be unlocked once it's also adjacent (on the hex grid) to a tile that's already unlocked. That adjacency requirement is derived from `gridPos` in `js/tiles.js` (see `TILE_NEIGHBORS`) and isn't repeated per-row below — assume it applies to every non-start tile in these tables.
+There is exactly one starting tile, `driftwood_start` (unlock type `start`); every other tile's `unlock` field is a `cost` or `milestone` requirement as shown below. But meeting that requirement isn't sufficient by itself: a tile can only be unlocked once it's also adjacent (on the hex grid) to a tile that's already unlocked. That adjacency requirement is derived from each tile's `cells` in `js/tiles.js` (see `TILE_NEIGHBORS`; v2: a cluster only ever touches blank bridges, so every cluster is reached through a bridge) and isn't repeated per-row below — assume it applies to every non-start tile in these tables.
 
 ## Zone 2 rules (how it relates to zone 1)
 
@@ -33,7 +41,7 @@ Known balance quirk (accepted, not a bug): level-up cost derives from `rate`/`pe
 
 Every zone-3 tile mirrors one zone-2 tile the same way zone 2 mirrors zone 1: id prefixed `abyssal_` (`frozen_fish_start` → `abyssal_fish_start`), same family/kind/`produces`, `gridPos` shifted +6 more columns, re-themed name. Numbers scale from the zone-2 mirror by the *same* ×90/×4 ratio zone 2 itself used over zone 1 (so ×8100/×16 cumulative from zone 1) — the same rule applied twice, not a new one, chosen for consistency over guessing a bigger number; this has **not** been simulated the way zone 2's pricing was, and should be before it's considered final (see the zone-3 spec's Testing Plan).
 
-Zone 3 also adds **bioluminescence**, the game's first zone-specific mechanic beyond a reskin: a zone-3 *producer* runs at half rate until a zone-3 *booster* is unlocked hex-adjacent to it (any of the six archetypes, not one dedicated tile — see `isLit` in `js/state.js`). Zone-3 boosters, and every zone-1/zone-2 tile, are never affected. The ex-"Lighthouse" role is reskinned as the "Anglerfish Lure" and is the mechanic's flagship (the only booster with a real dynamic light in the scene), but mechanically it's no different from the other five — all six cast light on their own neighbors.
+Zone 3 also adds **bioluminescence**, the game's first zone-specific mechanic beyond a reskin: a zone-3 *producer* runs at half rate until a zone-3 *booster* is unlocked hex-adjacent to it (v2: within two hexes, via `TILE_NEARBY`, i.e. one bridge apart, since clusters never touch; any of the six archetypes, not one dedicated tile — see `isLit` in `js/state.js`). Zone-3 boosters, and every zone-1/zone-2 tile, are never affected. The ex-"Lighthouse" role is reskinned as the "Anglerfish Lure" and is the mechanic's flagship (the only booster with a real dynamic light in the scene), but mechanically it's no different from the other five — all six cast light on their own neighbors.
 
 Zone 3 is entered through the col 11 / col 12 border, the same adjacency rule as every other zone border. It resets with everything else on prestige — including which producers are lit, since that's derived from `state.unlocked` fresh each time, not separately tracked.
 
@@ -52,7 +60,10 @@ Cost and rate scale with **distance from zone 1** (`ring = -row`, 1 = bordering 
 farthest at row -6), not a flat per-zone multiplier: rings 1-3 cost the base 4 resources at
 `4^(ring-1)`× a zone-1-level baseline, rings 4-6 shift to costing the generator's own output
 resource (planks/kelp_rope/bread) at `4^(ring-4)`× a baseline — a bootstrap loop, since those
-resources don't exist until you've built the cheap near tiles first. Rate (and consumption, at a
+resources don't exist until you've built the cheap near tiles first. **v2:** that loop is gone:
+rings 4-6 now cost base resources only, continuing the rings 1-3 curve (see "Cluster costs" in
+the v2 map section), and planks/kelp_rope are spent on the Abyssal Trench's bridges and clusters
+instead. Rate (and consumption, at a
 fixed ratio, preserving the conversion) scales `1.6^(ring-1)`×. First-pass, not simulated — see
 `docs/superpowers/specs/2026-09-24-drift-away-zone4-design.md`.
 
@@ -71,7 +82,10 @@ generator with two inputs is capped by whichever is scarcer. See `applyGenerator
 Zone 4 is entered through the row 0 / row -1 border (zone 1's own north edge) — the same hex
 adjacency rule as every other zone border, just row-wise instead of column-wise. Unlike zone 2/3,
 it's reachable in parallel with them, not gated behind them: it borders zone 1 directly, so a
-fresh game can rush its cheap ring-1 tiles immediately. It resets with everything else on
+fresh game can rush its cheap ring-1 tiles immediately. **v2:** no longer: the coast (now zone 3)
+lies west of Home Waters behind a corridor of 4 blank bridges costing 1800 driftwood + 1200 crops +
+900 kelp each, so it is still reachable without the Frozen Reach, but only after 7200 driftwood +
+4800 crops + 3600 kelp of bridges. It resets with everything else on
 prestige, including the goods stockpile.
 
 ## Zone 1 — Home Waters
