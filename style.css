@@ -66,6 +66,10 @@ html, body {
   cursor: help;
 }
 
+#resource-bar .resource.hidden {
+  display: none;
+}
+
 #resource-bar .resource-main {
   display: flex;
   align-items: center;

@@ -47,8 +47,10 @@ function tileIcon(tile) {
 export function initUI(onClose, onNextUnlockClick) {
   elements.canvas = document.getElementById('game-canvas');
   elements.counts = {};
+  elements.resourceCells = {};
   for (const resource of RESOURCES) {
     elements.counts[resource] = document.getElementById(`count-${resource}`);
+    elements.resourceCells[resource] = document.querySelector(`.resource[data-resource="${resource}"]`);
   }
   // Gold is a reward counter, not one of the produced RESOURCES, so it sits
   // outside the loop above even though it shares the resource bar's markup.
@@ -208,6 +210,9 @@ export function updateResourceBar(state) {
   elements.lastState = state;
 
   for (const resource of RESOURCES) {
+    // Stays hidden until the player has earned their first one, then never hides again.
+    elements.resourceCells[resource].classList.toggle('hidden', state.lifetime[resource] <= 0);
+
     const actual = state.resources[resource];
     const info = rateBreakdown(state, resource);
     const element = elements.counts[resource];
