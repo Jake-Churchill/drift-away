@@ -8,7 +8,10 @@ const BASE_RESOURCES = ['fish', 'kelp', 'driftwood', 'crops'];
 // rows, baron/magnate lifetime achievements, and counting toward prestige tokens earned.
 export const GOODS = ['planks', 'kelp_rope', 'bread'];
 export const RESOURCES = [...BASE_RESOURCES, ...GOODS];
-export const SAVE_KEY = 'driftaway_save_v1';
+// v2 is the map rework (blank bridges, 3-hex clusters): tile ids and layout changed, so a v1 save
+// can't be carried over. A new key leaves the old save untouched in storage rather than erasing it.
+export const SAVE_KEY = 'driftaway_save_v2';
+const SAVE_VERSION = 2;
 
 // Membership in `state.unlocked` is asked per tile, per frame, from many places, so on a map of a few
 // hundred tiles a linear `includes` scan dominates the frame. The array stays the saved source of
@@ -59,7 +62,7 @@ export function createInitialState() {
   const lifetime = Object.fromEntries(RESOURCES.map((r) => [r, 0]));
   const unlocked = TILES.filter((t) => t.unlock.type === 'start').map((t) => t.id);
   return {
-    version: 1,
+    version: SAVE_VERSION,
     resources,
     lifetime,
     unlocked,
@@ -247,7 +250,10 @@ export function nextUnlock(state, statuses = lockedTileStatuses(state)) {
   return { ...best, readyCount: statuses.filter((x) => x.eta.seconds === 0).length };
 }
 
+// A blank bridge has nothing to level, so it counts as maxed the moment it is unlocked -- which keeps
+// completionCount, the "max out every tile" achievements and the upgrade list working unchanged.
 export function getLevel(state, tileId) {
+  if (TILE_BY_ID.get(tileId)?.kind === 'blank') return MAX_LEVEL;
   return state.levels[tileId] || 1;
 }
 
@@ -389,11 +395,14 @@ for (const resource of RESOURCES) {
     });
   }
 }
-for (const [count, name, reward] of [[10, 'Small Fleet', 1], [25, 'Growing Raft', 2], [36, 'Home Waters', 2], [50, 'Far Horizons', 3], [72, 'Two Seas Charted', 4], [108, 'Three Seas Charted', 5], [144, 'The Whole Map', 6]]) {
+// Milestones are a share of the whole map, not fixed counts, so they stay meaningful however many
+// tiles the map has (a tile here is any unlocked hex-group: a cluster or a blank bridge).
+for (const [percent, name, reward] of [[5, 'Small Fleet', 1], [10, 'Growing Raft', 2], [25, 'Home Waters', 2], [40, 'Far Horizons', 3], [50, 'Two Seas Charted', 4], [75, 'Three Seas Charted', 5], [100, 'The Whole Map', 6]]) {
+  const count = Math.ceil((TOTAL_TILE_COUNT * percent) / 100);
   ACHIEVEMENTS.push({
-    id: `tiles-${count}`,
+    id: `tiles-${percent}`,
     name,
-    description: count === TOTAL_TILE_COUNT ? `Unlock all ${count} tiles` : `Unlock ${count} tiles`,
+    description: percent === 100 ? `Unlock all ${count} tiles` : `Unlock ${count} tiles (${percent}% of the map)`,
     reward,
     condition: (state) => state.unlocked.length >= count,
   });
@@ -462,14 +471,27 @@ export function buyHeadStart(state) {
   return true;
 }
 
-// Skips boosters that have nothing to boost yet, so the free tiles are ones that do something.
+// Free tiles for a new run: the ones a player would have unlocked first. Skips boosters that have
+// nothing to boost yet, so the free tiles are ones that do something. Blank bridges never count
+// toward `count` -- they're only the way to the next cluster, so they're granted as needed.
 function grantHeadStart(state, count) {
-  for (let i = 0; i < count; i++) {
+  let granted = 0;
+  while (granted < count) {
     const all = lockedTileStatuses(state);
-    const useful = all.filter((x) => x.tile.kind !== 'booster' || !boosterIsIdle(state, x.tile));
-    const next = nextUnlock(state, useful.length > 0 ? useful : all);
-    if (!next) break;
-    state.unlocked.push(next.tile.id);
+    const useful = all.filter((x) => x.tile.kind !== 'blank' && (x.tile.kind !== 'booster' || !boosterIsIdle(state, x.tile)));
+    if (useful.length > 0) {
+      state.unlocked.push(nextUnlock(state, useful).tile.id);
+      granted++;
+      continue;
+    }
+    const bridges = all.filter((x) => x.tile.kind === 'blank');
+    if (bridges.length > 0) {
+      state.unlocked.push(nextUnlock(state, bridges).tile.id);
+      continue;
+    }
+    if (all.length === 0) break;
+    state.unlocked.push(nextUnlock(state, all).tile.id);
+    granted++;
   }
 }
 
@@ -768,6 +790,7 @@ function normalizeSave(parsed) {
   const looksValid =
     parsed &&
     typeof parsed === 'object' &&
+    parsed.version === SAVE_VERSION &&
     parsed.resources &&
     parsed.lifetime &&
     Array.isArray(parsed.unlocked);

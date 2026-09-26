@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { TILES, TILE_NEIGHBORS } from '../js/tiles.js';
+import { TILES, TILE_BY_ID, TILE_NEIGHBORS } from '../js/tiles.js';
 import {
   ACHIEVEMENTS,
   advance,
@@ -753,10 +753,10 @@ console.log('economy math tests passed');
 }
 
 {
-  // halfway-there fires at ceil(TOTAL_TILE_COUNT / 2) maxed tiles. With 144 tiles that's exactly
-  // 72 -- also exactly all of zone 1 + zone 2 (the first 72 entries in TILES) and exactly the
-  // tiles-72 tier, so all three fire together here; that's a coincidence of the current tile
-  // count, not something this test tries to avoid (zone 3's own version hit the same overlap).
+  // halfway-there fires at ceil(TOTAL_TILE_COUNT / 2) maxed tiles. That is also exactly the tiles-50
+  // tier's unlock count, so the two fire together here -- a coincidence of the definitions, not
+  // something this test tries to avoid. Whatever the earlier tiles already completed is awarded and
+  // consumed by the first check, so only the half-way tile's own awards show up in the second.
   const half = Math.ceil(TOTAL_TILE_COUNT / 2);
   const state = createInitialState();
   const maxed = TILES.slice(0, half - 1);
@@ -772,13 +772,11 @@ console.log('economy math tests passed');
   state.unlocked.push(nextTile.id);
   state.levels[nextTile.id] = MAX_LEVEL;
   const awarded = checkAchievements(state);
-  assert.deepEqual(
-    awarded.map((a) => a.id).sort(),
-    ['frozen-reach-complete', 'halfway-there', 'tiles-72'],
-    'half the tiles maxed earns halfway-there, and happens to also complete zone 2 and hit tiles-72'
-  );
+  const awardedIds = awarded.map((a) => a.id);
+  assert.ok(awardedIds.includes('halfway-there'), 'half the tiles maxed earns halfway-there');
   assert.equal(awarded.find((a) => a.id === 'halfway-there').reward, 2, 'halfway-there pays 2 gold');
-  assert.equal(state.gold, goldBefore + 2 + 8 + 4, 'halfway-there + frozen-reach-complete + tiles-72');
+  assert.ok(awardedIds.includes('tiles-50'), 'and, being half the map, also hits the tiles-50 tier');
+  assert.equal(state.gold, goldBefore + awarded.reduce((sum, a) => sum + a.reward, 0), 'gold matches what was awarded');
 }
 
 {
@@ -868,7 +866,7 @@ function seedSave(save) {
 {
   // a save from before gold/achievements existed
   seedSave({
-    version: 1,
+    version: 2,
     resources: { fish: 1, kelp: 2, driftwood: 3, crops: 4 },
     lifetime: { fish: 1, kelp: 2, driftwood: 3, crops: 4 },
     unlocked: ['driftwood_start'],
@@ -885,7 +883,7 @@ function seedSave(save) {
 {
   // a migrated save already past a threshold is credited on load, not on the next tick
   seedSave({
-    version: 1,
+    version: 2,
     resources: { fish: 0, kelp: 0, driftwood: 0, crops: 0 },
     lifetime: { fish: 6000, kelp: 0, driftwood: 0, crops: 0 },
     unlocked: ['driftwood_start'],
@@ -1112,8 +1110,8 @@ console.log('achievement save migration tests passed');
   }
 
   // a save from an older version missing newer fields is filled in from the defaults
-  const old = decodeSave(btoa(JSON.stringify({ resources: { fish: 5 }, lifetime: { fish: 5 }, unlocked: ['driftwood_start'] })));
-  assert(old, 'an older, sparser save still imports');
+  const old = decodeSave(btoa(JSON.stringify({ version: 2, resources: { fish: 5 }, lifetime: { fish: 5 }, unlocked: ['driftwood_start'] })));
+  assert(old, 'a sparser save from this version still imports');
   assert.equal(old.resources.fish, 5);
   assert.equal(old.resources.kelp, 0);
   assert.deepEqual(old.prestige.upgrades, createInitialState().prestige.upgrades);
@@ -1350,8 +1348,12 @@ console.log('achievement save migration tests passed');
   kept.gold = 9;
   const roundTrip = decodeSave(encodeSave(kept));
   assert.deepEqual(roundTrip.shop, kept.shop);
-  const old = decodeSave(btoa(JSON.stringify({ resources: {}, lifetime: {}, unlocked: ['driftwood_start'] })));
-  assert.deepEqual(old.shop, createInitialState().shop, 'an older save gets an empty shop');
+  const old = decodeSave(btoa(JSON.stringify({ version: 2, resources: {}, lifetime: {}, unlocked: ['driftwood_start'] })));
+  assert.deepEqual(old.shop, createInitialState().shop, 'a save without a shop gets an empty one');
+  for (const stale of [{ version: 1 }, {}]) {
+    const v1 = btoa(JSON.stringify({ ...stale, resources: {}, lifetime: {}, unlocked: ['driftwood_start'] }));
+    assert.equal(decodeSave(v1), null, 'a save from before the v2 map rework is rejected: its tile ids no longer exist');
+  }
 
   console.log('gold shop tests passed');
 }
@@ -1386,6 +1388,9 @@ console.log('achievement save migration tests passed');
     f.achievements = ACHIEVEMENTS.map((a) => a.id); // already earned, so gold only shows what persists
     return f;
   };
+  // Blank bridges are only the way between clusters, so a head start grants them as needed and never
+  // counts them: two "tiles" per level means two clusters.
+  const clusterCount = (st) => st.unlocked.filter((id) => TILE_BY_ID.get(id).kind !== 'blank').length;
   const none = doPrestige(finished(0)).state;
   assert.equal(none.unlocked.length, 1, 'no head start: just the starting tile');
   assert.equal(none.prestige.count, 5, 'each prestige is counted');
@@ -1393,7 +1398,7 @@ console.log('achievement save migration tests passed');
   assert.equal(none.gold, 33);
 
   const two = doPrestige(finished(2)).state;
-  assert.equal(two.unlocked.length, 1 + 4, 'two tiles per level');
+  assert.equal(clusterCount(two), 1 + 4, 'two clusters per level');
   assert.equal(two.prestige.headStart, 2, 'the upgrade itself carries over');
   for (const r of ['fish', 'kelp', 'driftwood', 'crops']) assert.equal(two.resources[r], 0, 'a head start costs nothing');
   for (const id of two.unlocked) {
@@ -1411,7 +1416,7 @@ console.log('achievement save migration tests passed');
     }
   }
   const big = doPrestige(finished(HEAD_START_MAX_LEVEL)).state;
-  assert.equal(big.unlocked.length, 1 + 2 * HEAD_START_MAX_LEVEL);
+  assert.equal(clusterCount(big), 1 + 2 * HEAD_START_MAX_LEVEL);
   // Zone 3 (Timberline) borders zone 1 directly and its entry tiles are deliberately zone-1-cheap, so a large
   // enough head start now legitimately spills into it too, not just deeper into zone 1.
   assert(
@@ -1445,22 +1450,22 @@ console.log('achievement save migration tests passed');
 
   const counts = createInitialState();
   const ids = TILES.map((t) => t.id);
-  const expectAt = { 10: 'tiles-10', 25: 'tiles-25', 36: 'tiles-36', 50: 'tiles-50', 72: 'tiles-72', 108: 'tiles-108', 144: 'tiles-144' };
-  for (const [n, id] of Object.entries(expectAt)) {
-    counts.unlocked = ids.slice(0, Number(n) - 1);
+  // Tile-count milestones are a share of the whole map, rounded up.
+  const expectAt = Object.fromEntries([5, 10, 25, 40, 50, 75, 100].map((p) => [p, Math.ceil((TOTAL_TILE_COUNT * p) / 100)]));
+  for (const [percent, n] of Object.entries(expectAt)) {
+    const id = `tiles-${percent}`;
+    counts.unlocked = ids.slice(0, n - 1);
     assert(!fired(counts).has(id), `${id} not yet at ${n - 1} tiles`);
-    counts.unlocked = ids.slice(0, Number(n));
+    counts.unlocked = ids.slice(0, n);
     assert(fired(counts).has(id) || counts.achievements.includes(id), `${id} at ${n} tiles`);
   }
 
-  // 144 is now the real total — only the top tier's name may claim completion.
-  const tiles108 = ACHIEVEMENTS.find((a) => a.id === 'tiles-108');
-  const tiles144 = ACHIEVEMENTS.find((a) => a.id === 'tiles-144');
-  assert.equal(tiles108.description, 'Unlock 108 tiles', 'tiles-108 no longer claims "all" now that 144 exist');
-  assert.notEqual(tiles108.name, 'A Whole Ocean', 'the old "complete" name moved off this tier');
-  assert.notEqual(tiles108.name, 'The Whole Map', 'the new "complete" name belongs to the real top tier');
-  assert.equal(tiles144.name, 'The Whole Map');
-  assert.equal(tiles144.description, 'Unlock all 144 tiles');
+  // Only the top tier's description may claim completion.
+  const tiles75 = ACHIEVEMENTS.find((a) => a.id === 'tiles-75');
+  const tiles100 = ACHIEVEMENTS.find((a) => a.id === 'tiles-100');
+  assert.equal(tiles75.description, `Unlock ${expectAt[75]} tiles (75% of the map)`, 'a partial tier states its count and share');
+  assert.equal(tiles100.name, 'The Whole Map');
+  assert.equal(tiles100.description, `Unlock all ${TOTAL_TILE_COUNT} tiles`);
 
   const voyages = createInitialState();
   for (const [n, id] of [[1, 'voyage-1'], [3, 'voyage-3'], [5, 'voyage-5'], [10, 'voyage-10']]) {
@@ -1668,4 +1673,33 @@ console.log('achievement save migration tests passed');
   }
 
   console.log('zone 4 generator tests passed');
+}
+
+// --- Blank bridge tiles: engine rules ---
+// The v2 map has real blanks (see the map data tests); this pins the engine rules with a stand-in, so
+// they hold whatever the map looks like.
+{
+  const blank = {
+    id: 'test_blank', name: 'Test Blank', cells: [{ row: 99, col: 99 }], family: null, kind: 'blank',
+    produces: null, rate: null, boosts: null, unlock: { type: 'cost', cost: { driftwood: 5 } }, zone: 'zone1',
+  };
+  TILES.push(blank);
+  TILE_BY_ID.set(blank.id, blank);
+  try {
+    const state = createInitialState();
+    assert.equal(getLevel(state, blank.id), MAX_LEVEL, 'a blank has nothing to level, so it is maxed from the start');
+    assert.equal(getLevel(state, 'driftwood_start'), 1, 'other tiles still default to level 1');
+
+    const before = completionCount(state);
+    state.unlocked.push(blank.id);
+    assert.equal(completionCount(state), before + 1, 'an unlocked blank counts toward completion straight away');
+    assert.ok(!upgradeList(state).some((row) => row.tile.id === blank.id), 'a blank never shows in the upgrade list');
+    assert.equal(isLevelUpEligible(state, blank), false, 'and can never be levelled');
+    assert.equal(rateBreakdown(state, 'driftwood').total, 0.5, 'a blank adds no production');
+  } finally {
+    TILES.pop();
+    TILE_BY_ID.delete(blank.id);
+  }
+
+  console.log('blank tile engine tests passed');
 }
