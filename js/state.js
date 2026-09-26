@@ -1,4 +1,4 @@
-import { TILES, TILE_BY_ID, TILE_NEIGHBORS } from './tiles.js';
+import { TILES, TILE_BY_ID, TILE_NEARBY, TILE_NEIGHBORS } from './tiles.js';
 import { ZONES } from './zones.js';
 import { PALETTES } from './palettes.js';
 
@@ -79,13 +79,14 @@ export function levelMultiplier(level) {
 }
 
 // The Abyssal Trench's mechanic (zone 4): one of its producers runs at half rate until one of its
-// boosters is unlocked hex-adjacent to it (any of the six archetypes, not one dedicated tile — with
-// only one of each scattered across 36 tiles, a single light source would leave most of the zone
-// permanently dim). Every other tile (all of zones 1-3, and the trench's own boosters) is always "lit".
+// boosters is unlocked next to it -- within two hexes, i.e. touching or one bridge tile apart, which
+// is as close as two clusters ever get (any of the six archetypes, not one dedicated tile: with only
+// one of each in the zone, a single light source would leave most of it permanently dim). Every
+// other tile (all of zones 1-3, and the trench's own boosters) is always "lit".
 const DARKNESS_PENALTY = 0.5;
 export function isLit(tile, unlockedIds) {
   if (tile.zone !== 'zone4' || tile.kind !== 'producer') return true;
-  return (TILE_NEIGHBORS.get(tile.id) || []).some((id) => {
+  return (TILE_NEARBY.get(tile.id) || []).some((id) => {
     if (!isUnlocked(unlockedIds, id)) return false;
     const neighbor = TILE_BY_ID.get(id);
     return neighbor?.zone === 'zone4' && neighbor.kind === 'booster';

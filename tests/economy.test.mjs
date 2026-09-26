@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { TILES, TILE_BY_ID, TILE_NEIGHBORS } from '../js/tiles.js';
+import { TILES, TILE_BY_ID, TILE_NEARBY, TILE_NEIGHBORS } from '../js/tiles.js';
+import { hexDistance } from '../js/hex.js';
 import {
   ACHIEVEMENTS,
   advance,
@@ -53,19 +54,27 @@ import {
 
 // --- Tile data integrity ---
 
-assert.equal(TILES.length, 144, 'expected exactly 144 tiles (36 zone-1 + 36 zone-2 + 36 zone-3 + 36 zone-4)');
+const clusters = TILES.filter((t) => t.kind !== 'blank');
+const blanks = TILES.filter((t) => t.kind === 'blank');
+assert.equal(clusters.length, 144, 'expected 144 producer/booster/generator clusters (36 per zone)');
+assert.equal(blanks.length, 177, 'expected 177 blank bridge tiles');
+assert.equal(TILES.length, 321, 'clusters + blanks');
 
 const ids = TILES.map((t) => t.id);
 assert.equal(new Set(ids).size, TILES.length, 'tile ids must be unique');
 
-const positions = TILES.map((t) => `${t.cells[0].row},${t.cells[0].col}`);
-assert.equal(new Set(positions).size, TILES.length, 'grid positions must be unique');
-for (let row = 0; row < 6; row++) {
-  for (let col = 0; col < 6; col++) {
-    assert.ok(positions.includes(`${row},${col}`), `missing tile at (${row},${col})`);
-  }
-  for (let col = 6; col < 12; col++) {
-    assert.ok(positions.includes(`${row},${col}`), `missing tile at (${row},${col})`);
+const cellKeys = TILES.flatMap((t) => t.cells.map((c) => `${c.row},${c.col}`));
+assert.equal(new Set(cellKeys).size, cellKeys.length, 'no two tiles share a hex cell');
+assert.equal(cellKeys.length, 144 * 3 + 177, 'every cluster spans 3 cells and every blank 1');
+
+for (const t of TILES) {
+  assert.equal(t.cells.length, t.kind === 'blank' ? 1 : 3, `${t.id} has the right number of cells`);
+  if (t.kind === 'blank') continue;
+  for (const a of t.cells) {
+    for (const b of t.cells) {
+      if (a === b) continue;
+      assert.equal(hexDistance(a, b), 1, `${t.id}: all three cells of a cluster must be mutually adjacent`);
+    }
   }
 }
 
@@ -77,15 +86,38 @@ assert.deepEqual(
   'driftwood_start is the sole starting tile'
 );
 
-const familyCounts = TILES.reduce((counts, t) => {
+const familyCounts = clusters.reduce((counts, t) => {
   counts[t.family] = (counts[t.family] || 0) + 1;
   return counts;
 }, {});
 assert.deepEqual(
   familyCounts,
   { fish: 24, kelp: 24, driftwood: 21, crops: 21, booster: 24, planks: 10, kelp_rope: 10, bread: 10 },
-  'zone 4 adds 10 each of planks/kelp_rope/bread plus 6 more boosters (18+6=24), no new fish/kelp/driftwood/crops tiles'
+  'the producer/booster/generator mix is unchanged by the map rework'
 );
+
+const zoneCounts = TILES.reduce((counts, t) => {
+  const key = `${t.zone}:${t.kind === 'blank' ? 'blank' : 'cluster'}`;
+  counts[key] = (counts[key] || 0) + 1;
+  return counts;
+}, {});
+assert.deepEqual(
+  zoneCounts,
+  {
+    'zone1:cluster': 36, 'zone1:blank': 41,
+    'zone2:cluster': 36, 'zone2:blank': 45,
+    'zone3:cluster': 36, 'zone3:blank': 45,
+    'zone4:cluster': 36, 'zone4:blank': 46,
+  },
+  'every zone keeps its 36 clusters, plus its blank bridges'
+);
+
+for (const t of blanks) {
+  assert.equal(t.family, null);
+  assert.equal(t.produces, null);
+  assert.equal(t.boosts, null);
+  assert.equal(t.unlock.type, 'cost', `${t.id} is bought with a cost`);
+}
 
 console.log('tile data tests passed');
 
@@ -103,41 +135,60 @@ for (const [id, neighbors] of TILE_NEIGHBORS) {
 }
 
 assert.deepEqual(
-  [...TILE_NEIGHBORS.get('driftwood_start')].sort(),
-  [
-    'booster_windmill',
-    'crops_soil_barge',
-    'fish_trawling_raft',
-    'kelp_abyssal_forest',
-    'kelp_reef',
-    'kelp_seaweed_raft',
-  ],
-  'driftwood_start (2,3) has exactly these 6 neighbors'
+  [...TILE_NEIGHBORS.get('driftwood_start')].map((id) => TILE_BY_ID.get(id).kind),
+  Array(6).fill('blank'),
+  'the start cluster is ringed by six blank bridges and touches no other cluster'
 );
 
-assert.deepEqual(
-  [...TILE_NEIGHBORS.get('fish_start')].sort(),
-  [
-    'booster_net_weavers',
-    'crops_floating_orchard',
-    'kelp_floating_garden',
-    'kelp_open_water_farm',
-    'timberline_ropeworks_1',
-    'timberline_sawmill_1',
-  ],
-  'fish_start (0,1) now borders zone 4 to the north too, on top of its 4 zone-1 neighbors'
-);
+for (const a of clusters) {
+  for (const id of TILE_NEIGHBORS.get(a.id)) {
+    assert.equal(TILE_BY_ID.get(id).kind, 'blank', `${a.id} only ever touches blank bridges, never another cluster directly`);
+  }
+}
+
+// Everything is reachable from the start by unlocking one neighbour at a time...
+function reachableFromStart(exclude = () => false) {
+  const seen = new Set(['driftwood_start']);
+  const queue = ['driftwood_start'];
+  while (queue.length) {
+    for (const next of TILE_NEIGHBORS.get(queue.pop())) {
+      if (seen.has(next) || exclude(TILE_BY_ID.get(next))) continue;
+      seen.add(next);
+      queue.push(next);
+    }
+  }
+  return seen;
+}
+assert.equal(reachableFromStart().size, TILES.length, 'every tile can be reached from the start tile');
+
+// ...the Timberline Coast (zone 3) straight off zone 1, but the Abyssal Trench (zone 4) only through Frozen Reach.
+{
+  const withoutFrozen = reachableFromStart((t) => t.zone === 'zone2');
+  assert.ok([...withoutFrozen].some((id) => TILE_BY_ID.get(id).zone === 'zone3'), 'Timberline is reachable without touching Frozen Reach');
+  assert.equal(
+    [...withoutFrozen].filter((id) => TILE_BY_ID.get(id).zone === 'zone4').length,
+    0,
+    'the Abyssal Trench cannot be reached except through Frozen Reach'
+  );
+  for (const abyssal of TILES.filter((t) => t.zone === 'zone4')) {
+    for (const cell of abyssal.cells) {
+      for (const home of TILES.filter((t) => t.zone === 'zone1')) {
+        for (const other of home.cells) {
+          assert.ok(hexDistance(cell, other) > 2, 'no Abyssal hex sits within two hexes of Home Waters');
+        }
+      }
+    }
+  }
+}
 
 console.log('adjacency tests passed');
 
 // --- Geometry-derived adjacency (cross-check against js/scene.js hex layout) ---
 
-// Mirrors js/scene.js's HEX_RADIUS/HEX_WIDTH/ROW_SPACING and hexLocalPosition's odd-r
-// offset layout exactly (minus the whole-grid centering offset, which is a constant
-// translation and doesn't affect pairwise distances). js/tiles.js's neighbor formula
-// and js/scene.js's hex-layout formula independently encode the same convention with
-// no shared constant — if one changes without the other, this catches it even though
-// every other test in this file would still pass.
+// Mirrors js/scene.js's HEX_RADIUS/HEX_WIDTH/ROW_SPACING and hexLocalPosition's odd-r offset
+// layout exactly. js/hex.js's neighbour formula and js/scene.js's hex-layout formula independently
+// encode the same convention with no shared constant -- if one changes without the other, this
+// catches it even though every other test in this file would still pass.
 const GEOM_HEX_RADIUS = 1.6;
 const GEOM_HEX_WIDTH = Math.sqrt(3) * GEOM_HEX_RADIUS;
 const GEOM_HEX_HEIGHT = 2 * GEOM_HEX_RADIUS;
@@ -146,29 +197,30 @@ const GEOM_NEIGHBOR_DISTANCE = GEOM_HEX_WIDTH; // same-row and diagonal-row neig
 const GEOM_DISTANCE_TOLERANCE = 1e-6;
 
 function hexCenter(row, col) {
-  // row % 2 === 1 breaks for negative rows (zone 4 sits at rows -6..-1) -- see the matching fix
-  // and comment on hexLocalPosition in js/scene.js.
+  // row % 2 === 1 breaks for negative rows -- see the matching comment on hexLocalPosition in js/scene.js.
   const x = col * GEOM_HEX_WIDTH + (row % 2 !== 0 ? GEOM_HEX_WIDTH / 2 : 0);
   const z = row * GEOM_ROW_SPACING;
   return { x, z };
 }
 
-for (const tile of TILES) {
-  const center = hexCenter(tile.cells[0].row, tile.cells[0].col);
-  const geometricNeighborIds = TILES.filter((other) => {
-    if (other.id === tile.id) return false;
-    const otherCenter = hexCenter(other.cells[0].row, other.cells[0].col);
-    const dx = otherCenter.x - center.x;
-    const dz = otherCenter.z - center.z;
-    const distance = Math.sqrt(dx * dx + dz * dz);
-    return Math.abs(distance - GEOM_NEIGHBOR_DISTANCE) < GEOM_DISTANCE_TOLERANCE;
-  }).map((t) => t.id);
-
-  assert.deepEqual(
-    geometricNeighborIds.sort(),
-    [...TILE_NEIGHBORS.get(tile.id)].sort(),
-    `geometry-derived neighbors for ${tile.id} must match TILE_NEIGHBORS`
-  );
+{
+  const owners = TILES.flatMap((tile) => tile.cells.map((cell) => ({ tile, ...hexCenter(cell.row, cell.col) })));
+  for (const tile of TILES) {
+    const geometric = new Set();
+    for (const cell of tile.cells) {
+      const center = hexCenter(cell.row, cell.col);
+      for (const other of owners) {
+        if (other.tile.id === tile.id) continue;
+        const distance = Math.hypot(other.x - center.x, other.z - center.z);
+        if (Math.abs(distance - GEOM_NEIGHBOR_DISTANCE) < GEOM_DISTANCE_TOLERANCE) geometric.add(other.tile.id);
+      }
+    }
+    assert.deepEqual(
+      [...geometric].sort(),
+      [...TILE_NEIGHBORS.get(tile.id)].sort(),
+      `geometry-derived neighbors for ${tile.id} must match TILE_NEIGHBORS`
+    );
+  }
 }
 
 console.log('geometry-derived adjacency tests passed');
@@ -273,11 +325,14 @@ console.log('geometry-derived adjacency tests passed');
 
 {
   const state = { unlocked: ['driftwood_start'] };
-  const adjacent = TILES.find((t) => t.id === 'crops_soil_barge');
-  assert.equal(isDiscovered(adjacent, state), true, 'crops_soil_barge is adjacent to driftwood_start');
+  const bridgeIds = TILE_NEIGHBORS.get('driftwood_start');
+  const bridge = TILE_BY_ID.get(bridgeIds[0]);
+  assert.equal(isDiscovered(bridge, state), true, 'a bridge touching the start cluster is discovered');
 
-  const distant = TILES.find((t) => t.id === 'kelp_start');
-  assert.equal(isDiscovered(distant, state), false, 'kelp_start is 2 hops from driftwood_start');
+  const beyond = TILE_BY_ID.get(TILE_NEIGHBORS.get(bridge.id).find((id) => id !== 'driftwood_start'));
+  assert.equal(beyond.kind !== 'blank', true, 'fixture assumption: the far side of a start bridge is a cluster');
+  assert.equal(isDiscovered(beyond, state), false, 'a cluster two tiles from the start is hidden until the bridge is unlocked');
+  assert.equal(isDiscovered(beyond, { unlocked: ['driftwood_start', bridge.id] }), true, '...and discovered once that bridge is unlocked');
 
   const start = TILES.find((t) => t.id === 'driftwood_start');
   assert.equal(isDiscovered(start, state), true, 'an already-unlocked tile is always discovered');
@@ -287,17 +342,19 @@ console.log('geometry-derived adjacency tests passed');
 
 {
   // cost-gated, adjacent to the sole unlocked tile: gated on resources only
-  const tile = TILES.find((t) => t.id === 'crops_soil_barge'); // cost: 35 driftwood
-  const state = { unlocked: ['driftwood_start'], resources: { driftwood: 10 }, lifetime: {} };
+  const tile = TILE_BY_ID.get(TILE_NEIGHBORS.get('driftwood_start')[0]); // a zone-1 blank: 12 driftwood
+  assert.deepEqual(tile.unlock.cost, { driftwood: 12 }, 'fixture assumption: zone-1 blanks cost 12 driftwood');
+  const state = { unlocked: ['driftwood_start'], resources: { driftwood: 5 }, lifetime: {} };
   assert.equal(isEligible(tile, state), false, 'not enough driftwood yet');
-  state.resources.driftwood = 35;
+  state.resources.driftwood = 12;
   assert.equal(isEligible(tile, state), true, 'discovered and affordable');
 }
 
 {
-  // milestone-gated, adjacent to the sole unlocked tile
+  // milestone-gated, and discovered because a bridge beside it is unlocked
   const tile = TILES.find((t) => t.id === 'kelp_reef'); // milestone: driftwood >= 60
-  const state = { unlocked: ['driftwood_start'], resources: {}, lifetime: { driftwood: 59 } };
+  const unlocked = ['driftwood_start', ...TILE_NEIGHBORS.get('kelp_reef')];
+  const state = { unlocked, resources: {}, lifetime: { driftwood: 59 } };
   assert.equal(isEligible(tile, state), false);
   state.lifetime.driftwood = 60;
   assert.equal(isEligible(tile, state), true);
@@ -556,20 +613,20 @@ console.log('prestige production integration tests passed');
 
 {
   const state = createInitialState();
-  state.resources.driftwood = 20;
-  const tile = TILES.find((t) => t.id === 'booster_windmill');
+  state.resources.driftwood = 12;
+  const tile = TILE_BY_ID.get(TILE_NEIGHBORS.get('driftwood_start')[0]); // a zone-1 blank: 12 driftwood
   const ok = unlockTile(state, tile);
   assert.equal(ok, true, 'unlock succeeds when adjacent and affordable');
   assert.equal(state.resources.driftwood, 0, 'cost is deducted');
-  assert.ok(state.unlocked.includes('booster_windmill'), 'tile id added to unlocked');
+  assert.ok(state.unlocked.includes(tile.id), 'tile id added to unlocked');
 }
 
 {
   const state = createInitialState();
-  const tile = TILES.find((t) => t.id === 'booster_windmill');
+  const tile = TILE_BY_ID.get(TILE_NEIGHBORS.get('driftwood_start')[0]);
   const ok = unlockTile(state, tile);
   assert.equal(ok, false, 'unlock fails when not enough resources');
-  assert.ok(!state.unlocked.includes('booster_windmill'));
+  assert.ok(!state.unlocked.includes(tile.id));
 }
 
 {
@@ -707,8 +764,8 @@ console.log('economy math tests passed');
 {
   // first-steps is also awarded through unlockTile's own check
   const state = createInitialState();
-  state.resources.driftwood = 20;
-  unlockTile(state, TILES.find((t) => t.id === 'booster_windmill'));
+  state.resources.driftwood = 12;
+  unlockTile(state, TILE_BY_ID.get(TILE_NEIGHBORS.get('driftwood_start')[0]));
   assert.deepEqual(state.achievements, ['first-steps'], 'unlockTile checks achievements after a successful unlock');
   assert.equal(state.gold, 1);
 }
@@ -897,41 +954,36 @@ function seedSave(save) {
 
 console.log('achievement save migration tests passed');
 
-// --- zone border adjacency tests ---
+// --- zone corridors ---
+// Every zone after the first is entered along a corridor of blank bridges from the zone that leads to it.
+const corridorEntry = (zone, fromZone) =>
+  TILES.find((t) => t.zone === zone && t.kind === 'blank' && TILE_NEIGHBORS.get(t.id).some((id) => TILE_BY_ID.get(id).zone === fromZone));
 {
-  const neighbors = TILE_NEIGHBORS.get('crops_terraced_planter'); // zone-1, row 0, col 5
-  assert(
-    neighbors.includes('frozen_booster_net_weavers'), // zone-2, row 0, col 6
-    'zone-1 col-5 tile should be hex-adjacent to its zone-2 col-6 neighbor'
-  );
+  assert.ok(corridorEntry('zone2', 'zone1'), 'Frozen Reach is entered from Home Waters');
+  assert.ok(corridorEntry('zone3', 'zone1'), 'Timberline Coast is entered from Home Waters');
+  assert.ok(corridorEntry('zone4', 'zone2'), 'the Abyssal Trench is entered from Frozen Reach');
+  assert.equal(corridorEntry('zone4', 'zone1'), undefined, 'the Abyssal Trench has no way in from Home Waters');
+  assert.equal(corridorEntry('zone3', 'zone2'), undefined, 'and Timberline has none from Frozen Reach');
 
-  const zone2Count = TILES.filter((t) => t.zone === 'zone2').length;
-  assert.strictEqual(zone2Count, 36, 'zone 2 should have exactly 36 tiles');
-
-  const zone1Count = TILES.filter((t) => t.zone === 'zone1').length;
-  assert.strictEqual(zone1Count, 36, 'zone 1 should still have exactly 36 tiles');
-
-  console.log('zone border adjacency tests passed');
+  console.log('zone corridor tests passed');
 }
 
 // --- zone-2 economy multiplier tests ---
 // Locks in the spec's mirrored-economy invariant: every zone-1 tile has a
-// zone-2 mirror 6 columns over (same row, family, kind) whose unlock cost is
+// zone-2 mirror (id `frozen_<id>`, same family and kind) whose unlock cost is
 // 90x and whose production (rate / boost percent) is 4x. The unlock cost was
 // 15x in the original design and was then multiplied by 6 after a simulated
 // run showed zone 2 finishing in about 2 minutes; this pins the shipped numbers.
 {
-  const zone1Tiles = TILES.filter((t) => t.zone === 'zone1');
-  const zone2Tiles = TILES.filter((t) => t.zone === 'zone2');
+  const zone1Tiles = TILES.filter((t) => t.zone === 'zone1' && t.kind !== 'blank');
+  const zone2Tiles = TILES.filter((t) => t.zone === 'zone2' && t.kind !== 'blank');
 
   const UNLOCK_MULTIPLIER = 90;
   const PRODUCTION_MULTIPLIER = 4;
 
   for (const t1 of zone1Tiles) {
-    const mirror = zone2Tiles.find(
-      (t2) => t2.cells[0].row === t1.cells[0].row && t2.cells[0].col === t1.cells[0].col + 6
-    );
-    assert.ok(mirror, `${t1.id} (zone1, col ${t1.cells[0].col}) must have a zone-2 mirror at col ${t1.cells[0].col + 6}`);
+    const mirror = zone2Tiles.find((t2) => t2.id === `frozen_${t1.id}`);
+    assert.ok(mirror, `${t1.id} (zone1) must have a zone-2 mirror named frozen_${t1.id}`);
     assert.equal(mirror.family, t1.family, `${t1.id}/${mirror.id} must share the same family`);
     assert.equal(mirror.kind, t1.kind, `${t1.id}/${mirror.id} must share the same kind`);
 
@@ -1006,11 +1058,10 @@ console.log('achievement save migration tests passed');
   console.log('zone-2 economy multiplier tests passed');
 }
 
-// --- zone-2 tile ineligible until its zone-1 border neighbor unlocks ---
+// --- the corridor into zone 2 stays shut until its zone-1 end is unlocked ---
 {
-  // Same col-5/col-6 border pair the zone-border-adjacency test above uses.
-  const frozenTile = TILES.find((t) => t.id === 'frozen_booster_net_weavers'); // zone-2, row 0, col 6
-  const borderNeighborId = 'crops_terraced_planter'; // zone-1, row 0, col 5
+  const entry = corridorEntry('zone2', 'zone1'); // a Frozen Reach bridge touching a zone-1 cluster
+  const borderNeighborId = TILE_NEIGHBORS.get(entry.id).find((id) => TILE_BY_ID.get(id).zone === 'zone1');
 
   const state = {
     unlocked: [],
@@ -1018,16 +1069,16 @@ console.log('achievement save migration tests passed');
     lifetime: {},
   };
   assert.equal(
-    isEligible(frozenTile, state),
+    isEligible(entry, state),
     false,
-    'a zone-2 tile is not eligible while its zone-1 border neighbor is locked, however affordable'
+    'a corridor bridge is not eligible while the zone-1 cluster beside it is locked, however affordable'
   );
 
   state.unlocked.push(borderNeighborId);
   assert.equal(
-    isEligible(frozenTile, state),
+    isEligible(entry, state),
     true,
-    'unlocking the bordering zone-1 tile makes the zone-2 tile eligible once affordable'
+    'unlocking the bordering zone-1 cluster makes the corridor bridge eligible once affordable'
   );
 
   console.log('zone-2 border eligibility tests passed');
@@ -1399,6 +1450,7 @@ console.log('achievement save migration tests passed');
 
   const two = doPrestige(finished(2)).state;
   assert.equal(clusterCount(two), 1 + 4, 'two clusters per level');
+  assert.ok(two.unlocked.length > 1 + 4, 'and the bridges needed to reach them come free too');
   assert.equal(two.prestige.headStart, 2, 'the upgrade itself carries over');
   for (const r of ['fish', 'kelp', 'driftwood', 'crops']) assert.equal(two.resources[r], 0, 'a head start costs nothing');
   for (const id of two.unlocked) {
@@ -1526,36 +1578,42 @@ console.log('achievement save migration tests passed');
   console.log('upgrade list tests passed');
 }
 
-// --- Bioluminescence (zone 3): dim until a zone-3 booster is unlocked next door ---
+// --- Bioluminescence (Abyssal Trench, zone 4): dim until one of its boosters is unlocked next door ---
 {
-  const litByBooster = TILES.find((t) => t.id === 'abyssal_fish_start');
-  const boosterNeighbor = TILES.find((t) => t.id === 'abyssal_booster_net_weavers');
-  assert(TILE_NEIGHBORS.get(litByBooster.id).includes(boosterNeighbor.id), 'fixture assumption: these two tiles are adjacent');
+  // "Next door" means within two hexes: touching, or one bridge tile apart -- as close as two clusters get.
+  const producers = TILES.filter((t) => t.zone === 'zone4' && t.kind === 'producer');
+  const near = (tile) => TILE_NEARBY.get(tile.id);
+  const isTrenchBooster = (id) => TILE_BY_ID.get(id).zone === 'zone4' && TILE_BY_ID.get(id).kind === 'booster';
 
-  const noNeighborBooster = TILES.find((t) => t.id === 'abyssal_fish_tide_pool_trap');
-  assert(
-    !(TILE_NEIGHBORS.get(noNeighborBooster.id) || []).some((id) => TILES.find((t) => t.id === id)?.zone === 'zone4' && TILES.find((t) => t.id === id)?.kind === 'booster'),
-    'fixture assumption: this tile has no zone-3 booster neighbor'
-  );
+  const litByBooster = producers.find((t) => near(t).some(isTrenchBooster));
+  const boosterNeighbor = TILE_BY_ID.get(near(litByBooster).find(isTrenchBooster));
+  const noNeighborBooster = producers.find((t) => !near(t).some(isTrenchBooster));
+  assert(litByBooster && boosterNeighbor, 'fixture assumption: some trench producer has a booster within two hexes');
+  assert(noNeighborBooster, 'fixture assumption: some trench producer has no booster within two hexes');
 
-  // Non-zone-3 tiles and zone-3 boosters are never dim, regardless of neighbors or unlocks.
+  // Non-trench tiles and the trench's own boosters are never dim, regardless of neighbors or unlocks.
   assert.equal(isLit(TILES.find((t) => t.id === 'fish_start'), []), true, 'a zone-1 tile is never dim');
   assert.equal(isLit(TILES.find((t) => t.id === 'frozen_fish_start'), []), true, 'a zone-2 tile is never dim');
-  assert.equal(isLit(boosterNeighbor, []), true, 'a zone-3 booster is never dim itself');
+  assert.equal(isLit(TILES.find((t) => t.zone === 'zone3' && t.kind === 'generator'), []), true, 'a Timberline tile is never dim');
+  assert.equal(isLit(boosterNeighbor, []), true, 'a trench booster is never dim itself');
 
-  // A zone-3 producer with no unlocked zone-3 booster neighbor is dim...
+  // A trench producer with no unlocked trench booster nearby is dim...
   assert.equal(isLit(litByBooster, []), false, 'dim with nothing unlocked nearby');
-  assert.equal(isLit(litByBooster, [boosterNeighbor.id]), true, '...lit once that neighbor is unlocked');
-  assert.equal(isLit(noNeighborBooster, TILES.filter((t) => t.zone === 'zone4' && t.kind === 'booster').map((t) => t.id)), false, 'still dim: no zone-3 booster is actually adjacent to it, however many are unlocked elsewhere');
+  assert.equal(isLit(litByBooster, [boosterNeighbor.id]), true, '...lit once that booster is unlocked');
+  assert.equal(
+    isLit(noNeighborBooster, TILES.filter((t) => t.zone === 'zone4' && t.kind === 'booster').map((t) => t.id)),
+    false,
+    'still dim: no trench booster is actually within two hexes of it, however many are unlocked elsewhere'
+  );
 
   // The darkness penalty actually halves the rate, and lighting it doubles output back to normal.
   // Uses a producer/booster pair whose resources don't overlap, so unlocking the booster only
   // lights the producer and doesn't also raise its rate via the booster's own (raft-wide) percent
-  // — that's a separate, already-tested effect this assertion isn't about.
-  const dimProducer = TILES.find((t) => t.id === 'abyssal_fish_anchored_net');
-  const nonOverlappingBooster = TILES.find((t) => t.id === 'abyssal_booster_drying_rack');
-  assert(TILE_NEIGHBORS.get(dimProducer.id).includes(nonOverlappingBooster.id), 'fixture assumption: these two tiles are adjacent');
-  assert(!nonOverlappingBooster.boosts.some((b) => b.resource === dimProducer.produces), 'fixture assumption: this booster does not also boost fish');
+  // -- that's a separate, already-tested effect this assertion isn't about.
+  const [dimProducer, nonOverlappingBooster] = producers
+    .flatMap((p) => near(p).filter(isTrenchBooster).map((id) => [p, TILE_BY_ID.get(id)]))
+    .find(([p, b]) => !b.boosts.some((x) => x.resource === p.produces));
+  assert(dimProducer && nonOverlappingBooster, 'fixture assumption: a nearby producer/booster pair with no shared resource exists');
 
   const st = createInitialState();
   st.unlocked = ['driftwood_start', dimProducer.id];
@@ -1566,10 +1624,10 @@ console.log('achievement save migration tests passed');
   assert.equal(dimRate, dimProducer.rate * 0.5, 'a dim, unboosted, level-1 producer runs at exactly half its listed rate');
 
   // rateBreakdown and effectiveRate (the HUD/ETA/offline-progress path) reflect the same penalty.
-  const before = rateBreakdown(st, 'fish').base;
+  const before = rateBreakdown(st, dimProducer.produces).base;
   st.unlocked = st.unlocked.filter((id) => id !== nonOverlappingBooster.id);
-  const after = rateBreakdown(st, 'fish').base;
-  assert.equal(after, before / 2, 'rateBreakdown halves a dim zone-3 producer\'s contribution to the resource total');
+  const after = rateBreakdown(st, dimProducer.produces).base;
+  assert.equal(after, before / 2, "rateBreakdown halves a dim trench producer's contribution to the resource total");
 
   console.log('bioluminescence tests passed');
 }
@@ -1702,4 +1760,53 @@ console.log('achievement save migration tests passed');
   }
 
   console.log('blank tile engine tests passed');
+}
+
+// --- Blank bridge tiles: the map's data ---
+{
+  const bridge = TILE_BY_ID.get(TILE_NEIGHBORS.get('driftwood_start')[0]);
+  assert.equal(bridge.kind, 'blank', 'fixture assumption: the start cluster is ringed by blanks');
+
+  const state = createInitialState();
+  assert.equal(getLevel(state, bridge.id), MAX_LEVEL, 'a blank has nothing to level, so it is maxed from the start');
+  assert.equal(getLevel(state, 'driftwood_start'), 1, 'other tiles still default to level 1');
+
+  const before = completionCount(state);
+  state.resources.driftwood = 12;
+  assert.equal(unlockTile(state, bridge), true, 'a blank is bought like any other tile');
+  assert.equal(completionCount(state), before + 1, 'an unlocked blank counts toward completion straight away');
+  assert.ok(!upgradeList(state).some((row) => row.tile.id === bridge.id), 'a blank never shows in the upgrade list');
+  assert.equal(isLevelUpEligible(state, bridge), false, 'and can never be levelled');
+  assert.equal(rateBreakdown(state, 'driftwood').total, 0.5, 'a blank adds no production');
+
+  // Every blank in a zone shares one flat price.
+  const costsByZone = {};
+  for (const t of TILES.filter((x) => x.kind === 'blank')) {
+    const key = JSON.stringify(t.unlock.cost);
+    costsByZone[t.zone] ||= new Set();
+    costsByZone[t.zone].add(key);
+  }
+  for (const [zone, costs] of Object.entries(costsByZone)) assert.equal(costs.size, 1, `every ${zone} blank costs the same`);
+  const blankCost = (zone) => JSON.parse([...costsByZone[zone]][0]);
+  const total = (cost) => Object.values(cost).reduce((sum, n) => sum + n, 0);
+  const BASE4 = ['fish', 'kelp', 'driftwood', 'crops'];
+
+  assert.deepEqual(Object.keys(blankCost('zone1')), ['driftwood'], 'Home Waters bridges cost driftwood only');
+  for (const zone of ['zone2', 'zone3']) {
+    assert.ok(Object.keys(blankCost(zone)).every((r) => BASE4.includes(r)), `${zone} bridges cost zone-1 resources only: the toll for leaving Home Waters`);
+  }
+  assert.ok(total(blankCost('zone3')) > total(blankCost('zone2')), 'Timberline bridges cost more than Frozen Reach');
+  assert.deepEqual(Object.keys(blankCost('zone4')).sort(), ['kelp_rope', 'planks'], 'Abyssal bridges cost only planks and kelp_rope');
+
+  // Unlock costs the rework changed.
+  for (const t of TILES.filter((x) => x.zone === 'zone3' && x.kind !== 'blank')) {
+    assert.ok(Object.keys(t.unlock.cost).every((r) => BASE4.includes(r)), `${t.id}: Timberline unlocks cost base resources only`);
+  }
+  for (const t of TILES.filter((x) => x.zone === 'zone4' && x.kind !== 'blank')) {
+    if (t.unlock.type === 'milestone') continue;
+    assert.ok(t.unlock.cost.planks > 0 && t.unlock.cost.kelp_rope > 0, `${t.id}: Abyssal unlocks also need planks and kelp_rope`);
+    assert.equal(t.unlock.cost.bread, undefined, `${t.id}: bread is deliberately not part of it`);
+  }
+
+  console.log('blank tile tests passed');
 }
