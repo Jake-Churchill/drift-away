@@ -1,4 +1,4 @@
-import { TILES, TILE_NEIGHBORS } from './tiles.js';
+import { TILES, TILE_BY_ID, TILE_NEIGHBORS } from './tiles.js';
 import { ZONES } from './zones.js';
 import { PALETTES } from './palettes.js';
 
@@ -9,6 +9,27 @@ const BASE_RESOURCES = ['fish', 'kelp', 'driftwood', 'crops'];
 export const GOODS = ['planks', 'kelp_rope', 'bread'];
 export const RESOURCES = [...BASE_RESOURCES, ...GOODS];
 export const SAVE_KEY = 'driftaway_save_v1';
+
+// Membership in `state.unlocked` is asked per tile, per frame, from many places, so on a map of a few
+// hundred tiles a linear `includes` scan dominates the frame. The array stays the saved source of
+// truth (tiles are only ever appended, or the whole array is replaced on prestige/restart/import);
+// this Set is rebuilt only when the array's identity or length changes.
+const unlockedSets = new WeakMap();
+export function isUnlocked(unlockedIds, tileId) {
+  let entry = unlockedSets.get(unlockedIds);
+  if (!entry || entry.length !== unlockedIds.length) {
+    entry = { length: unlockedIds.length, set: new Set(unlockedIds) };
+    unlockedSets.set(unlockedIds, entry);
+  }
+  return entry.set.has(tileId);
+}
+
+// Tiles by kind, computed once: the per-frame rate maths walks these, not every tile on the map.
+const RATE_TILES = TILES.filter((t) => t.kind !== 'blank');
+const BOOSTER_TILES = TILES.filter((t) => t.kind === 'booster');
+const PRODUCER_TILES = TILES.filter((t) => t.kind === 'producer');
+const GENERATOR_TILES = TILES.filter((t) => t.kind === 'generator');
+const SOURCE_TILES = TILES.filter((t) => t.kind === 'producer' || t.kind === 'generator');
 
 // 'kelp_rope' -> 'kelp rope' -> 'Kelp Rope', for achievement names/descriptions. A no-op for
 // every other resource, which has no underscore to begin with.
@@ -62,8 +83,8 @@ const DARKNESS_PENALTY = 0.5;
 export function isLit(tile, unlockedIds) {
   if (tile.zone !== 'zone4' || tile.kind !== 'producer') return true;
   return (TILE_NEIGHBORS.get(tile.id) || []).some((id) => {
-    if (!unlockedIds.includes(id)) return false;
-    const neighbor = TILES.find((t) => t.id === id);
+    if (!isUnlocked(unlockedIds, id)) return false;
+    const neighbor = TILE_BY_ID.get(id);
     return neighbor?.zone === 'zone4' && neighbor.kind === 'booster';
   });
 }
@@ -72,16 +93,16 @@ function darknessFactor(tile, unlockedIds) {
 }
 
 function boostPercentFor(resource, unlockedIds, levels = {}) {
-  return TILES
-    .filter((t) => unlockedIds.includes(t.id) && t.kind === 'booster')
+  return BOOSTER_TILES
+    .filter((t) => isUnlocked(unlockedIds, t.id))
     .flatMap((t) => t.boosts.map((b) => ({ ...b, level: levels[t.id] || 1 })))
     .filter((b) => b.resource === resource)
     .reduce((sum, b) => sum + b.percent * levelMultiplier(b.level), 0);
 }
 
 export function effectiveRate(resource, unlockedIds, levels = {}, prestigeUpgrades = {}, ballastPercent = 0) {
-  const baseSum = TILES
-    .filter((t) => unlockedIds.includes(t.id) && t.kind === 'producer' && t.produces === resource)
+  const baseSum = PRODUCER_TILES
+    .filter((t) => isUnlocked(unlockedIds, t.id) && t.produces === resource)
     .reduce((sum, t) => sum + t.rate * levelMultiplier(levels[t.id] || 1) * darknessFactor(t, unlockedIds), 0);
   const boosterMultiplier = 1 + boostPercentFor(resource, unlockedIds, levels) / 100;
   const prestigeMultiplier = 1 + (PRESTIGE_UPGRADE_PERCENT * (prestigeUpgrades[resource] || 0)) / 100;
@@ -113,8 +134,8 @@ export function rateBreakdown(state, resource) {
   // `boostPercent` -- fine, since generatorThrottle/generatorScarcityFactors don't themselves
   // depend on this resource's boost, only on level+boost of whatever's consuming each input.
   const generatorFactors = generatorScarcityFactors(state);
-  for (const tile of TILES) {
-    if (!state.unlocked.includes(tile.id)) continue;
+  for (const tile of RATE_TILES) {
+    if (!isUnlocked(state.unlocked, tile.id)) continue;
     const multiplier = levelMultiplier(getLevel(state, tile.id));
     if (tile.kind === 'producer' && tile.produces === resource) base += tile.rate * multiplier * darknessFactor(tile, state.unlocked);
     if (tile.kind === 'generator' && tile.produces === resource) base += tile.rate * multiplier * generatorThrottle(tile, generatorFactors);
@@ -145,7 +166,7 @@ export function rateBreakdown(state, resource) {
 // is asking about -- it already exists and will produce as soon as its input income catches up.
 export function boosterIsIdle(state, tile) {
   return tile.boosts.every(
-    (b) => !TILES.some((t) => state.unlocked.includes(t.id) && (t.kind === 'producer' || t.kind === 'generator') && t.produces === b.resource)
+    (b) => !SOURCE_TILES.some((t) => isUnlocked(state.unlocked, t.id) && t.produces === b.resource)
   );
 }
 
@@ -163,8 +184,8 @@ export function boosterGain(state, tile, resource) {
 }
 
 export function isDiscovered(tile, state) {
-  if (state.unlocked.includes(tile.id)) return true;
-  return TILE_NEIGHBORS.get(tile.id).some((id) => state.unlocked.includes(id));
+  if (isUnlocked(state.unlocked, tile.id)) return true;
+  return TILE_NEIGHBORS.get(tile.id).some((id) => isUnlocked(state.unlocked, id));
 }
 
 export function isEligible(tile, state) {
@@ -209,7 +230,7 @@ export function unlockEta(state, tile) {
 
 // Every tile the player can see but hasn't unlocked, with its timer.
 export function lockedTileStatuses(state) {
-  return TILES.filter((t) => !state.unlocked.includes(t.id) && isDiscovered(t, state)).map((tile) => ({
+  return TILES.filter((t) => !isUnlocked(state.unlocked, t.id) && isDiscovered(t, state)).map((tile) => ({
     tile,
     eta: unlockEta(state, tile),
   }));
@@ -233,7 +254,7 @@ export function getLevel(state, tileId) {
 export const TOTAL_TILE_COUNT = TILES.length;
 
 export function completionCount(state) {
-  return TILES.filter((t) => state.unlocked.includes(t.id) && getLevel(state, t.id) >= MAX_LEVEL).length;
+  return TILES.filter((t) => isUnlocked(state.unlocked, t.id) && getLevel(state, t.id) >= MAX_LEVEL).length;
 }
 
 export function isFullyComplete(state) {
@@ -306,7 +327,7 @@ export const ACHIEVEMENTS = [
     name: 'Frozen Reach',
     description: 'Unlock your first tile in the Frozen Reach',
     reward: 2,
-    condition: (state) => state.unlocked.some((id) => TILES.find((t) => t.id === id)?.zone === 'zone2'),
+    condition: (state) => state.unlocked.some((id) => TILE_BY_ID.get(id)?.zone === 'zone2'),
   },
   {
     id: 'frozen-reach-complete',
@@ -315,7 +336,7 @@ export const ACHIEVEMENTS = [
     reward: 8,
     condition: (state) =>
       TILES.filter((t) => t.zone === 'zone2').every(
-        (t) => state.unlocked.includes(t.id) && getLevel(state, t.id) >= MAX_LEVEL
+        (t) => isUnlocked(state.unlocked, t.id) && getLevel(state, t.id) >= MAX_LEVEL
       ),
   },
   {
@@ -323,7 +344,7 @@ export const ACHIEVEMENTS = [
     name: 'The Abyssal Trench',
     description: 'Unlock your first tile in the Abyssal Trench',
     reward: 3,
-    condition: (state) => state.unlocked.some((id) => TILES.find((t) => t.id === id)?.zone === 'zone4'),
+    condition: (state) => state.unlocked.some((id) => TILE_BY_ID.get(id)?.zone === 'zone4'),
   },
   {
     id: 'abyssal-trench-complete',
@@ -332,7 +353,7 @@ export const ACHIEVEMENTS = [
     reward: 10,
     condition: (state) =>
       TILES.filter((t) => t.zone === 'zone4').every(
-        (t) => state.unlocked.includes(t.id) && getLevel(state, t.id) >= MAX_LEVEL
+        (t) => isUnlocked(state.unlocked, t.id) && getLevel(state, t.id) >= MAX_LEVEL
       ),
   },
   {
@@ -340,7 +361,7 @@ export const ACHIEVEMENTS = [
     name: 'The Timberline Coast',
     description: 'Unlock your first tile in the Timberline Coast',
     reward: 3,
-    condition: (state) => state.unlocked.some((id) => TILES.find((t) => t.id === id)?.zone === 'zone3'),
+    condition: (state) => state.unlocked.some((id) => TILE_BY_ID.get(id)?.zone === 'zone3'),
   },
   {
     id: 'timberline-coast-complete',
@@ -349,7 +370,7 @@ export const ACHIEVEMENTS = [
     reward: 10,
     condition: (state) =>
       TILES.filter((t) => t.zone === 'zone3').every(
-        (t) => state.unlocked.includes(t.id) && getLevel(state, t.id) >= MAX_LEVEL
+        (t) => isUnlocked(state.unlocked, t.id) && getLevel(state, t.id) >= MAX_LEVEL
       ),
   },
 ];
@@ -566,7 +587,7 @@ export function levelUpCost(tile, targetLevel) {
 
 export function isLevelUpEligible(state, tile) {
   const level = getLevel(state, tile.id);
-  if (!state.unlocked.includes(tile.id) || level >= MAX_LEVEL) return false;
+  if (!isUnlocked(state.unlocked, tile.id) || level >= MAX_LEVEL) return false;
   const cost = levelUpCost(tile, level + 1);
   return Object.entries(cost).every(([resource, amount]) => state.resources[resource] >= amount);
 }
@@ -596,7 +617,7 @@ export function costProgressFraction(cost, state) {
 export function upgradeList(state) {
   const rows = [];
   for (const tile of TILES) {
-    if (!state.unlocked.includes(tile.id)) continue;
+    if (!isUnlocked(state.unlocked, tile.id)) continue;
     const level = getLevel(state, tile.id);
     if (level >= MAX_LEVEL) continue;
     const cost = levelUpCost(tile, level + 1);
@@ -629,7 +650,7 @@ export function offlineRate(state) {
 // input than its (lower, capped) output actually needed that tick -- a known first-pass
 // simplification; see docs/superpowers/specs/2026-09-24-drift-away-zone4-design.md.
 function generatorTiles(unlockedIds) {
-  return TILES.filter((t) => unlockedIds.includes(t.id) && t.kind === 'generator');
+  return GENERATOR_TILES.filter((t) => isUnlocked(unlockedIds, t.id));
 }
 
 function generatorMultiplier(tile, unlockedIds, levels) {
@@ -718,7 +739,7 @@ export function tick(state, dt) {
 }
 
 export function unlockTile(state, tile) {
-  if (state.unlocked.includes(tile.id)) return false;
+  if (isUnlocked(state.unlocked, tile.id)) return false;
   if (!isEligible(tile, state)) return false;
 
   if (tile.unlock.type === 'cost') {
@@ -827,7 +848,7 @@ export function advance(state, elapsedSeconds) {
 // zone is the biggest moment in the game. Call after the tile is in state.unlocked.
 export function unlockIntensity(state, tile) {
   if (tile.zone !== ZONES[0].id) {
-    const inZone = state.unlocked.filter((id) => TILES.find((t) => t.id === id)?.zone === tile.zone).length;
+    const inZone = state.unlocked.filter((id) => TILE_BY_ID.get(id)?.zone === tile.zone).length;
     if (inZone === 1) return 1;
   }
   const progress = Math.max(0, Math.min(1, (state.unlocked.length - 1) / (TOTAL_TILE_COUNT - 1)));

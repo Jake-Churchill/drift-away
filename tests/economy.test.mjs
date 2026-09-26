@@ -28,6 +28,7 @@ import {
   isFullyComplete,
   isLevelUpEligible,
   isLit,
+  isUnlocked,
   levelUpCost,
   levelUpIntensity,
   levelUpTile,
@@ -171,6 +172,20 @@ for (const tile of TILES) {
 }
 
 console.log('geometry-derived adjacency tests passed');
+
+// --- isUnlocked (cached membership) ---
+
+{
+  const ids = ['a'];
+  assert.equal(isUnlocked(ids, 'a'), true);
+  assert.equal(isUnlocked(ids, 'b'), false);
+  ids.push('b');
+  assert.equal(isUnlocked(ids, 'b'), true, 'a tile appended to the same array is seen straight away');
+  const replaced = ['c'];
+  assert.equal(isUnlocked(replaced, 'a'), false, 'a replaced array is never mistaken for the old one');
+  assert.equal(isUnlocked(replaced, 'c'), true);
+  console.log('unlocked membership tests passed');
+}
 
 // --- createInitialState ---
 

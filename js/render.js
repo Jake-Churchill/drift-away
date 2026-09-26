@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { TILES } from './tiles.js';
-import { getLevel, isDiscovered, isEligible, isLit } from './state.js';
+import { getLevel, isDiscovered, isEligible, isLit, isUnlocked } from './state.js';
 import { buildScene } from './scene.js';
 import { updateCloudField, renderCloudField, setCloudTint } from './clouds.js';
 import { DEFAULT_PALETTE, PALETTES } from './palettes.js';
@@ -167,7 +167,7 @@ export function updateScene(state, time, { boardTint }) {
   for (let i = 0; i < TILES.length; i++) {
     const tile = TILES[i];
     const objects = tileObjects.get(tile.id);
-    const unlocked = state.unlocked.includes(tile.id);
+    const unlocked = isUnlocked(state.unlocked, tile.id);
     const discovered = isDiscovered(tile, state); // already true when `unlocked` is true
 
     objects.raftMesh.visible = unlocked;
