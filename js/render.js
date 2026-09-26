@@ -234,5 +234,5 @@ export function screenToGrid(screenX, screenY, canvasWidth, canvasHeight) {
 
   const tileId = intersections[0].object.userData.tileId;
   const tile = TILES.find((t) => t.id === tileId);
-  return tile ? tile.gridPos : null;
+  return tile ? tile.cells[0] : null;
 }

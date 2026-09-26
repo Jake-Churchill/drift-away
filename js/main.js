@@ -245,7 +245,7 @@ canvas.addEventListener('click', (event) => {
     return;
   }
 
-  const tile = TILES.find((t) => t.gridPos.row === gridPos.row && t.gridPos.col === gridPos.col);
+  const tile = TILES.find((t) => t.cells[0].row === gridPos.row && t.cells[0].col === gridPos.col);
   if (!tile) return;
 
   if (tile.zone !== getCurrentZone()) {
@@ -263,7 +263,7 @@ canvas.addEventListener('dblclick', (event) => {
   const rect = canvas.getBoundingClientRect();
   const gridPos = screenToGrid(event.clientX - rect.left, event.clientY - rect.top, rect.width, rect.height);
   if (!gridPos) return;
-  const tile = TILES.find((t) => t.gridPos.row === gridPos.row && t.gridPos.col === gridPos.col);
+  const tile = TILES.find((t) => t.cells[0].row === gridPos.row && t.cells[0].col === gridPos.col);
   if (tile && tile.zone === getCurrentZone() && !state.unlocked.includes(tile.id)) handleUnlockClick(tile);
 });
 

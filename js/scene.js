@@ -931,7 +931,7 @@ function worldTileBounds() {
   let minZ = Infinity;
   let maxZ = -Infinity;
   for (const tile of TILES) {
-    const { x, z } = hexLocalPosition(tile.gridPos.row, tile.gridPos.col);
+    const { x, z } = hexLocalPosition(tile.cells[0].row, tile.cells[0].col);
     minX = Math.min(minX, x);
     maxX = Math.max(maxX, x);
     minZ = Math.min(minZ, z);
@@ -1045,7 +1045,7 @@ export function buildScene(canvas) {
 
   const tileObjects = new Map();
   for (const tile of TILES) {
-    const { x, z } = hexLocalPosition(tile.gridPos.row, tile.gridPos.col);
+    const { x, z } = hexLocalPosition(tile.cells[0].row, tile.cells[0].col);
 
     const { raftMesh, propGroups, trimMeshes } = buildRaftMesh(tile);
     raftMesh.position.set(x, 0, z);
@@ -1074,7 +1074,7 @@ export function buildScene(canvas) {
     const zoneTiles = TILES.filter((t) => t.zone === zone.id);
     const center = new THREE.Vector3();
     for (const tile of zoneTiles) {
-      const { x, z } = hexLocalPosition(tile.gridPos.row, tile.gridPos.col);
+      const { x, z } = hexLocalPosition(tile.cells[0].row, tile.cells[0].col);
       center.x += x;
       center.z += z;
     }

@@ -57,7 +57,7 @@ assert.equal(TILES.length, 144, 'expected exactly 144 tiles (36 zone-1 + 36 zone
 const ids = TILES.map((t) => t.id);
 assert.equal(new Set(ids).size, TILES.length, 'tile ids must be unique');
 
-const positions = TILES.map((t) => `${t.gridPos.row},${t.gridPos.col}`);
+const positions = TILES.map((t) => `${t.cells[0].row},${t.cells[0].col}`);
 assert.equal(new Set(positions).size, TILES.length, 'grid positions must be unique');
 for (let row = 0; row < 6; row++) {
   for (let col = 0; col < 6; col++) {
@@ -153,10 +153,10 @@ function hexCenter(row, col) {
 }
 
 for (const tile of TILES) {
-  const center = hexCenter(tile.gridPos.row, tile.gridPos.col);
+  const center = hexCenter(tile.cells[0].row, tile.cells[0].col);
   const geometricNeighborIds = TILES.filter((other) => {
     if (other.id === tile.id) return false;
-    const otherCenter = hexCenter(other.gridPos.row, other.gridPos.col);
+    const otherCenter = hexCenter(other.cells[0].row, other.cells[0].col);
     const dx = otherCenter.x - center.x;
     const dz = otherCenter.z - center.z;
     const distance = Math.sqrt(dx * dx + dz * dz);
@@ -916,9 +916,9 @@ console.log('achievement save migration tests passed');
 
   for (const t1 of zone1Tiles) {
     const mirror = zone2Tiles.find(
-      (t2) => t2.gridPos.row === t1.gridPos.row && t2.gridPos.col === t1.gridPos.col + 6
+      (t2) => t2.cells[0].row === t1.cells[0].row && t2.cells[0].col === t1.cells[0].col + 6
     );
-    assert.ok(mirror, `${t1.id} (zone1, col ${t1.gridPos.col}) must have a zone-2 mirror at col ${t1.gridPos.col + 6}`);
+    assert.ok(mirror, `${t1.id} (zone1, col ${t1.cells[0].col}) must have a zone-2 mirror at col ${t1.cells[0].col + 6}`);
     assert.equal(mirror.family, t1.family, `${t1.id}/${mirror.id} must share the same family`);
     assert.equal(mirror.kind, t1.kind, `${t1.id}/${mirror.id} must share the same kind`);
 
