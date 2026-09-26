@@ -9,6 +9,7 @@ import {
   BASE_VIEW_HALF,
   MIN_VIEW_HALF,
   MAX_VIEW_HALF,
+  PAN_MARGIN,
   FOG_NEAR,
   FOG_FAR,
 } from './scene.js';
@@ -28,7 +29,6 @@ let canvasSize = { width: 1, height: 1 };
 let flight = null;
 
 const START_TILE_ID = TILES.find((t) => t.unlock.type === 'start').id;
-const PAN_MARGIN = 10;
 const FLIGHT_MS = 900;
 const SCREEN_RIGHT = new THREE.Vector3(1, 0, -1).normalize();
 const SCREEN_UP_ON_GROUND = new THREE.Vector3(-1, 0, -1).normalize();

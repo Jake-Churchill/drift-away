@@ -341,7 +341,7 @@ export const TILES = [
 //   byId        id -> tile
 //   idByCell    "row,col" -> id of the tile occupying that cell
 //   neighbors   id -> ids of tiles with a cell touching one of this tile's cells
-//   nearby      id -> ids of tiles within two hexes (touching, or one bridge hex apart)
+//   nearby      id -> ids of tiles with a cell within two hexes of one of this tile's cells
 export function buildTileIndex(tiles) {
   const byId = new Map(tiles.map((t) => [t.id, t]));
   const idByCell = new Map();

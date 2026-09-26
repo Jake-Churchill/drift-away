@@ -246,12 +246,12 @@ console.log('geometry-derived adjacency tests passed');
   assert.deepEqual(
     state.resources,
     { fish: 0, kelp: 0, driftwood: 0, crops: 0, planks: 0, kelp_rope: 0, bread: 0 },
-    'resources shape includes zone 4 goods alongside the base 4'
+    'resources shape includes zone 3 goods alongside the base 4'
   );
   assert.deepEqual(
     state.lifetime,
     { fish: 0, kelp: 0, driftwood: 0, crops: 0, planks: 0, kelp_rope: 0, bread: 0 },
-    'lifetime shape includes zone 4 goods alongside the base 4'
+    'lifetime shape includes zone 3 goods alongside the base 4'
   );
   assert.deepEqual(state.unlocked, ['driftwood_start'], 'only the single start tile is unlocked');
   assert.deepEqual(state.levels, {}, 'no tile starts above level 1');
@@ -264,7 +264,7 @@ console.log('geometry-derived adjacency tests passed');
   assert.deepEqual(
     state.prestige,
     { tokens: 0, upgrades: { fish: 0, kelp: 0, driftwood: 0, crops: 0, planks: 0, kelp_rope: 0, bread: 0 }, headStart: 0, count: 0 },
-    'a fresh game starts with zero prestige tokens (including zone 4 goods), no upgrades purchased, and no prestiges done'
+    'a fresh game starts with zero prestige tokens (including zone 3 goods), no upgrades purchased, and no prestiges done'
   );
 }
 
@@ -503,12 +503,12 @@ console.log('completion tracking tests passed');
   assert.deepEqual(
     result.state.resources,
     { fish: 0, kelp: 0, driftwood: 0, crops: 0, planks: 0, kelp_rope: 0, bread: 0 },
-    'resources reset, including zone 4 goods'
+    'resources reset, including zone 3 goods'
   );
   assert.deepEqual(
     result.state.lifetime,
     { fish: 0, kelp: 0, driftwood: 0, crops: 0, planks: 0, kelp_rope: 0, bread: 0 },
-    'lifetime totals reset, including zone 4 goods'
+    'lifetime totals reset, including zone 3 goods'
   );
   assert.deepEqual(result.state.unlocked, ['driftwood_start'], 'unlocked tiles reset to just the start tile');
   assert.deepEqual(result.state.levels, {}, 'levels reset');
@@ -882,12 +882,12 @@ console.log('achievement award tests passed');
   assert.deepEqual(
     result.state.resources,
     { fish: 0, kelp: 0, driftwood: 0, crops: 0, planks: 0, kelp_rope: 0, bread: 0 },
-    'resources still reset, including zone 4 goods'
+    'resources still reset, including zone 3 goods'
   );
   assert.deepEqual(
     result.state.lifetime,
     { fish: 0, kelp: 0, driftwood: 0, crops: 0, planks: 0, kelp_rope: 0, bread: 0 },
-    'lifetime totals still reset, including zone 4 goods'
+    'lifetime totals still reset, including zone 3 goods'
   );
   assert.deepEqual(result.state.unlocked, ['driftwood_start'], 'unlocked tiles still reset');
   assert.deepEqual(result.state.levels, {}, 'levels still reset');
@@ -1403,7 +1403,7 @@ const corridorEntry = (zone, fromZone) =>
   assert.deepEqual(old.shop, createInitialState().shop, 'a save without a shop gets an empty one');
   for (const stale of [{ version: 1 }, {}]) {
     const v1 = btoa(JSON.stringify({ ...stale, resources: {}, lifetime: {}, unlocked: ['driftwood_start'] }));
-    assert.equal(decodeSave(v1), null, 'a save from before the v2 map rework is rejected: its tile ids no longer exist');
+    assert.equal(decodeSave(v1), null, 'a save from before the v2 map rework is rejected: the map layout, clusters and zones changed');
   }
 
   console.log('gold shop tests passed');
@@ -1580,7 +1580,7 @@ const corridorEntry = (zone, fromZone) =>
 
 // --- Bioluminescence (Abyssal Trench, zone 4): dim until one of its boosters is unlocked next door ---
 {
-  // "Next door" means within two hexes: touching, or one bridge tile apart -- as close as two clusters get.
+  // "Next door" means within two hexes (TILE_NEARBY) -- as close as two clusters get.
   const producers = TILES.filter((t) => t.zone === 'zone4' && t.kind === 'producer');
   const near = (tile) => TILE_NEARBY.get(tile.id);
   const isTrenchBooster = (id) => TILE_BY_ID.get(id).zone === 'zone4' && TILE_BY_ID.get(id).kind === 'booster';
@@ -1632,7 +1632,7 @@ const corridorEntry = (zone, fromZone) =>
   console.log('bioluminescence tests passed');
 }
 
-// --- Generators (zone 4): consume existing resources to make planks/kelp_rope/bread ---
+// --- Generators (zone 3, Timberline Coast): consume existing resources to make planks/kelp_rope/bread ---
 {
   const sawmill1 = TILES.find((t) => t.id === 'timberline_sawmill_1');
   const sawmill2 = TILES.find((t) => t.id === 'timberline_sawmill_2');
@@ -1713,7 +1713,7 @@ const corridorEntry = (zone, fromZone) =>
   // boosterIsIdle is decoupled from that throttled rate on purpose: a freshly-unlocked generator
   // with nothing to consume yet reports a real 0 rate above, but it isn't "idle" in the sense
   // this asks about -- it already exists and will produce as soon as its input income catches
-  // up, so a zone-4 booster must not report itself as idle in that state either.
+  // up, so a zone-3 booster must not report itself as idle in that state either.
   {
     const state = createInitialState();
     assert.equal(boosterIsIdle(state, toolShed), true, 'no planks source yet');
@@ -1722,15 +1722,15 @@ const corridorEntry = (zone, fromZone) =>
     assert.equal(boosterIsIdle(state, toolShed), false, 'a sawmill exists now, even fully throttled, so the booster is not idle');
   }
 
-  // Discovering zone 4 fires its own achievement, same pattern as zone 2/3.
+  // Discovering zone 3 fires its own achievement, same pattern as zones 2 and 4.
   {
     const state = createInitialState();
     state.unlocked.push(sawmill1.id);
     const awarded = checkAchievements(state).map((a) => a.id);
-    assert(awarded.includes('timberline-coast-discovered'), 'unlocking a zone-4 tile awards timberline-coast-discovered');
+    assert(awarded.includes('timberline-coast-discovered'), 'unlocking a zone-3 tile awards timberline-coast-discovered');
   }
 
-  console.log('zone 4 generator tests passed');
+  console.log('zone 3 generator tests passed');
 }
 
 // --- Blank bridge tiles: engine rules ---

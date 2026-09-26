@@ -8,8 +8,9 @@ const BASE_RESOURCES = ['fish', 'kelp', 'driftwood', 'crops'];
 // rows, baron/magnate lifetime achievements, and counting toward prestige tokens earned.
 export const GOODS = ['planks', 'kelp_rope', 'bread'];
 export const RESOURCES = [...BASE_RESOURCES, ...GOODS];
-// v2 is the map rework (blank bridges, 3-hex clusters): tile ids and layout changed, so a v1 save
-// can't be carried over. A new key leaves the old save untouched in storage rather than erasing it.
+// v2 is the map rework (blank bridges, 3-hex clusters): the map's layout, clusters and zones changed,
+// so a v1 save's unlocks and levels can't carry over. A new key leaves the old save untouched in
+// storage rather than erasing it.
 export const SAVE_KEY = 'driftaway_save_v2';
 const SAVE_VERSION = 2;
 
@@ -79,17 +80,17 @@ export function levelMultiplier(level) {
 }
 
 // The Abyssal Trench's mechanic (zone 4): one of its producers runs at half rate until one of its
-// boosters is unlocked next to it -- within two hexes, i.e. touching or one bridge tile apart, which
-// is as close as two clusters ever get (any of the six archetypes, not one dedicated tile: with only
-// one of each in the zone, a single light source would leave most of it permanently dim). Every
-// other tile (all of zones 1-3, and the trench's own boosters) is always "lit".
+// boosters is unlocked next to it -- within two hexes, which is as close as two clusters ever get
+// (any of the six archetypes, not one dedicated tile: with only one of each in the zone, a single
+// light source would leave most of it permanently dim). Every other tile (all of zones 1-3, and the
+// trench's own boosters) is always "lit".
 const DARKNESS_PENALTY = 0.5;
 export function isLit(tile, unlockedIds) {
   if (tile.zone !== 'zone4' || tile.kind !== 'producer') return true;
   return (TILE_NEARBY.get(tile.id) || []).some((id) => {
     if (!isUnlocked(unlockedIds, id)) return false;
-    const neighbor = TILE_BY_ID.get(id);
-    return neighbor?.zone === 'zone4' && neighbor.kind === 'booster';
+    const nearby = TILE_BY_ID.get(id);
+    return nearby?.zone === 'zone4' && nearby.kind === 'booster';
   });
 }
 function darknessFactor(tile, unlockedIds) {
@@ -785,8 +786,9 @@ export function saveState(state) {
   }
 }
 
-// Shared by loading from localStorage and importing a pasted code: fills a saved object in from the
-// defaults so saves from older versions keep working. Null when it doesn't look like a save at all.
+// Shared by loading from localStorage and importing a pasted code: fills a v2 save in from the
+// defaults, so any field it lacks gets its starting value. Null when it isn't a v2 save (any other
+// version, including every v1 save, is rejected) or doesn't look like a save at all.
 function normalizeSave(parsed) {
   const looksValid =
     parsed &&

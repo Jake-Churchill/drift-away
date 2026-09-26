@@ -17,7 +17,7 @@ For exact costs, `js/tiles.js` is authoritative; the tables below are not update
 - **Biomes.** A biome is a seeded, compact-but-ragged blob of 36 slots. Blanks inside it are a shortest-path tree from its entry slot plus 6 loop edges. Centres in slot coordinates: Home Waters (0,0), Frozen Reach (4,-8) north, Timberline (-8,0) west, Abyssal Trench (12,-8) east of Frozen Reach. Corridors of blanks (4, 4 and 5) join Home Waters to Frozen Reach and Timberline, and Frozen Reach to the Abyssal Trench; each corridor's blanks belong to the zone being entered. The Abyssal Trench has no hex within two of Home Waters.
 - **Blank costs (flat per zone).** Home Waters `{driftwood: 12}`; Frozen Reach `{driftwood: 1200, crops: 800}`; Timberline `{driftwood: 1800, crops: 1200, kelp: 900}`; Abyssal `{planks: 60, kelp_rope: 40}`. Leaving Home Waters costs zone-1 resources; the trench costs Timberline's goods.
 - **Cluster costs.** Home Waters and Frozen Reach are unchanged (Frozen Reach is still ×90 cost / ×4 rate of its `frozen_<id>` mirror). Timberline clusters cost base resources only: rings 1–3 as before, rings 4–6 (once priced in planks/kelp_rope/bread) continue the curve (`rate × 960 / 2500 / 6500`, split 60/40 driftwood/second input; boosters 2240 / 8960 / 35840 driftwood). Abyssal cost-gated clusters keep their base costs and add `planks = total/1500`, `kelp_rope = 0.7 × planks` (2 significant digits); milestone-gated ones stay milestone-only. All first-pass, unsimulated.
-- **Bioluminescence.** "A booster next to it" means within two hexes (`TILE_NEARBY`): touching, or one bridge apart.
+- **Bioluminescence.** "A booster next to it" means within two hexes (`TILE_NEARBY`: every tile with a cell within two hexes of one of the producer's cells).
 - **Head start.** Grants N clusters (skipping idle boosters) plus whatever blanks are needed to reach them, free.
 - **Tests.** `tests/economy.test.mjs` pins the counts, the cluster shape (3 mutually-adjacent cells), that no cluster touches another, full reachability from the start, that the Abyssal Trench is unreachable without Frozen Reach, the per-zone blank costs and the changed cluster costs. `tests/hex.test.mjs` covers the hex helpers and `buildTileIndex`.
 
@@ -69,15 +69,16 @@ fixed ratio, preserving the conversion) scales `1.6^(ring-1)`×. First-pass, not
 
 **planks/kelp_rope/bread follow exactly the same rules as the base 4**, exported as `GOODS` in
 `js/state.js` and folded into `RESOURCES` itself (not kept as a separate layer, which is how they
-started — see the design doc's history): main HUD bar with a rate line from the start, a prestige
-upgrade row, baron/magnate lifetime achievements, and they count toward prestige tokens earned.
+started — see the design doc's history): main HUD bar with a rate line (since v1.7.2 every
+resource cell, goods included, stays hidden until the first unit of that resource is earned), a
+prestige upgrade row, baron/magnate lifetime achievements, and they count toward prestige tokens earned.
 `resourceLabel`/`resourceTitle` turn `kelp_rope` into `kelp rope`/`Kelp Rope` wherever a resource
 name is shown as text, since it's the one multi-word resource name in the game.
 
 When several unlocked generators draw on the same scarce input, each is throttled by the same
 proportional factor (not first-come-first-served) so the shared pool never goes negative; a
 generator with two inputs is capped by whichever is scarcer. See `applyGenerators` in
-`js/state.js` and the "Generators (zone 4)" tests in `tests/economy.test.mjs`.
+`js/state.js` and the "Generators (zone 3, Timberline Coast)" tests in `tests/economy.test.mjs`.
 
 Zone 4 is entered through the row 0 / row -1 border (zone 1's own north edge) — the same hex
 adjacency rule as every other zone border, just row-wise instead of column-wise. Unlike zone 2/3,

@@ -123,20 +123,28 @@ export function createEffects(scene, tileObjects, getClock) {
     });
   }
 
-  // A level-up bounces the new props in place.
+  // A level-up bounces the new props in place. Each cell's prop group pops about its own base on the
+  // deck (scaling the whole level group would sink the props of a cluster and spread them apart).
+  // scene.js froze their matrices, so each scale change is followed by updateMatrix().
   function pop(group, intensity) {
-    const base = group.scale.clone();
+    const parts = group.children.map((child) => ({ child, base: child.scale.clone() }));
     const start = getClock();
     const amount = 0.2 + 0.25 * intensity;
     active.push(() => {
       const t = (getClock() - start) / POP_SECONDS;
       if (t >= 1) {
-        group.scale.copy(base);
+        for (const { child, base } of parts) {
+          child.scale.copy(base);
+          child.updateMatrix();
+        }
         return false;
       }
       const sy = 1 + amount * wobble(t);
       const sxz = 1 / Math.sqrt(sy);
-      group.scale.set(base.x * sxz, base.y * sy, base.z * sxz);
+      for (const { child, base } of parts) {
+        child.scale.set(base.x * sxz, base.y * sy, base.z * sxz);
+        child.updateMatrix();
+      }
       return true;
     });
   }

@@ -801,8 +801,8 @@ function buildBoosterProp(group, tileId, level) {
 }
 
 // Props never move on their own, so their local matrices are composed once here rather than every
-// frame (the scene is tens of thousands of nodes at full unlock). The group itself stays animatable:
-// effects.js pops it on a level-up, and the tile's raft group is lifted as a unit when it appears.
+// frame (the scene is tens of thousands of nodes at full unlock). The group itself stays animatable;
+// effects.js pops its per-cell children on a level-up and recomposes their matrices itself.
 function freezeStatic(group) {
   group.traverse((node) => {
     node.updateMatrix();
@@ -974,7 +974,7 @@ function buildMarkerMesh(tile, offsets) {
 
 // Open sea kept beyond the outermost tile on every side, so the water never runs out before the
 // fog does.
-const WATER_MARGIN = 40;
+const WATER_MARGIN = 120;
 
 // The plane is sized once at scene build time from the whole map, so it stays correct however far
 // the map reaches.
@@ -1053,6 +1053,8 @@ export const CAMERA_OFFSET = new THREE.Vector3(14, 16, 14);
 export const BASE_VIEW_HALF = 12;
 export const MIN_VIEW_HALF = 7;
 export const MAX_VIEW_HALF = 26;
+// How far past the outermost tile the camera target may be panned.
+export const PAN_MARGIN = 10;
 export const FOG_NEAR = 36;
 export const FOG_FAR = 60;
 
@@ -1144,11 +1146,12 @@ export function buildScene(canvas) {
   }
 
   // The cloud field only needs to exist where the camera can look. It can be panned anywhere over
-  // the map, so sample ground points across the whole map at a spacing well inside the view.
+  // the map (and PAN_MARGIN past it), so sample ground points across that whole range at a spacing
+  // well inside the view.
   const viewTargets = [];
   const TARGET_STEP = 12;
-  for (let x = bounds.minX; x <= bounds.maxX + TARGET_STEP; x += TARGET_STEP) {
-    for (let z = bounds.minZ; z <= bounds.maxZ + TARGET_STEP; z += TARGET_STEP) viewTargets.push(new THREE.Vector3(x, 0, z));
+  for (let x = bounds.minX - PAN_MARGIN; x <= bounds.maxX + PAN_MARGIN + TARGET_STEP; x += TARGET_STEP) {
+    for (let z = bounds.minZ - PAN_MARGIN; z <= bounds.maxZ + PAN_MARGIN + TARGET_STEP; z += TARGET_STEP) viewTargets.push(new THREE.Vector3(x, 0, z));
   }
 
   const zoneTileCenters = new Map(

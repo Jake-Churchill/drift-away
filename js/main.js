@@ -240,14 +240,15 @@ let drag = null;
 let suppressClick = false;
 
 canvas.addEventListener('pointerdown', (event) => {
-  if (event.button !== 0) return;
+  // Only the first finger drags; a second one mustn't restart the drag from its own position.
+  if (event.button !== 0 || drag) return;
   suppressClick = false;
-  drag = { x: event.clientX, y: event.clientY, moved: false };
+  drag = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false };
   canvas.setPointerCapture(event.pointerId);
 });
 
 canvas.addEventListener('pointermove', (event) => {
-  if (!drag) return;
+  if (!drag || event.pointerId !== drag.id) return;
   const dx = event.clientX - drag.x;
   const dy = event.clientY - drag.y;
   if (!drag.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
@@ -257,8 +258,9 @@ canvas.addEventListener('pointermove', (event) => {
   drag.y = event.clientY;
 });
 
-function endDrag() {
-  if (drag?.moved) suppressClick = true;
+function endDrag(event) {
+  if (!drag || event.pointerId !== drag.id) return;
+  if (drag.moved) suppressClick = true;
   drag = null;
 }
 canvas.addEventListener('pointerup', endDrag);
