@@ -2,9 +2,9 @@ import * as THREE from 'three';
 
 // ===================================================================
 // Ported from the approved preview-levels-3.html art prototype. Only mechanical changes were
-// made to fit this module: parameter names to match buildZone3Prop's signature, THREE imported
+// made to fit this module: parameter names to match buildAbyssalProp's signature, THREE imported
 // as a module, the prototype's own scene/layout/camera/label code dropped, and every producer's
-// `lit` build-time branch replaced with `track()` calls — a zone-3 producer can flip between dim
+// `lit` build-time branch replaced with `track()` calls — a zone-4 producer can flip between dim
 // and lit at any time as the player unlocks boosters near it (see isLit in js/state.js), so its
 // materials need to be toggleable at runtime, not baked in once at construction.
 // ===================================================================
@@ -36,7 +36,7 @@ function darkMat(color, rough = 0.8) {
 }
 
 // Registers a material (already built in its normal/lit appearance) so render.js's per-frame
-// darkness pass can toggle it for an unlit zone-3 producer, without rebuilding any geometry.
+// darkness pass can toggle it for an unlit zone-4 producer, without rebuilding any geometry.
 // `dim` is just the color (and, for glow materials, 0 emissiveIntensity reads as "not glowing").
 function track(propGroup, material, dim) {
   (propGroup.userData.darken || (propGroup.userData.darken = [])).push({

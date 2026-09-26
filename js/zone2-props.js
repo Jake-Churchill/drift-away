@@ -456,7 +456,7 @@ function buildDriftwoodProp(group, level) {
   }
 
   if (level >= 3) {
-    // A cluster of frozen crystal growth, the cold answer to zone 3's barnacles.
+    // A cluster of frozen crystal growth, the cold answer to zone 1's barnacles.
     const crystalMat = iceMat(0xc9ecf6, 0.9);
     for (const c of [{ x: 0.30, z: -0.24, h: 0.14 }, { x: 0.38, z: -0.16, h: 0.10 }, { x: 0.26, z: -0.14, h: 0.08 }]) {
       const crystal = buildShard(crystalMat, 0.04, c.h, 0.8);

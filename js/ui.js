@@ -34,7 +34,7 @@ const elements = {};
 
 // Gold isn't one of the produced RESOURCES, so nothing that iterates RESOURCES
 // picks it up — it's here only so the feedback popups can look up its icon the
-// same way they look up every resource icon (fish/kelp/driftwood/crops and zone 4's
+// same way they look up every resource icon (fish/kelp/driftwood/crops and zone 3's
 // planks/kelp_rope/bread, which are RESOURCES entries too and need no special-casing here).
 const RESOURCE_ICONS = { fish: '🐟', kelp: '🌿', driftwood: '🪵', crops: '🌾', gold: '🪙', planks: '🟫', kelp_rope: '🪢', bread: '🍞' };
 const TOKEN_ICON = '⭐';
@@ -331,8 +331,8 @@ function describeProduction(tile, state) {
     .join(', ');
 }
 
-// Zone 4's generators are throttled when demand for an input outruns the shared stock (see
-// applyGenerators in state.js) -- this is the same idea as zone 3's dim hint, but continuous
+// Zone 3's generators are throttled when demand for an input outruns the shared stock (see
+// applyGenerators in state.js) -- this is the same idea as zone 4's dim hint, but continuous
 // rather than a flat on/off penalty, so it's reported as a shortfall rather than "halved".
 function starvedHint(tile, state) {
   if (tile.kind !== 'generator' || !state.unlocked.includes(tile.id)) return '';

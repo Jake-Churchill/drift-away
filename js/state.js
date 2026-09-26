@@ -3,7 +3,7 @@ import { ZONES } from './zones.js';
 import { PALETTES } from './palettes.js';
 
 const BASE_RESOURCES = ['fish', 'kelp', 'driftwood', 'crops'];
-// Zone 4's own resources. Folded into RESOURCES (not kept separate) so they follow the exact same
+// Zone 3's own resources. Folded into RESOURCES (not kept separate) so they follow the exact same
 // rules as the base 4 everywhere that iterates RESOURCES: HUD bar + rate line, prestige upgrade
 // rows, baron/magnate lifetime achievements, and counting toward prestige tokens earned.
 export const GOODS = ['planks', 'kelp_rope', 'bread'];
@@ -107,7 +107,7 @@ export function rateBreakdown(state, resource) {
   let boostPercent = 0;
   const boosters = [];
   // Computed once (not per-tile below): resolves the scarcity throttle every unlocked generator
-  // is currently running at, so a zone-4 resource's HUD rate reflects actual current income, not
+  // is currently running at, so a zone-3 resource's HUD rate reflects actual current income, not
   // the unthrottled capacity. The generator's own boost is applied to `base` below just like a
   // producer's darkness factor is, and the *same* boost is folded into `total` again via
   // `boostPercent` -- fine, since generatorThrottle/generatorScarcityFactors don't themselves
@@ -619,7 +619,7 @@ export function offlineRate(state) {
   return OFFLINE_RATES[state.shop.tidesLevel];
 }
 
-// Zone 4's mechanic: a generator (kind 'generator') doesn't produce from nothing like every
+// Zone 3's mechanic: a generator (kind 'generator') doesn't produce from nothing like every
 // other tile -- it consumes existing resources to make a new one (planks/kelp_rope/bread). It
 // draws on the shared pool alongside everything else (unlocks, other generators), so if unlocked
 // generators together want more of an input than is in stock, every one of them drawing on that

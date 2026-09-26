@@ -75,7 +75,7 @@ const BADGE_ANCHOR_HEIGHT = {
   'zone2:frozen_booster_net_weavers': 0.6,
   'zone2:frozen_booster_composting_shed': 0.5,
   'zone2:frozen_booster_lighthouse': 1.75,
-  // Zone 3's redesigned props, measured the same way.
+  // Zone 4's redesigned props, measured the same way.
   'zone4:fish': 0.85,
   'zone4:kelp': 0.95,
   'zone4:driftwood': 0.45,
@@ -86,7 +86,7 @@ const BADGE_ANCHOR_HEIGHT = {
   'zone4:abyssal_booster_net_weavers': 0.4,
   'zone4:abyssal_booster_composting_shed': 0.6,
   'zone4:abyssal_booster_lighthouse': 1.0,
-  // Zone 4's generators/boosters, measured the same way (no zone-1 archetype to fall back to --
+  // Zone 3's generators/boosters, measured the same way (no zone-1 archetype to fall back to --
   // planks/kelp_rope/bread have no equivalent there).
   'zone3:planks': 1.1,
   'zone3:kelp_rope': 1.3,

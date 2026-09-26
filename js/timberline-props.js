@@ -1,10 +1,10 @@
 import * as THREE from 'three';
 
 // ===================================================================
-// Ported from the approved zone4-prototype.html art prototype. Zone 4 has no per-tile dim/lit
-// mechanic like zone 3's bioluminescence, so unlike zone3-props.js there's no track()/userData
+// Ported from the approved zone4-prototype.html art prototype. Zone 3 has no per-tile dim/lit
+// mechanic like zone 4's bioluminescence, so unlike abyssal-props.js there's no track()/userData
 // darken registration here -- materials are just built once in their final appearance.
-// `level` is accepted (matching buildZone2Prop/buildZone3Prop's signature) but unused: the
+// `level` is accepted (matching buildZone2Prop/buildAbyssalProp's signature) but unused: the
 // shared per-level scale-up and badge in scene.js's addProp already carry the level-up feedback,
 // the same way zone 1's original archetypes did before any zone needed its own per-level detail.
 // ===================================================================
