@@ -4,12 +4,9 @@ import { ZONES } from './zones.js';
 import { buildZone2Prop } from './zone2-props.js';
 import { buildAbyssalProp } from './abyssal-props.js';
 import { buildTimberlineProp } from './timberline-props.js';
-import { buildCloudField, resizeCloudField } from './clouds.js';
+import { buildCloudField } from './clouds.js';
 import { createFoamTexture, createWaterNormalTexture } from './textures.js';
 import { DEFAULT_PALETTE } from './palettes.js';
-
-export const GRID_ROWS = 6;
-export const GRID_COLS = 6;
 
 const HEX_RADIUS = 1.6;
 const HEX_WIDTH = Math.sqrt(3) * HEX_RADIUS;
@@ -20,7 +17,6 @@ const WALL_HEIGHT = 0.35;
 const ZONE_RAFT_COLOR = new Map(ZONES.map((z) => [z.id, z.raftColor]));
 const BOOSTER_TRIM = 0xe0b84b;
 const MARKER_COLOR = 0xbcd8e8;
-const CAMERA_FRUSTUM_HALF_SIZE = 12;
 const PROP_SCALE = 1.8;
 const BOOSTER_PROP_SCALE = 1.5;
 const LARGE_BOOSTER_IDS = new Set([
@@ -64,7 +60,7 @@ const BADGE_ANCHOR_HEIGHT = {
   // Zone 2's re-skinned props are taller/differently-proportioned than zone
   // 1's for several archetypes, so they need their own anchors rather than
   // falling back to the zone-1 values above (measured live per-archetype at
-  // level 3, the tallest case — see addProp's zone-qualified lookup).
+  // level 3, the tallest case — see buildLevelProps's zone-qualified lookup).
   'zone2:fish': 0.80,
   'zone2:kelp': 1.44,
   'zone2:driftwood': 0.60,
@@ -106,7 +102,7 @@ function addLevelBadge(propGroup, level, anchorHeight) {
   // Anchor is a per-archetype fixed height, not a computed bounding box: a
   // live Box3 badge anchor was prototyped and found to run away for tall
   // archetypes (e.g. the windmill) relative to short ones (fish/kelp).
-  // Must be called before propGroup.scale.setScalar(...) — see addProp
+  // Must be called before propGroup.scale.setScalar(...) — see buildLevelProps
   // below — so this local offset is the badge's correct final position
   // once the group's own scale is applied on top of it.
   const size = BADGE_SIZE[level];
@@ -134,22 +130,23 @@ function addOutline(mesh, scale, color) {
   return outline;
 }
 
-function gridBounds() {
-  return {
-    width: GRID_COLS * HEX_WIDTH + HEX_WIDTH / 2,
-    depth: (GRID_ROWS - 1) * ROW_SPACING + HEX_HEIGHT,
-  };
+function hexLocalPosition(row, col) {
+  // row % 2 === 1 silently breaks for negative rows (JS's % keeps the sign of the dividend, so
+  // -1 % 2 is -1, not 1) -- the map reaches well into negative rows, so this checks oddness, not
+  // equality to positive 1, or every odd-numbered row up there renders at the wrong horizontal offset.
+  const isOddRow = row % 2 !== 0;
+  return { x: col * HEX_WIDTH + (isOddRow ? HEX_WIDTH / 2 : 0), z: row * ROW_SPACING };
 }
 
-function hexLocalPosition(row, col) {
-  const bounds = gridBounds();
-  // row % 2 === 1 silently breaks for negative rows (JS's % keeps the sign of the dividend, so
-  // -1 % 2 is -1, not 1) -- zone 4 sits at rows -6..-1, so this must check oddness, not equality
-  // to positive 1, or every odd-numbered row up there renders at the wrong horizontal offset.
-  const isOddRow = row % 2 !== 0;
-  const x = col * HEX_WIDTH + (isOddRow ? HEX_WIDTH / 2 : 0) + HEX_WIDTH / 2 - bounds.width / 2;
-  const z = row * ROW_SPACING + HEX_HEIGHT / 2 - bounds.depth / 2;
-  return { x, z };
+// Where a tile's cells sit in the world, and the point they average to. A tile's groups are placed
+// at that centre, with each cell offset from it, so scaling or lifting a group moves the whole tile.
+function tileCells(tile) {
+  const world = tile.cells.map((c) => hexLocalPosition(c.row, c.col));
+  const center = {
+    x: world.reduce((sum, p) => sum + p.x, 0) / world.length,
+    z: world.reduce((sum, p) => sum + p.z, 0) / world.length,
+  };
+  return { center, world, offsets: world.map((p) => ({ dx: p.x - center.x, dz: p.z - center.z })) };
 }
 
 function hexShape(radius) {
@@ -803,11 +800,26 @@ function buildBoosterProp(group, tileId, level) {
   }
 }
 
-function addProp(raftMesh, tile) {
-  const propGroups = {};
-  for (const level of [1, 2, 3]) {
+// Props never move on their own, so their local matrices are composed once here rather than every
+// frame (the scene is tens of thousands of nodes at full unlock). The group itself stays animatable:
+// effects.js pops it on a level-up, and the tile's raft group is lifted as a unit when it appears.
+function freezeStatic(group) {
+  group.traverse((node) => {
+    node.updateMatrix();
+    if (node !== group) node.matrixAutoUpdate = false;
+  });
+}
+
+// One tile's props at one level: an instance of the archetype's prop on every cell the tile covers
+// (a cluster is three rafts, each carrying the same building). Built on demand, only for tiles that
+// are unlocked and only for the level they are at, so the scene holds a fraction of what building
+// every level of every tile up front would.
+function buildLevelProps(tile, level, offsets) {
+  const levelGroup = new THREE.Group();
+  const darken = [];
+  for (const { dx, dz } of offsets) {
     const propGroup = new THREE.Group();
-    propGroup.position.y = WALL_HEIGHT;
+    propGroup.position.set(dx, WALL_HEIGHT, dz);
     if (tile.zone === 'zone2') {
       buildZone2Prop(propGroup, tile, level);
     } else if (tile.zone === 'zone3') {
@@ -829,113 +841,156 @@ function addProp(raftMesh, tile) {
     addLevelBadge(propGroup, level, anchorHeight);
     const extraScale = LARGE_BOOSTER_IDS.has(tile.id) ? BOOSTER_PROP_SCALE : 1;
     propGroup.scale.setScalar(PROP_SCALE * extraScale * LEVEL_SCALE[level]);
-    propGroup.visible = level === 1;
-    raftMesh.add(propGroup);
-    propGroups[level] = propGroup;
+    levelGroup.add(propGroup);
+    darken.push(...(propGroup.userData.darken || []));
   }
-  return propGroups;
+  levelGroup.userData.darken = darken;
+  freezeStatic(levelGroup);
+  return levelGroup;
 }
 
-function buildRaftMesh(tile) {
-  const raftGeometry = new THREE.ExtrudeGeometry(hexShape(HEX_RADIUS), {
+// Every raft cell is the same hex; the geometry is built once and shared by all of them.
+const RAFT_GEOMETRY = (() => {
+  const geometry = new THREE.ExtrudeGeometry(hexShape(HEX_RADIUS), {
     depth: WALL_HEIGHT,
     bevelEnabled: true,
     bevelThickness: 0.05,
     bevelSize: 0.04,
     bevelSegments: 2,
   });
-  raftGeometry.rotateX(-Math.PI / 2);
+  geometry.rotateX(-Math.PI / 2);
+  return geometry;
+})();
 
-  const raftMaterial = new THREE.MeshStandardMaterial({ color: ZONE_RAFT_COLOR.get(tile.zone), roughness: 0.85, metalness: 0.05 });
-  const raftMesh = new THREE.Mesh(raftGeometry, raftMaterial);
-  raftMesh.castShadow = true;
-  raftMesh.receiveShadow = true;
-  raftMesh.userData.tileId = tile.id;
-
-  let trimMeshes = null;
-  if (tile.kind === 'booster') {
-    trimMeshes = {};
-    for (const level of [1, 2, 3]) {
-      const trimGeometry = new THREE.TorusGeometry(HEX_RADIUS * 0.92, TRIM_THICKNESS[level], 8, 24);
-      const trimMaterial = new THREE.MeshStandardMaterial({
+const TRIM_PARTS = {};
+function trimParts(level) {
+  if (!TRIM_PARTS[level]) {
+    TRIM_PARTS[level] = {
+      geometry: new THREE.TorusGeometry(HEX_RADIUS * 0.92, TRIM_THICKNESS[level], 8, 24),
+      material: new THREE.MeshStandardMaterial({
         color: TRIM_COLOR[level],
         roughness: 0.4,
         metalness: 0.3,
         emissive: level === 3 ? 0x664400 : 0x000000,
         emissiveIntensity: level === 3 ? 0.4 : 0,
-      });
-      const trim = new THREE.Mesh(trimGeometry, trimMaterial);
-      trim.rotation.x = Math.PI / 2;
-      trim.position.y = WALL_HEIGHT + 0.01;
-      trim.userData.tileId = tile.id;
-      trim.visible = level === 1;
-      raftMesh.add(trim);
-      trimMeshes[level] = trim;
+      }),
+    };
+  }
+  return TRIM_PARTS[level];
+}
+
+// Blank bridges wear their zone's colour a little paler than the clusters, so a walkway reads as
+// ground between buildings rather than as one more building.
+const BLANK_LIGHTEN = 0.22;
+function raftColor(tile) {
+  const color = new THREE.Color(ZONE_RAFT_COLOR.get(tile.zone));
+  return tile.kind === 'blank' ? color.lerp(new THREE.Color(0xffffff), BLANK_LIGHTEN) : color;
+}
+
+// One group per tile, positioned at the tile's centre, holding a raft hex per cell (plus each
+// cell's props and trim). effects.js lifts and scales that group as a unit when the tile appears.
+function buildRaftMesh(tile, offsets) {
+  const raftMesh = new THREE.Group();
+  const raftMaterial = new THREE.MeshStandardMaterial({ color: raftColor(tile), roughness: 0.85, metalness: 0.05 });
+  const raftCells = offsets.map(({ dx, dz }) => {
+    const cell = new THREE.Mesh(RAFT_GEOMETRY, raftMaterial);
+    cell.position.set(dx, 0, dz);
+    cell.castShadow = true;
+    cell.receiveShadow = true;
+    cell.userData.tileId = tile.id;
+    raftMesh.add(cell);
+    return cell;
+  });
+
+  let trimMeshes = null;
+  if (tile.kind === 'booster') {
+    trimMeshes = {};
+    for (const level of [1, 2, 3]) {
+      const trims = new THREE.Group();
+      const { geometry, material } = trimParts(level);
+      for (const { dx, dz } of offsets) {
+        const trim = new THREE.Mesh(geometry, material);
+        trim.rotation.x = Math.PI / 2;
+        trim.position.set(dx, WALL_HEIGHT + 0.01, dz);
+        trim.userData.tileId = tile.id;
+        trims.add(trim);
+      }
+      trims.visible = level === 1;
+      raftMesh.add(trims);
+      trimMeshes[level] = trims;
     }
   }
 
-  const propGroups = addProp(raftMesh, tile);
-  return { raftMesh, propGroups, trimMeshes };
+  // propGroups[level] exists once that level has been asked for. A blank has no prop, so its groups
+  // are empty ones (render.js and effects.js still treat every tile the same way).
+  const propGroups = {};
+  const ensureProps = (level) => {
+    if (!propGroups[level]) {
+      const group = tile.kind === 'blank' ? new THREE.Group() : buildLevelProps(tile, level, offsets);
+      group.userData.darken ||= [];
+      group.visible = false;
+      raftMesh.add(group);
+      propGroups[level] = group;
+    }
+    return propGroups[level];
+  };
+  return { raftMesh, raftCells, propGroups, ensureProps, trimMeshes };
 }
 
-function buildMarkerMesh(tile) {
-  // Invisible filled hex, sized to cover the whole tile area — this is what
-  // gets raycast-tested, so clicking anywhere inside a locked tile registers,
-  // not just near its visible outline (a LineLoop alone would only be
-  // hit-testable in a thin ring near the edge, per THREE.Raycaster's line
-  // threshold — that would regress the original full-hex clickable area).
-  const hitGeometry = new THREE.ShapeGeometry(hexShape(HEX_RADIUS));
-  hitGeometry.rotateX(-Math.PI / 2);
-  // DoubleSide: ShapeGeometry's face winding after rotateX isn't hand-verified here,
-  // and a raycast against a FrontSide-only mesh silently misses back-facing triangles —
-  // DoubleSide guarantees this invisible hit-plane always registers clicks regardless.
-  const hitMaterial = new THREE.MeshBasicMaterial({
-    transparent: true,
-    opacity: 0,
-    depthWrite: false,
-    side: THREE.DoubleSide,
-  });
-  const markerMesh = new THREE.Mesh(hitGeometry, hitMaterial);
-  markerMesh.position.y = 0.02;
-  markerMesh.userData.tileId = tile.id;
+// Invisible filled hexes, one per cell, sized to cover the whole cell -- these are what get
+// raycast-tested, so clicking anywhere inside a locked tile registers, not just near its visible
+// outline (a LineLoop alone would only be hit-testable in a thin ring near the edge, per
+// THREE.Raycaster's line threshold). DoubleSide because ShapeGeometry's face winding after rotateX
+// isn't hand-verified, and a raycast against a FrontSide-only mesh silently misses back faces.
+const MARKER_HIT_GEOMETRY = (() => {
+  const geometry = new THREE.ShapeGeometry(hexShape(HEX_RADIUS));
+  geometry.rotateX(-Math.PI / 2);
+  return geometry;
+})();
+const MARKER_HIT_MATERIAL = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide });
+const MARKER_OUTLINE_GEOMETRY = new THREE.BufferGeometry().setFromPoints(hexOutlinePoints(HEX_RADIUS));
+const MARKER_BUOY_GEOMETRY = new THREE.SphereGeometry(0.06, 8, 8);
+const MARKER_BUOY_MATERIAL = new THREE.MeshBasicMaterial({ color: MARKER_COLOR, transparent: true, opacity: 0.6 });
 
+function buildMarkerMesh(tile, offsets) {
+  const markerMesh = new THREE.Group();
   const outlineMaterial = new THREE.LineBasicMaterial({ color: MARKER_COLOR, transparent: true, opacity: 0.35 });
-  const outline = new THREE.LineLoop(
-    new THREE.BufferGeometry().setFromPoints(hexOutlinePoints(HEX_RADIUS)),
-    outlineMaterial
-  );
-  markerMesh.add(outline);
-
-  const buoy = new THREE.Mesh(
-    new THREE.SphereGeometry(0.06, 8, 8),
-    new THREE.MeshBasicMaterial({ color: MARKER_COLOR, transparent: true, opacity: 0.6 })
-  );
+  const markerCells = offsets.map(({ dx, dz }) => {
+    const hit = new THREE.Mesh(MARKER_HIT_GEOMETRY, MARKER_HIT_MATERIAL);
+    hit.position.set(dx, 0.02, dz);
+    hit.userData.tileId = tile.id;
+    hit.add(new THREE.LineLoop(MARKER_OUTLINE_GEOMETRY, outlineMaterial));
+    markerMesh.add(hit);
+    return hit;
+  });
+  const buoy = new THREE.Mesh(MARKER_BUOY_GEOMETRY, MARKER_BUOY_MATERIAL);
+  buoy.position.y = 0.02;
   markerMesh.add(buoy);
 
   markerMesh.userData.outlineMaterial = outlineMaterial;
   markerMesh.userData.baseColor = MARKER_COLOR;
-  return markerMesh;
+  return { markerMesh, markerCells };
 }
 
 // Open sea kept beyond the outermost tile on every side, so the water never runs out before the
-// fog does. Tuned against zone 1 alone (whose ~18-unit-wide grid it dwarfed) and still generous
-// once applied around the whole multi-zone map instead of just one zone's box.
+// fog does.
 const WATER_MARGIN = 40;
 
-// The map only ever grows by appending zones to the right (see ZONES), so a plane sized once at
-// scene build time from the *current* TILES stays correct after the next zone is added -- no
-// separate update needed then, same as the cloud field already does.
+// The plane is sized once at scene build time from the whole map, so it stays correct however far
+// the map reaches.
 function worldTileBounds() {
   let minX = Infinity;
   let maxX = -Infinity;
   let minZ = Infinity;
   let maxZ = -Infinity;
   for (const tile of TILES) {
-    const { x, z } = hexLocalPosition(tile.cells[0].row, tile.cells[0].col);
-    minX = Math.min(minX, x);
-    maxX = Math.max(maxX, x);
-    minZ = Math.min(minZ, z);
-    maxZ = Math.max(maxZ, z);
+    for (const cell of tile.cells) {
+      const { x, z } = hexLocalPosition(cell.row, cell.col);
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x);
+      minZ = Math.min(minZ, z);
+      maxZ = Math.max(maxZ, z);
+    }
   }
   return { minX, maxX, minZ, maxZ };
 }
@@ -972,9 +1027,9 @@ function buildWater(anisotropy, width, depth, centerX, centerZ) {
   return { waterMesh, waterUniforms };
 }
 
-// One instance per tile; render.js places and scales each one every frame, so a raft that
-// isn't unlocked yet gets a zero-scale (invisible) ring.
-function buildFoam(anisotropy) {
+// One instance per cell; render.js places and scales each one every frame, so a raft that isn't
+// unlocked yet gets a zero-scale (invisible) ring.
+function buildFoam(anisotropy, cellCount) {
   const foamGeometry = new THREE.PlaneGeometry(4.1, 4.1);
   foamGeometry.rotateX(-Math.PI / 2);
   const foamMaterial = new THREE.MeshBasicMaterial({
@@ -983,33 +1038,62 @@ function buildFoam(anisotropy) {
     opacity: 0.55,
     depthWrite: false,
   });
-  const foamMesh = new THREE.InstancedMesh(foamGeometry, foamMaterial, TILES.length);
+  const foamMesh = new THREE.InstancedMesh(foamGeometry, foamMaterial, cellCount);
   const hidden = new THREE.Matrix4().makeScale(0, 0, 0);
-  for (let i = 0; i < TILES.length; i++) foamMesh.setMatrixAt(i, hidden);
+  for (let i = 0; i < cellCount; i++) foamMesh.setMatrixAt(i, hidden);
   foamMesh.renderOrder = 1;
   foamMesh.frustumCulled = false;
   return foamMesh;
 }
 
-function updateCameraFrustum(camera, width, height) {
+// The camera looks at a ground point from a fixed direction. `half` is the frustum's half-height in
+// world units (zoom); the camera also backs off in proportion, so the near/far planes and the fog
+// (see FOG_NEAR/FOG_FAR) keep covering the same share of the view at every zoom.
+export const CAMERA_OFFSET = new THREE.Vector3(14, 16, 14);
+export const BASE_VIEW_HALF = 12;
+export const MIN_VIEW_HALF = 7;
+export const MAX_VIEW_HALF = 26;
+export const FOG_NEAR = 36;
+export const FOG_FAR = 60;
+
+export function frameCamera(camera, width, height, half) {
   const aspect = width / height;
-  camera.left = -CAMERA_FRUSTUM_HALF_SIZE * aspect;
-  camera.right = CAMERA_FRUSTUM_HALF_SIZE * aspect;
-  camera.top = CAMERA_FRUSTUM_HALF_SIZE;
-  camera.bottom = -CAMERA_FRUSTUM_HALF_SIZE;
+  const scale = half / BASE_VIEW_HALF;
+  camera.left = -half * aspect;
+  camera.right = half * aspect;
+  camera.top = half;
+  camera.bottom = -half;
   camera.near = 0.1;
-  camera.far = 100;
+  camera.far = 100 * scale;
   camera.updateProjectionMatrix();
+}
+
+const SUN_OFFSET = new THREE.Vector3(10, 16, 6);
+const SUN_SHADOW_HALF = 16;
+
+// Keeps the sun (and so the shadows) over whatever the camera is looking at, at any zoom.
+export function aimSun(sun, target, half) {
+  const scale = half / BASE_VIEW_HALF;
+  sun.target.position.copy(target);
+  sun.position.copy(target).addScaledVector(SUN_OFFSET, scale);
+  const shadowCamera = sun.shadow.camera;
+  const size = SUN_SHADOW_HALF * scale;
+  if (shadowCamera.right !== size) {
+    shadowCamera.left = -size;
+    shadowCamera.right = size;
+    shadowCamera.top = size;
+    shadowCamera.bottom = -size;
+    shadowCamera.far = 40 * scale;
+    shadowCamera.updateProjectionMatrix();
+  }
 }
 
 export function buildScene(canvas) {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(DEFAULT_PALETTE.background);
-  scene.fog = new THREE.Fog(DEFAULT_PALETTE.background, 36, 60);
+  scene.fog = new THREE.Fog(DEFAULT_PALETTE.background, FOG_NEAR, FOG_FAR);
 
   const camera = new THREE.OrthographicCamera();
-  camera.position.set(14, 16, 14);
-  camera.lookAt(0, 0, 0);
 
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -1019,16 +1103,12 @@ export function buildScene(canvas) {
   scene.add(new THREE.AmbientLight(0xbcd8e8, 0.55));
 
   const sun = new THREE.DirectionalLight(0xfff4d6, 1.4);
-  sun.position.set(10, 16, 6);
   sun.castShadow = true;
   sun.shadow.mapSize.set(1024, 1024);
-  sun.shadow.camera.left = -16;
-  sun.shadow.camera.right = 16;
-  sun.shadow.camera.top = 16;
-  sun.shadow.camera.bottom = -16;
   sun.shadow.camera.near = 1;
-  sun.shadow.camera.far = 40;
   scene.add(sun);
+  scene.add(sun.target);
+  aimSun(sun, new THREE.Vector3(), BASE_VIEW_HALF);
 
   const anisotropy = renderer.capabilities.getMaxAnisotropy();
   const bounds = worldTileBounds();
@@ -1040,92 +1120,63 @@ export function buildScene(canvas) {
     (bounds.maxZ + bounds.minZ) / 2
   );
   scene.add(waterMesh);
-  const foamMesh = buildFoam(anisotropy);
+  const cellCount = TILES.reduce((sum, t) => sum + t.cells.length, 0);
+  const foamMesh = buildFoam(anisotropy, cellCount);
   scene.add(foamMesh);
 
   const tileObjects = new Map();
+  let foamStart = 0;
   for (const tile of TILES) {
-    const { x, z } = hexLocalPosition(tile.cells[0].row, tile.cells[0].col);
+    const { center, world, offsets } = tileCells(tile);
 
-    const { raftMesh, propGroups, trimMeshes } = buildRaftMesh(tile);
-    raftMesh.position.set(x, 0, z);
+    const { raftMesh, raftCells, propGroups, ensureProps, trimMeshes } = buildRaftMesh(tile, offsets);
+    raftMesh.position.set(center.x, 0, center.z);
     raftMesh.visible = false;
     scene.add(raftMesh);
 
-    const markerMesh = buildMarkerMesh(tile);
-    markerMesh.position.x = x;
-    markerMesh.position.z = z;
+    const { markerMesh, markerCells } = buildMarkerMesh(tile, offsets);
+    markerMesh.position.set(center.x, 0, center.z);
     markerMesh.visible = false;
     scene.add(markerMesh);
 
-    tileObjects.set(tile.id, { raftMesh, markerMesh, propGroups, trimMeshes });
+    tileObjects.set(tile.id, { raftMesh, markerMesh, raftCells, markerCells, propGroups, ensureProps, trimMeshes, cellWorld: world, foamStart });
+    foamStart += world.length;
   }
 
-  const CAMERA_OFFSET = new THREE.Vector3(14, 16, 14);
-  const cameraPositions = new Map();
-  for (const zone of ZONES) {
-    if (zone.id === 'zone1') {
-      // Keep zone 1's camera exactly as it is today — an averaged centroid
-      // would land very close to (0,0,0) but not exactly, and there's no
-      // reason to risk a tiny shift to the one framing players already know.
-      cameraPositions.set('zone1', { position: new THREE.Vector3(14, 16, 14), target: new THREE.Vector3(0, 0, 0) });
-      continue;
-    }
-    const zoneTiles = TILES.filter((t) => t.zone === zone.id);
-    const center = new THREE.Vector3();
-    for (const tile of zoneTiles) {
-      const { x, z } = hexLocalPosition(tile.cells[0].row, tile.cells[0].col);
-      center.x += x;
-      center.z += z;
-    }
-    center.divideScalar(zoneTiles.length);
-    cameraPositions.set(zone.id, { position: center.clone().add(CAMERA_OFFSET), target: center });
+  // The cloud field only needs to exist where the camera can look. It can be panned anywhere over
+  // the map, so sample ground points across the whole map at a spacing well inside the view.
+  const viewTargets = [];
+  const TARGET_STEP = 12;
+  for (let x = bounds.minX; x <= bounds.maxX + TARGET_STEP; x += TARGET_STEP) {
+    for (let z = bounds.minZ; z <= bounds.maxZ + TARGET_STEP; z += TARGET_STEP) viewTargets.push(new THREE.Vector3(x, 0, z));
   }
 
   const zoneTileCenters = new Map(
     ZONES.map((zone) => [
       zone.id,
-      TILES.filter((t) => t.zone === zone.id).map((t) => {
-        const { x, z } = tileObjects.get(t.id).raftMesh.position;
-        return { id: t.id, x, z };
-      }),
+      TILES.filter((t) => t.zone === zone.id).flatMap((t) => tileObjects.get(t.id).cellWorld.map((c) => ({ id: t.id, x: c.x, z: c.z }))),
     ])
   );
-  // Every zone borders the previous one in ZONES order (reached by sailing along that chain) --
-  // except zone 4, which branches off zone 1's north edge directly. A future zone that similarly
-  // branches off an existing zone rather than extending the chain needs its own edge added here,
-  // so the cloud field's "can this point ever be seen" sampling covers every sail the "next
-  // unlock" shortcut can actually trigger, not just consecutive-zone sails.
-  const sailEdges = [['zone1', 'zone2'], ['zone1', 'zone3'], ['zone2', 'zone4']].map(([a, b]) => [
-    cameraPositions.get(a).target,
-    cameraPositions.get(b).target,
-  ]);
 
   const cloudField = buildCloudField({
     zoneIds: ZONES.map((zone) => zone.id),
     zoneTiles: zoneTileCenters,
     landRadius: HEX_RADIUS,
-    viewHalfHeight: CAMERA_FRUSTUM_HALF_SIZE,
-    sailEdges,
+    viewHalfHeight: MAX_VIEW_HALF,
+    viewTargets,
     cameraOffset: CAMERA_OFFSET,
   });
-
-  function resize(width, height) {
-    updateCameraFrustum(camera, width, height);
-    renderer.setSize(width, height, false);
-    resizeCloudField(renderer, cloudField);
-  }
 
   return {
     renderer,
     scene,
     camera,
-    resize,
+    sun,
     waterMesh,
     waterUniforms,
     foamMesh,
     tileObjects,
-    cameraPositions,
+    worldBounds: bounds,
     cloudField,
   };
 }

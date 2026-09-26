@@ -26,9 +26,10 @@ import {
 import {
   initScene,
   updateScene,
-  screenToGrid,
-  sailToZone,
-  getCurrentZone,
+  pickTile,
+  panByPixels,
+  zoomBy,
+  flyToTile,
   resetCamera,
   playLevelUpImpact,
   playUnlockImpact,
@@ -69,9 +70,9 @@ function spent(cost) {
   return Object.fromEntries(Object.entries(cost).map(([resource, amount]) => [resource, -amount]));
 }
 
-// Takes the player to a tile: sail there if it's in the other zone, and open its panel.
+// Takes the player to a tile: glide the camera to it, and open its panel.
 function goToTile(tile) {
-  if (tile.zone !== getCurrentZone()) sailToZone(tile.zone);
+  flyToTile(tile.id);
   selectedTileId = tile.id;
   renderTilePanel(tile);
 }
@@ -233,23 +234,60 @@ function handleLevelUpClick(tile) {
   }
 }
 
-canvas.addEventListener('click', (event) => {
-  const rect = canvas.getBoundingClientRect();
-  const x = event.clientX - rect.left;
-  const y = event.clientY - rect.top;
-  const gridPos = screenToGrid(x, y, rect.width, rect.height);
+// Dragging the canvas pans the camera; a click that ends a drag must not also select a tile.
+const DRAG_THRESHOLD_PX = 5;
+let drag = null;
+let suppressClick = false;
 
-  if (!gridPos) {
-    selectedTileId = null;
-    hideTilePanel();
+canvas.addEventListener('pointerdown', (event) => {
+  if (event.button !== 0) return;
+  suppressClick = false;
+  drag = { x: event.clientX, y: event.clientY, moved: false };
+  canvas.setPointerCapture(event.pointerId);
+});
+
+canvas.addEventListener('pointermove', (event) => {
+  if (!drag) return;
+  const dx = event.clientX - drag.x;
+  const dy = event.clientY - drag.y;
+  if (!drag.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
+  drag.moved = true;
+  panByPixels(dx, dy);
+  drag.x = event.clientX;
+  drag.y = event.clientY;
+});
+
+function endDrag() {
+  if (drag?.moved) suppressClick = true;
+  drag = null;
+}
+canvas.addEventListener('pointerup', endDrag);
+canvas.addEventListener('pointercancel', endDrag);
+canvas.addEventListener('lostpointercapture', endDrag);
+
+canvas.addEventListener(
+  'wheel',
+  (event) => {
+    event.preventDefault();
+    zoomBy(Math.exp(event.deltaY * 0.0012));
+  },
+  { passive: false }
+);
+
+document.getElementById('zoom-in-btn').addEventListener('click', () => zoomBy(0.8));
+document.getElementById('zoom-out-btn').addEventListener('click', () => zoomBy(1.25));
+
+canvas.addEventListener('click', (event) => {
+  if (suppressClick) {
+    suppressClick = false;
     return;
   }
+  const rect = canvas.getBoundingClientRect();
+  const tile = pickTile(event.clientX - rect.left, event.clientY - rect.top, rect.width, rect.height);
 
-  const tile = TILES.find((t) => t.cells[0].row === gridPos.row && t.cells[0].col === gridPos.col);
-  if (!tile) return;
-
-  if (tile.zone !== getCurrentZone()) {
-    sailToZone(tile.zone);
+  if (!tile) {
+    selectedTileId = null;
+    hideTilePanel();
     return;
   }
 
@@ -261,10 +299,8 @@ canvas.addEventListener('click', (event) => {
 // (which does nothing while the tile isn't affordable yet).
 canvas.addEventListener('dblclick', (event) => {
   const rect = canvas.getBoundingClientRect();
-  const gridPos = screenToGrid(event.clientX - rect.left, event.clientY - rect.top, rect.width, rect.height);
-  if (!gridPos) return;
-  const tile = TILES.find((t) => t.cells[0].row === gridPos.row && t.cells[0].col === gridPos.col);
-  if (tile && tile.zone === getCurrentZone() && !state.unlocked.includes(tile.id)) handleUnlockClick(tile);
+  const tile = pickTile(event.clientX - rect.left, event.clientY - rect.top, rect.width, rect.height);
+  if (tile && !state.unlocked.includes(tile.id)) handleUnlockClick(tile);
 });
 
 let lastTickAt = Date.now();

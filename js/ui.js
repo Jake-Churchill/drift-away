@@ -40,6 +40,7 @@ const RESOURCE_ICONS = { fish: '🐟', kelp: '🌿', driftwood: '🪵', crops: '
 const TOKEN_ICON = '⭐';
 
 function tileIcon(tile) {
+  if (tile.kind === 'blank') return '\u2b21';
   if (tile.kind === 'producer' || tile.kind === 'generator') return RESOURCE_ICONS[tile.produces];
   return tile.boosts.map((b) => RESOURCE_ICONS[b.resource]).join('');
 }
@@ -378,6 +379,13 @@ export function showTilePanel(tile, state, eligible, onUnlock, onLevelUp) {
     elements.panelUnlockBtn.textContent = 'Unlock';
     elements.panelUnlockBtn.disabled = !eligible;
     elements.panelUnlockBtn.onclick = () => onUnlock(tile);
+    return;
+  }
+
+  if (tile.kind === 'blank') {
+    elements.panelDesc.textContent = 'A walkway between rafts. It makes nothing itself, but opens the way to the tiles beside it.';
+    elements.panelProgress.textContent = '';
+    elements.panelUnlockBtn.classList.add('hidden');
     return;
   }
 

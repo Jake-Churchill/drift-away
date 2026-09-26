@@ -152,7 +152,7 @@ export function createEffects(scene, tileObjects, getClock) {
     levelUp(tile, level, intensity) {
       const objects = tileObjects.get(tile.id);
       ring(objects.raftMesh.position, intensity);
-      pop(objects.propGroups[level], intensity);
+      pop(objects.ensureProps(level), intensity);
       sparks(objects.raftMesh.position, intensity * 0.6, 1.0);
     },
     update() {

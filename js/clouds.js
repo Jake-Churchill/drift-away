@@ -3,8 +3,9 @@ import * as THREE from 'three';
 // The cloud field fills everything outside the land, leaving an even strip of open sea around every
 // open zone. A zone is "open" once any of its tiles is unlocked; the first zone is open from the
 // start. Opening a zone clears the clouds over it and pulls the cloud edge out to the same sea gap
-// around the newly larger map. Zones are assumed to open in ZONES order, since each is reached by
-// adjacency from the previous one.
+// around the newly larger map. The outlines for each stage of the map are laid out assuming zones
+// open in ZONES order; a zone opened out of that order still clears exactly its own land (each puff
+// knows which zones clear it), it just leaves the intermediate outline slightly less tidy.
 const CLOUD_OPACITY = 0.4;
 const SEA_GAP = 2;
 const EDGE_WIDTH = 10.5;
@@ -67,11 +68,11 @@ function contourPoints(centers, rho, step) {
 
 const easeInOut = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 
-// zoneTiles: Map zoneId -> [{ id, x, z }] in world coordinates. sailEdges: every pair of zone
-// framing targets a direct sail can actually cross (the "next unlock" shortcut can jump straight
-// between any two discovered zones, not just consecutive ones), used to work out how far the
-// field has to reach along every path the camera can actually travel.
-export function buildCloudField({ zoneIds, zoneTiles, landRadius, viewHalfHeight, sailEdges, cameraOffset }) {
+// zoneTiles: Map zoneId -> [{ id, x, z }] in world coordinates, one entry per hex cell (a tile
+// covering several cells appears once per cell). viewTargets: ground points the camera can look at,
+// spread across the whole map (it can be panned anywhere), used to work out how far the field has to
+// reach.
+export function buildCloudField({ zoneIds, zoneTiles, landRadius, viewHalfHeight, viewTargets, cameraOffset }) {
   const scene = new THREE.Scene();
   const target = new THREE.WebGLRenderTarget(1, 1, { samples: 4 });
 
@@ -109,16 +110,13 @@ export function buildCloudField({ zoneIds, zoneTiles, landRadius, viewHalfHeight
     ),
   ];
 
-  // Which ground points can ever be on screen, across every zone framing and the sail between them.
+  // Which ground points can ever be on screen, wherever the camera is pointed.
   const viewCam = new THREE.OrthographicCamera();
   viewCam.position.copy(cameraOffset);
   viewCam.lookAt(0, 0, 0);
   viewCam.updateMatrixWorld();
   const viewRot = new THREE.Matrix3().setFromMatrix4(viewCam.matrixWorldInverse);
-  const sampleTargets = [];
-  for (const [from, to] of sailEdges) {
-    for (let s = 0; s <= 6; s++) sampleTargets.push(from.clone().lerp(to, s / 6));
-  }
+  const sampleTargets = viewTargets;
   const halfH = viewHalfHeight + VIEW_MARGIN;
   const halfW = halfH * MAX_ASPECT;
   const canBeVisible = (x, z) =>
