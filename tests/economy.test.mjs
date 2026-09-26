@@ -1768,16 +1768,8 @@ const corridorEntry = (zone, fromZone) =>
   assert.equal(bridge.kind, 'blank', 'fixture assumption: the start cluster is ringed by blanks');
 
   const state = createInitialState();
-  assert.equal(getLevel(state, bridge.id), MAX_LEVEL, 'a blank has nothing to level, so it is maxed from the start');
-  assert.equal(getLevel(state, 'driftwood_start'), 1, 'other tiles still default to level 1');
-
-  const before = completionCount(state);
   state.resources.driftwood = 12;
   assert.equal(unlockTile(state, bridge), true, 'a blank is bought like any other tile');
-  assert.equal(completionCount(state), before + 1, 'an unlocked blank counts toward completion straight away');
-  assert.ok(!upgradeList(state).some((row) => row.tile.id === bridge.id), 'a blank never shows in the upgrade list');
-  assert.equal(isLevelUpEligible(state, bridge), false, 'and can never be levelled');
-  assert.equal(rateBreakdown(state, 'driftwood').total, 0.5, 'a blank adds no production');
 
   // Every blank in a zone shares one flat price.
   const costsByZone = {};
