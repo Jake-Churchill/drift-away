@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Drift Away — Prop Scale Lab (scratch, not part of the game)</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; font-family: system-ui, -apple-system, sans-serif; background: #0e2f42; }
+    #game-canvas { display: block; width: 100vw; height: 100vh; cursor: grab; }
+    #game-canvas.dragging { cursor: grabbing; }
+
+    #panel {
+      position: fixed; top: 12px; right: 12px; width: 300px;
+      color: #f4ead2; background: rgba(16, 38, 58, 0.92);
+      padding: 14px; border-radius: 10px; font-size: 13px;
+      max-height: calc(100vh - 24px); overflow-y: auto;
+    }
+    #panel h1 { font-size: 15px; margin: 0 0 4px; }
+    #panel .hint { opacity: 0.75; font-size: 11px; margin: 0 0 12px; line-height: 1.4; }
+    #panel label { display: block; margin: 10px 0 4px; font-weight: bold; }
+    #archetype-list { display: flex; flex-direction: column; gap: 3px; max-height: 220px; overflow-y: auto; margin-bottom: 4px; }
+    #archetype-list button {
+      text-align: left; padding: 5px 8px; border-radius: 5px; border: 1px solid transparent;
+      background: rgba(255,255,255,0.06); color: #f4ead2; cursor: pointer; font-size: 12px;
+    }
+    #archetype-list button.active { background: #3a6f8f; border-color: #7fe7ff; }
+    #archetype-list button .badge { float: right; opacity: 0.8; font-variant-numeric: tabular-nums; }
+    .level-row { display: flex; gap: 6px; }
+    .level-row button {
+      flex: 1; padding: 6px 0; border-radius: 5px; border: 1px solid rgba(255,255,255,0.2);
+      background: rgba(255,255,255,0.06); color: #f4ead2; cursor: pointer;
+    }
+    .level-row button.active { background: #d9a441; color: #1b2a1e; border-color: #d9a441; font-weight: bold; }
+    #scale-row { display: flex; align-items: center; gap: 8px; }
+    #scale-slider { flex: 1; }
+    #scale-number { width: 56px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.2); color: #f4ead2; border-radius: 4px; padding: 3px 4px; }
+    .btn-row { display: flex; gap: 6px; margin-top: 6px; }
+    .btn-row button {
+      flex: 1; padding: 6px 0; border-radius: 5px; border: 1px solid rgba(255,255,255,0.2);
+      background: rgba(255,255,255,0.08); color: #f4ead2; cursor: pointer; font-size: 12px;
+    }
+    .btn-row button:hover, #archetype-list button:hover, .level-row button:hover { background: rgba(255,255,255,0.16); }
+    #export-box {
+      width: 100%; height: 130px; margin-top: 8px; font-family: ui-monospace, monospace; font-size: 11px;
+      background: #0a1e2c; color: #9be6a8; border: 1px solid rgba(255,255,255,0.2); border-radius: 5px; padding: 6px; resize: vertical;
+    }
+    #copy-status { font-size: 11px; opacity: 0.8; height: 14px; margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <canvas id="game-canvas"></canvas>
+
+  <div id="panel">
+    <h1>Prop Scale Lab</h1>
+    <p class="hint">
+      Scratch tool, not part of the game. Pick a producer/generator, adjust its scale at each
+      level, then copy the JSON at the bottom and paste it back into chat — the real game only
+      changes once that's applied to <code>js/cluster-props.js</code>. Drag to orbit, wheel to
+      zoom. Your in-progress values are kept in this browser only (a separate storage key from
+      your real save).
+    </p>
+
+    <label>Producer / generator</label>
+    <div id="archetype-list"></div>
+
+    <label>Level</label>
+    <div class="level-row" id="level-row">
+      <button data-level="1" class="active">1</button>
+      <button data-level="2">2</button>
+      <button data-level="3">3</button>
+    </div>
+
+    <label>Scale (<span id="scale-key"></span>)</label>
+    <div id="scale-row">
+      <input type="range" id="scale-slider" min="0.4" max="2.5" step="0.01" value="1">
+      <input type="number" id="scale-number" min="0.4" max="2.5" step="0.01" value="1">
+    </div>
+    <div class="btn-row">
+      <button id="reset-one">Reset this one</button>
+      <button id="reset-all">Reset all</button>
+    </div>
+
+    <label>Export (paste this back to me)</label>
+    <textarea id="export-box" readonly></textarea>
+    <div class="btn-row">
+      <button id="copy-json">Copy JSON</button>
+    </div>
+    <div id="copy-status"></div>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.182.0/build/three.module.js"
+    }
+  }
+  </script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { CAMERA_OFFSET, BASE_VIEW_HALF, MIN_VIEW_HALF, MAX_VIEW_HALF, frameCamera, aimSun } from './js/scene.js';
+    import { clusterProp, buildClusterProp } from './js/cluster-props.js';
+    import { ZONES } from './js/zones.js';
+
+    // ---------- Archetypes (mirrors CLUSTER_PROPS in js/cluster-props.js) ----------
+    const ARCHETYPES = [
+      { key: 'zone1:driftwood', label: 'Zone 1 · Driftwood', zone: 'zone1', family: 'driftwood' },
+      { key: 'zone1:fish', label: 'Zone 1 · Fish', zone: 'zone1', family: 'fish' },
+      { key: 'zone1:kelp', label: 'Zone 1 · Kelp', zone: 'zone1', family: 'kelp' },
+      { key: 'zone1:crops', label: 'Zone 1 · Crops', zone: 'zone1', family: 'crops' },
+      { key: 'zone2:driftwood', label: 'Zone 2 · Driftwood', zone: 'zone2', family: 'driftwood' },
+      { key: 'zone2:fish', label: 'Zone 2 · Fish', zone: 'zone2', family: 'fish' },
+      { key: 'zone2:kelp', label: 'Zone 2 · Kelp', zone: 'zone2', family: 'kelp' },
+      { key: 'zone2:crops', label: 'Zone 2 · Crops', zone: 'zone2', family: 'crops' },
+      { key: 'zone3:planks', label: 'Zone 3 · Sawmill', zone: 'zone3', family: 'planks' },
+      { key: 'zone3:kelp_rope', label: 'Zone 3 · Ropeworks', zone: 'zone3', family: 'kelp_rope' },
+      { key: 'zone3:bread', label: 'Zone 3 · Bakehouse', zone: 'zone3', family: 'bread' },
+      { key: 'zone4:driftwood', label: 'Zone 4 · Driftwood', zone: 'zone4', family: 'driftwood' },
+      { key: 'zone4:fish', label: 'Zone 4 · Fish', zone: 'zone4', family: 'fish' },
+      { key: 'zone4:kelp', label: 'Zone 4 · Kelp (tube worms)', zone: 'zone4', family: 'kelp' },
+      { key: 'zone4:crops', label: 'Zone 4 · Crops (vent garden)', zone: 'zone4', family: 'crops' },
+    ];
+    const LEVEL_SCALE = { 1: 1.0, 2: 1.15, 3: 1.3 };
+    const ZONE_RAFT_COLOR = new Map(ZONES.map((z) => [z.id, z.raftColor]));
+
+    const STORAGE_KEY = 'driftaway_prop_scale_lab_v1';
+    const scales = load();
+    function load() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        return raw ? JSON.parse(raw) : {};
+      } catch {
+        return {};
+      }
+    }
+    function save() {
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(scales)); } catch {}
+      updateExport();
+    }
+    function scaleFor(key, level) {
+      return scales[key]?.[level] ?? 1;
+    }
+    function setScale(key, level, value) {
+      scales[key] ||= {};
+      scales[key][level] = value;
+      save();
+    }
+
+    // ---------- Real hex placement math (duplicated from js/scene.js's private helper --
+    // a small pure function, kept in sync by eye since this is scratch tooling, not shipped code). ----------
+    const HEX_RADIUS = 1.6;
+    const HEX_WIDTH = Math.sqrt(3) * HEX_RADIUS;
+    const HEX_HEIGHT = 2 * HEX_RADIUS;
+    const ROW_SPACING = 0.75 * HEX_HEIGHT;
+    const WALL_HEIGHT = 0.35;
+    function hexLocalPosition(row, col) {
+      const isOddRow = row % 2 !== 0;
+      return { x: col * HEX_WIDTH + (isOddRow ? HEX_WIDTH / 2 : 0), z: row * ROW_SPACING };
+    }
+    function hexShape(radius) {
+      const shape = new THREE.Shape();
+      for (let i = 0; i < 6; i++) {
+        const angle = (Math.PI / 180) * (60 * i - 90);
+        const x = radius * Math.cos(angle);
+        const y = radius * Math.sin(angle);
+        if (i === 0) shape.moveTo(x, y); else shape.lineTo(x, y);
+      }
+      shape.closePath();
+      return shape;
+    }
+    // Every cluster is the same "up" triangle: anchor, east neighbour, south-east neighbour.
+    const CLUSTER_CELLS = [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 1, col: 0 }];
+    const world = CLUSTER_CELLS.map((c) => hexLocalPosition(c.row, c.col));
+    const center = {
+      x: world.reduce((s, p) => s + p.x, 0) / world.length,
+      z: world.reduce((s, p) => s + p.z, 0) / world.length,
+    };
+    const OFFSETS = world.map((p) => ({ dx: p.x - center.x, dz: p.z - center.z }));
+
+    // ---------- Scene (matches the game's real fog/background/sun so scale reads accurately) ----------
+    const canvas = document.getElementById('game-canvas');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0e2f42);
+    scene.fog = new THREE.Fog(0x0e2f42, 36, 60);
+    scene.add(new THREE.AmbientLight(0xbcd8e8, 0.55));
+    const sun = new THREE.DirectionalLight(0xfff4d6, 1.4);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(1024, 1024);
+    sun.shadow.camera.near = 1;
+    scene.add(sun, sun.target);
+
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+    const camera = new THREE.OrthographicCamera();
+    const target = new THREE.Vector3(0, 0, 0);
+    let viewHalf = BASE_VIEW_HALF;
+
+    function resize() {
+      const w = window.innerWidth, h = window.innerHeight;
+      renderer.setSize(w, h);
+      frameCamera(camera, w, h, viewHalf);
+    }
+    window.addEventListener('resize', resize);
+
+    // Simple manual orbit: fixed distance/relative offset, just rotated -- an orthographic
+    // camera's apparent zoom comes from the frustum half-size (viewHalf), not distance.
+    const radius = CAMERA_OFFSET.length();
+    let theta = Math.atan2(CAMERA_OFFSET.x, CAMERA_OFFSET.z);
+    let phi = Math.acos(CAMERA_OFFSET.y / radius);
+    function updateCamera() {
+      const sinPhi = Math.sin(phi);
+      camera.position.set(
+        target.x + radius * sinPhi * Math.sin(theta),
+        target.y + radius * Math.cos(phi),
+        target.z + radius * sinPhi * Math.cos(theta)
+      );
+      camera.lookAt(target);
+      aimSun(sun, target, viewHalf);
+    }
+
+    let dragging = false, lastX = 0, lastY = 0;
+    canvas.addEventListener('pointerdown', (e) => { dragging = true; lastX = e.clientX; lastY = e.clientY; canvas.classList.add('dragging'); canvas.setPointerCapture(e.pointerId); });
+    canvas.addEventListener('pointerup', () => { dragging = false; canvas.classList.remove('dragging'); });
+    canvas.addEventListener('pointercancel', () => { dragging = false; canvas.classList.remove('dragging'); });
+    canvas.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      theta -= (e.clientX - lastX) * 0.008;
+      phi = Math.min(1.45, Math.max(0.15, phi - (e.clientY - lastY) * 0.008));
+      lastX = e.clientX; lastY = e.clientY;
+      updateCamera();
+    });
+    canvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      viewHalf = Math.min(MAX_VIEW_HALF * 0.5, Math.max(MIN_VIEW_HALF * 0.4, viewHalf * (e.deltaY > 0 ? 1.08 : 0.92)));
+      resize();
+    }, { passive: false });
+
+    // ---------- Raft (3 hexes, coloured by the selected zone) so scale reads against real ground ----------
+    const raftGroup = new THREE.Group();
+    scene.add(raftGroup);
+    function rebuildRaft(zoneId) {
+      raftGroup.clear();
+      const color = ZONE_RAFT_COLOR.get(zoneId) ?? 0xd9a441;
+      const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.85, metalness: 0.05 });
+      const geo = new THREE.ExtrudeGeometry(hexShape(HEX_RADIUS), { depth: WALL_HEIGHT, bevelEnabled: true, bevelThickness: 0.05, bevelSize: 0.04, bevelSegments: 2 });
+      geo.rotateX(-Math.PI / 2);
+      for (const { dx, dz } of OFFSETS) {
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set(dx, 0, dz);
+        mesh.receiveShadow = true;
+        raftGroup.add(mesh);
+      }
+    }
+
+    // ---------- Prop (rebuilt whenever archetype / level / scale changes) ----------
+    let propGroup = new THREE.Group();
+    scene.add(propGroup);
+    function rebuildProp() {
+      scene.remove(propGroup);
+      propGroup = new THREE.Group();
+      propGroup.position.set(0, WALL_HEIGHT, 0);
+      const archetype = ARCHETYPES[selectedIndex];
+      const cluster = clusterProp({ zone: archetype.zone, family: archetype.family, kind: 'producer', id: 'lab' });
+      if (cluster) {
+        buildClusterProp(cluster, propGroup, selectedLevel, OFFSETS);
+        const userScale = scaleFor(archetype.key, selectedLevel);
+        propGroup.scale.setScalar(LEVEL_SCALE[selectedLevel] * userScale);
+      }
+      scene.add(propGroup);
+    }
+
+    // ---------- UI wiring ----------
+    let selectedIndex = 0;
+    let selectedLevel = 1;
+
+    const listEl = document.getElementById('archetype-list');
+    ARCHETYPES.forEach((a, i) => {
+      const btn = document.createElement('button');
+      btn.textContent = a.label;
+      btn.dataset.index = i;
+      listEl.appendChild(btn);
+    });
+    function refreshListLabels() {
+      [...listEl.children].forEach((btn, i) => {
+        btn.classList.toggle('active', i === selectedIndex);
+        const s = scaleFor(ARCHETYPES[i].key, selectedLevel);
+        btn.innerHTML = `${ARCHETYPES[i].label}<span class="badge">${s.toFixed(2)}x</span>`;
+      });
+    }
+    listEl.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-index]');
+      if (!btn) return;
+      selectedIndex = Number(btn.dataset.index);
+      onArchetypeOrLevelChange();
+    });
+
+    const levelRow = document.getElementById('level-row');
+    levelRow.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-level]');
+      if (!btn) return;
+      selectedLevel = Number(btn.dataset.level);
+      [...levelRow.children].forEach((b) => b.classList.toggle('active', b === btn));
+      onArchetypeOrLevelChange();
+    });
+
+    const slider = document.getElementById('scale-slider');
+    const number = document.getElementById('scale-number');
+    const scaleKeyLabel = document.getElementById('scale-key');
+    function onArchetypeOrLevelChange() {
+      const archetype = ARCHETYPES[selectedIndex];
+      scaleKeyLabel.textContent = `${archetype.label} · L${selectedLevel}`;
+      const s = scaleFor(archetype.key, selectedLevel);
+      slider.value = s;
+      number.value = s;
+      rebuildRaft(archetype.zone);
+      rebuildProp();
+      refreshListLabels();
+    }
+    function applyScaleInput(value) {
+      const v = Math.min(2.5, Math.max(0.4, Number(value) || 1));
+      slider.value = v;
+      number.value = v;
+      setScale(ARCHETYPES[selectedIndex].key, selectedLevel, v);
+      rebuildProp();
+      refreshListLabels();
+    }
+    slider.addEventListener('input', () => applyScaleInput(slider.value));
+    number.addEventListener('change', () => applyScaleInput(number.value));
+
+    document.getElementById('reset-one').addEventListener('click', () => {
+      const key = ARCHETYPES[selectedIndex].key;
+      if (scales[key]) delete scales[key][selectedLevel];
+      save();
+      onArchetypeOrLevelChange();
+    });
+    document.getElementById('reset-all').addEventListener('click', () => {
+      for (const k of Object.keys(scales)) delete scales[k];
+      save();
+      onArchetypeOrLevelChange();
+    });
+
+    const exportBox = document.getElementById('export-box');
+    function updateExport() {
+      // Flat "zone:family" -> scale when every set level shares one value, otherwise per-level --
+      // matches what a CLUSTER_PROPS entry's `scale` field can take (a number, or {1,2,3}).
+      const out = {};
+      for (const a of ARCHETYPES) {
+        const perLevel = scales[a.key];
+        if (!perLevel || Object.keys(perLevel).length === 0) continue;
+        const values = [1, 2, 3].map((l) => perLevel[l] ?? 1);
+        out[a.key] = values.every((v) => v === values[0]) ? values[0] : { 1: values[0], 2: values[1], 3: values[2] };
+      }
+      exportBox.value = Object.keys(out).length ? JSON.stringify(out, null, 2) : '// adjust a slider to see JSON here';
+    }
+    document.getElementById('copy-json').addEventListener('click', async () => {
+      const status = document.getElementById('copy-status');
+      try {
+        await navigator.clipboard.writeText(exportBox.value);
+        status.textContent = 'Copied — paste it into chat.';
+      } catch {
+        exportBox.select();
+        status.textContent = 'Clipboard blocked — text is selected, press Cmd/Ctrl+C.';
+      }
+      setTimeout(() => { status.textContent = ''; }, 4000);
+    });
+
+    resize();
+    updateCamera();
+    onArchetypeOrLevelChange();
+    updateExport();
+
+    (function loop() {
+      requestAnimationFrame(loop);
+      renderer.render(scene, camera);
+    })();
+  </script>
+</body>
+</html>

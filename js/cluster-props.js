@@ -562,23 +562,34 @@ function buildBreadCluster(group, level, dirs) {
 
 // Keyed like scene.js's zone-qualified badge anchors: `${zone}:${family}` for a producer or
 // generator, `${zone}:${tile id}` for a booster. badgeHeight is where the level badge floats.
+// `scale` is a per-archetype multiplier dialed in with preview-prop-scale.html -- either one
+// number for every level, or `{1, 2, 3}` for a level of its own. Missing entries default to 1x
+// (see `clusterScale` below); scene.js applies it on top of the level's own natural growth.
 const CLUSTER_PROPS = {
-  'zone1:driftwood': { build: buildDriftwoodCluster, badgeHeight: 2.05 },
-  'zone1:fish': { build: buildFishCluster, badgeHeight: 1.1 },
-  'zone1:kelp': { build: buildKelpCluster, badgeHeight: 0.85 },
-  'zone1:crops': { build: buildCropsCluster, badgeHeight: 0.68 },
-  'zone2:driftwood': { build: buildFrostDriftwoodCluster, badgeHeight: 2.05 },
-  'zone2:fish': { build: buildFrostFishCluster, badgeHeight: 1.1 },
-  'zone2:kelp': { build: buildFrostKelpCluster, badgeHeight: 0.85 },
-  'zone2:crops': { build: buildFrostCropsCluster, badgeHeight: 0.68 },
-  'zone3:planks': { build: buildPlanksCluster, badgeHeight: 0.75 },
-  'zone3:kelp_rope': { build: buildKelpRopeCluster, badgeHeight: 0.75 },
-  'zone3:bread': { build: buildBreadCluster, badgeHeight: 0.95 },
-  'zone4:driftwood': { build: buildBoneReefDriftwoodCluster, badgeHeight: 2.05 },
-  'zone4:fish': { build: buildAnglerFishCluster, badgeHeight: 1.1 },
-  'zone4:kelp': { build: buildGlowKelpCluster, badgeHeight: 0.65 },
-  'zone4:crops': { build: buildGlowCropsCluster, badgeHeight: 0.6 },
+  'zone1:driftwood': { build: buildDriftwoodCluster, badgeHeight: 2.05, scale: { 1: 1.5, 2: 1.18, 3: 1 } },
+  'zone1:fish': { build: buildFishCluster, badgeHeight: 1.1, scale: { 1: 2.5, 2: 2.5, 3: 2.33 } },
+  'zone1:kelp': { build: buildKelpCluster, badgeHeight: 0.85, scale: { 1: 2.5, 2: 2.1, 3: 2.26 } },
+  'zone1:crops': { build: buildCropsCluster, badgeHeight: 0.68, scale: 2.5 },
+  'zone2:driftwood': { build: buildFrostDriftwoodCluster, badgeHeight: 2.05, scale: { 1: 1.43, 2: 1, 3: 1 } },
+  'zone2:fish': { build: buildFrostFishCluster, badgeHeight: 1.1, scale: 2.5 },
+  'zone2:kelp': { build: buildFrostKelpCluster, badgeHeight: 0.85, scale: { 1: 2.5, 2: 2.1, 3: 2 } },
+  'zone2:crops': { build: buildFrostCropsCluster, badgeHeight: 0.68, scale: 2.5 },
+  'zone3:planks': { build: buildPlanksCluster, badgeHeight: 0.75, scale: { 1: 1.7, 2: 1.68, 3: 1.56 } },
+  'zone3:kelp_rope': { build: buildKelpRopeCluster, badgeHeight: 0.75, scale: { 1: 2.5, 2: 2.5, 3: 2.26 } },
+  'zone3:bread': { build: buildBreadCluster, badgeHeight: 0.95, scale: { 1: 2.47, 2: 2.02, 3: 1.97 } },
+  'zone4:driftwood': { build: buildBoneReefDriftwoodCluster, badgeHeight: 2.05, scale: { 1: 1, 2: 1, 3: 1.02 } },
+  'zone4:fish': { build: buildAnglerFishCluster, badgeHeight: 1.1, scale: { 1: 2.5, 2: 2.3, 3: 2.11 } },
+  'zone4:kelp': { build: buildGlowKelpCluster, badgeHeight: 0.65, scale: { 1: 2.5, 2: 1.87, 3: 1.69 } },
+  'zone4:crops': { build: buildGlowCropsCluster, badgeHeight: 0.6, scale: { 1: 2.5, 2: 2.5, 3: 2.06 } },
 };
+
+// Resolves a CLUSTER_PROPS entry's `scale` (a flat number, a per-level object, or absent) for one
+// level. scene.js multiplies its groupScale by this.
+export function clusterScale(cluster, level) {
+  const s = cluster.scale;
+  if (s == null) return 1;
+  return typeof s === 'number' ? s : (s[level] ?? 1);
+}
 
 export function clusterProp(tile) {
   if (tile.kind === 'blank') return null;

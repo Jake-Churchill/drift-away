@@ -4,7 +4,7 @@ import { ZONES } from './zones.js';
 import { buildZone2Prop } from './zone2-props.js';
 import { buildAbyssalProp } from './abyssal-props.js';
 import { buildTimberlineProp } from './timberline-props.js';
-import { buildClusterProp, clusterProp, buildGenericCluster, buildCenteredCluster } from './cluster-props.js';
+import { buildClusterProp, clusterProp, clusterScale, buildGenericCluster, buildCenteredCluster } from './cluster-props.js';
 import { buildCloudField } from './clouds.js';
 import { createFoamTexture, createWaterNormalTexture } from './textures.js';
 import { DEFAULT_PALETTE } from './palettes.js';
@@ -512,10 +512,11 @@ function buildLevelProps(tile, level, offsets) {
   const cluster = clusterProp(tile);
   const extraScale = LARGE_BOOSTER_IDS.has(tile.id) ? BOOSTER_PROP_SCALE : 1;
   // Bespoke cluster designs are authored directly in true hex-distance units, so their group only
-  // grows a little with level. The generic fallback below still builds each cell's prop at the old
+  // grows a little with level, times whatever preview-prop-scale.html dialed in for it (see
+  // CLUSTER_PROPS's `scale`). The generic fallback below still builds each cell's prop at the old
   // per-hex scale, so its group needs the old per-hex multiplier too -- but that multiplier must NOT
   // stretch the cell positions apart, only the props themselves (see buildGenericCluster).
-  const groupScale = (cluster ? 1 : PROP_SCALE * extraScale) * LEVEL_SCALE[level];
+  const groupScale = (cluster ? clusterScale(cluster, level) : PROP_SCALE * extraScale) * LEVEL_SCALE[level];
   const propGroup = new THREE.Group();
   propGroup.position.set(0, WALL_HEIGHT, 0);
   if (cluster) {
