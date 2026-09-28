@@ -43,6 +43,7 @@ import {
   prestigeUpgradeCost,
   rateBreakdown,
   SAVE_KEY,
+  setGeneratorEnabled,
   shopCatalog,
   tick,
   TOTAL_TILE_COUNT,
@@ -1728,6 +1729,58 @@ const corridorEntry = (zone, fromZone) =>
     state.unlocked.push(sawmill1.id);
     const awarded = checkAchievements(state).map((a) => a.id);
     assert(awarded.includes('timberline-coast-discovered'), 'unlocking a zone-3 tile awards timberline-coast-discovered');
+  }
+
+  // Turning a generator family off: it neither consumes nor produces, and stops competing for a
+  // scarce input other (still-enabled) families are drawing on. A fresh state has every family on.
+  {
+    const state = createInitialState();
+    assert.deepEqual(state.generatorsEnabled, { planks: true, kelp_rope: true, bread: true }, 'every generator family starts enabled');
+
+    state.unlocked = [sawmill1.id];
+    state.resources.driftwood = 1000;
+    setGeneratorEnabled(state, 'planks', false);
+    assert.equal(generatorRate(state, sawmill1), 0, 'a disabled family reports a 0 rate regardless of how abundant its input is');
+    assert.equal(rateBreakdown(state, 'planks').base, 0, "rateBreakdown excludes a disabled family's generators from the resource's HUD rate");
+    const driftwoodBefore = state.resources.driftwood;
+    tick(state, 5);
+    assert.equal(state.resources.driftwood, driftwoodBefore, 'a disabled sawmill draws no driftwood at all');
+    assert.equal(state.resources.planks, 0, 'a disabled sawmill makes no planks');
+
+    setGeneratorEnabled(state, 'planks', true);
+    assert.equal(generatorRate(state, sawmill1), 0.6, 'turning it back on resumes its normal (unthrottled) rate');
+  }
+
+  // Disabling one family frees up its share of a shared input for the families still running,
+  // instead of that input staying split as if the disabled generator were still bidding for it.
+  {
+    const state = createInitialState();
+    state.unlocked = [ropeworks1.id]; // consumes kelp + driftwood
+    state.resources.kelp = 1000;
+    state.resources.driftwood = 1000;
+    setGeneratorEnabled(state, 'planks', false); // no sawmill unlocked here anyway; proves it's harmless
+    assert.equal(generatorRate(state, ropeworks1), generatorFullRate(state, ropeworks1), "disabling an unrelated, unlocked-nowhere family doesn't throttle a running one");
+  }
+
+  // Old saves (and saves from before this toggle existed) have no `generatorsEnabled` key at all;
+  // normalizeSave must default every family to on rather than leaving it undefined.
+  {
+    const state = createInitialState();
+    const encoded = encodeSave(state);
+    const decodedParsed = JSON.parse(atob(encoded));
+    delete decodedParsed.generatorsEnabled;
+    const reencoded = btoa(JSON.stringify(decodedParsed));
+    const restored = decodeSave(reencoded);
+    assert.deepEqual(restored.generatorsEnabled, { planks: true, kelp_rope: true, bread: true }, 'a save missing the key entirely defaults every family to enabled');
+  }
+
+  // A chosen off/on state round-trips through save/decode like any other setting.
+  {
+    const state = createInitialState();
+    setGeneratorEnabled(state, 'bread', false);
+    const restored = decodeSave(encodeSave(state));
+    assert.equal(restored.generatorsEnabled.bread, false, "a save remembers a family that's been turned off");
+    assert.equal(restored.generatorsEnabled.planks, true, 'and leaves the others untouched');
   }
 
   console.log('zone 3 generator tests passed');

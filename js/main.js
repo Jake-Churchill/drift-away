@@ -19,6 +19,7 @@ import {
   MAX_LEVEL,
   nextUnlock,
   saveState,
+  setGeneratorEnabled,
   unlockIntensity,
   unlockTile,
   upgradeList,
@@ -192,7 +193,15 @@ function showAway(away) {
 function renderTilePanel(tile) {
   const unlocked = state.unlocked.includes(tile.id);
   const eligible = unlocked ? isLevelUpEligible(state, tile) : isEligible(tile, state);
-  showTilePanel(tile, state, eligible, handleUnlockClick, handleLevelUpClick);
+  showTilePanel(tile, state, eligible, handleUnlockClick, handleLevelUpClick, handleToggleGeneratorClick);
+}
+
+// Flips every tile of this generator's family at once (see js/state.js's generatorsEnabled).
+function handleToggleGeneratorClick(tile) {
+  const enabled = state.generatorsEnabled[tile.family] !== false;
+  setGeneratorEnabled(state, tile.family, !enabled);
+  saveState(state);
+  renderTilePanel(tile);
 }
 
 // unlockTile/levelUpTile call checkAchievements internally, so the awarded list is

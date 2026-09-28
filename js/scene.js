@@ -121,6 +121,37 @@ function addLevelBadge(propGroup, level, anchorHeight) {
   propGroup.add(badge);
 }
 
+const PAUSE_MARKER_COLOR = 0xff5a3c;
+
+// A generator's on/off switch (js/state.js's generatorsEnabled) is a family-wide toggle, not a
+// per-tile build, so it can't be shown by swapping the tile's own art like level-up does -- this
+// floats a pause icon above the tile instead, built once and toggled visible per frame by
+// render.js (see PAUSE_MARKER_COLOR usage there) rather than baked into a specific level's look.
+// The camera's viewing direction never changes (only its position pans and its frustum zooms --
+// see CAMERA_OFFSET, declared further down and always added to whatever the target currently is),
+// so "face the camera" just needs this fixed orientation baked in once, not a per-frame billboard.
+// Computed inside the function (not a module-level constant) because CAMERA_OFFSET is declared
+// later in this file, and a top-level const would run before it exists.
+function addPausedMarker(propGroup, anchorHeight) {
+  const marker = new THREE.Group();
+  marker.position.set(0, anchorHeight + 0.75, 0);
+  marker.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), CAMERA_OFFSET.clone().normalize());
+  marker.visible = false;
+  const ringMat = new THREE.MeshBasicMaterial({ color: PAUSE_MARKER_COLOR, transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false });
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.32, 0.4, 28), ringMat);
+  marker.add(ring);
+  marker.userData.ringMaterial = ringMat;
+  const barMat = new THREE.MeshBasicMaterial({ color: PAUSE_MARKER_COLOR, depthWrite: false });
+  const barGeo = new THREE.BoxGeometry(0.12, 0.38, 0.05);
+  for (const x of [-0.11, 0.11]) {
+    const bar = new THREE.Mesh(barGeo, barMat);
+    bar.position.x = x;
+    marker.add(bar);
+  }
+  propGroup.add(marker);
+  return marker;
+}
+
 function addOutline(mesh, scale, color) {
   const outline = new THREE.Mesh(
     mesh.geometry,
@@ -530,6 +561,9 @@ function buildLevelProps(tile, level, offsets) {
   const zoneAnchorKey = `${tile.zone}:${anchorKey}`;
   const anchorHeight = cluster ? cluster.badgeHeight : BADGE_ANCHOR_HEIGHT[zoneAnchorKey] ?? BADGE_ANCHOR_HEIGHT[anchorKey];
   addLevelBadge(propGroup, level, anchorHeight);
+  if (tile.kind === 'generator') {
+    levelGroup.userData.pausedMarker = addPausedMarker(propGroup, anchorHeight);
+  }
   propGroup.scale.setScalar(groupScale);
   levelGroup.add(propGroup);
   levelGroup.userData.darken = propGroup.userData.darken || [];

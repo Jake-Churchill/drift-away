@@ -244,6 +244,15 @@ export function updateScene(state, time, { boardTint }) {
           d.material.emissiveIntensity = lit ? d.litEmissiveIntensity : d.dimEmissiveIntensity;
         }
       }
+
+      // A generator's on/off switch is family-wide (js/state.js's generatorsEnabled), so the
+      // marker's visibility is read fresh every frame rather than baked in when props are built.
+      if (tile.kind === 'generator' && shown.userData.pausedMarker) {
+        const marker = shown.userData.pausedMarker;
+        const paused = state.generatorsEnabled[tile.family] === false;
+        marker.visible = paused;
+        if (paused) marker.userData.ringMaterial.opacity = 0.35 + 0.35 * Math.sin(visualMs / 260);
+      }
     }
 
     if (!unlocked && discovered) {

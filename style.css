@@ -416,6 +416,24 @@ html, body {
   display: none;
 }
 
+#tile-panel-toggle-btn {
+  margin-top: 6px;
+  padding: 5px 14px;
+  background: transparent;
+  color: #d9b545;
+  border: 1px solid #d9b545;
+  font-size: 13px;
+}
+
+#tile-panel-toggle-btn.off {
+  color: #9be6a8;
+  border-color: #9be6a8;
+}
+
+#tile-panel-toggle-btn.hidden {
+  display: none;
+}
+
 #tile-panel-close-btn {
   position: absolute;
   top: 6px;

@@ -72,7 +72,15 @@ export function createInitialState() {
     shop: createInitialShop(),
     gold: 0,
     achievements: [],
+    // One switch per generator family (keyed by GOODS, which is exactly the 3 families), so a
+    // player who's about to run short on an input a generator eats (e.g. driftwood) can pause
+    // that whole family instead of it silently outbidding them for the pool every tick.
+    generatorsEnabled: Object.fromEntries(GOODS.map((g) => [g, true])),
   };
+}
+
+export function setGeneratorEnabled(state, family, enabled) {
+  state.generatorsEnabled[family] = enabled;
 }
 
 export function levelMultiplier(level) {
@@ -143,7 +151,9 @@ export function rateBreakdown(state, resource) {
     if (!isUnlocked(state.unlocked, tile.id)) continue;
     const multiplier = levelMultiplier(getLevel(state, tile.id));
     if (tile.kind === 'producer' && tile.produces === resource) base += tile.rate * multiplier * darknessFactor(tile, state.unlocked);
-    if (tile.kind === 'generator' && tile.produces === resource) base += tile.rate * multiplier * generatorThrottle(tile, generatorFactors);
+    if (tile.kind === 'generator' && tile.produces === resource && state.generatorsEnabled[tile.family] !== false) {
+      base += tile.rate * multiplier * generatorThrottle(tile, generatorFactors);
+    }
     if (tile.kind === 'booster') {
       for (const b of tile.boosts) {
         if (b.resource !== resource) continue;
@@ -673,8 +683,10 @@ export function offlineRate(state) {
 // scarcest. A generator with two inputs can end up drawing slightly more of its non-limiting
 // input than its (lower, capped) output actually needed that tick -- a known first-pass
 // simplification; see docs/superpowers/specs/2026-09-24-drift-away-zone4-design.md.
-function generatorTiles(unlockedIds) {
-  return GENERATOR_TILES.filter((t) => isUnlocked(unlockedIds, t.id));
+// A disabled family's generators are excluded outright -- they neither draw on the shared pool
+// nor count toward it being scarce for everyone else still running.
+function generatorTiles(state) {
+  return GENERATOR_TILES.filter((t) => isUnlocked(state.unlocked, t.id) && state.generatorsEnabled[t.family] !== false);
 }
 
 function generatorMultiplier(tile, unlockedIds, levels) {
@@ -683,7 +695,7 @@ function generatorMultiplier(tile, unlockedIds, levels) {
 }
 
 function generatorScarcityFactors(state) {
-  const generators = generatorTiles(state.unlocked);
+  const generators = generatorTiles(state);
   const inputResources = [...new Set(generators.flatMap((t) => Object.keys(t.consumes)))];
   const factors = {};
   for (const resource of inputResources) {
@@ -702,7 +714,9 @@ function generatorThrottle(tile, factors) {
 }
 
 // A generator's current per-second output, throttled by whichever input is scarcest right now.
+// Zero outright while its family is turned off, same as if it had no input at all.
 export function generatorRate(state, tile) {
+  if (state.generatorsEnabled[tile.family] === false) return 0;
   const throttle = generatorThrottle(tile, generatorScarcityFactors(state));
   return tile.rate * generatorMultiplier(tile, state.unlocked, state.levels) * throttle;
 }
@@ -715,7 +729,7 @@ export function generatorFullRate(state, tile) {
 // Returns how much of each output resource was actually produced this call, so offline progress
 // can fold it into its gains summary the same way it does for the base 4.
 function applyGenerators(state, dt) {
-  const generators = generatorTiles(state.unlocked);
+  const generators = generatorTiles(state);
   const produced = {};
   if (generators.length === 0) return produced;
   const factors = generatorScarcityFactors(state);
@@ -813,6 +827,9 @@ function normalizeSave(parsed) {
     gold: parsed.gold ?? base.gold,
     achievements: [...(parsed.achievements || base.achievements)],
     shop: normalizeShop(parsed.shop, base.shop),
+    // A save from before this toggle existed has no key here at all, so the merge leaves every
+    // family at the base's default of enabled.
+    generatorsEnabled: { ...base.generatorsEnabled, ...(parsed.generatorsEnabled || {}) },
   };
 }
 

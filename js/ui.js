@@ -73,6 +73,7 @@ export function initUI(onClose, onNextUnlockClick) {
   elements.panelProgress = document.getElementById('tile-panel-progress');
   elements.panelHint = document.getElementById('tile-panel-hint');
   elements.panelUnlockBtn = document.getElementById('tile-panel-unlock-btn');
+  elements.panelToggleBtn = document.getElementById('tile-panel-toggle-btn');
   elements.panelCloseBtn = document.getElementById('tile-panel-close-btn');
   elements.panelCloseBtn.addEventListener('click', () => {
     hideTilePanel();
@@ -301,6 +302,10 @@ export function updateBoardTint(statuses, next, enabled, project) {
 function resourceLabel(resource) {
   return resource.split('_').join(' ');
 }
+// 'kelp_rope' -> 'Kelp Rope', for button/heading text.
+function resourceTitle(resource) {
+  return resourceLabel(resource).replace(/\b\w/g, (c) => c.toUpperCase());
+}
 
 function describeCost(cost) {
   return Object.entries(cost)
@@ -323,8 +328,11 @@ function describeProduction(tile, state) {
     return `Produces ${Number(mine.toFixed(2))} ${tile.produces}/s \u00b7 ${share}% of your ${tile.produces}`;
   }
   if (tile.kind === 'generator') {
-    const rate = generatorRate(state, tile);
     const inputs = Object.keys(tile.consumes).map(resourceLabel).join(' + ');
+    if (state.generatorsEnabled[tile.family] === false) {
+      return `Paused \u2014 consumes ${inputs} \u2192 produces ${resourceLabel(tile.produces)} when switched back on`;
+    }
+    const rate = generatorRate(state, tile);
     return `Consumes ${inputs} \u2192 produces ${Number(rate.toFixed(2))} ${resourceLabel(tile.produces)}/s`;
   }
   return tile.boosts
@@ -332,11 +340,20 @@ function describeProduction(tile, state) {
     .join(', ');
 }
 
+// A generator whose whole family has been switched off (see js/state.js's generatorsEnabled) --
+// checked ahead of starvedHint below, since a paused generator's 0 rate isn't a supply shortfall.
+function pausedHint(tile, state) {
+  if (tile.kind !== 'generator' || !state.unlocked.includes(tile.id)) return '';
+  if (state.generatorsEnabled[tile.family] !== false) return '';
+  return 'Paused \u2014 turned off. Switch it back on below to resume.';
+}
+
 // Zone 3's generators are throttled when demand for an input outruns the shared stock (see
 // applyGenerators in state.js) -- this is the same idea as zone 4's dim hint, but continuous
 // rather than a flat on/off penalty, so it's reported as a shortfall rather than "halved".
 function starvedHint(tile, state) {
   if (tile.kind !== 'generator' || !state.unlocked.includes(tile.id)) return '';
+  if (state.generatorsEnabled[tile.family] === false) return '';
   const rate = generatorRate(state, tile);
   const fullRate = generatorFullRate(state, tile);
   if (fullRate <= 0 || rate >= fullRate * 0.999) return '';
@@ -359,9 +376,9 @@ function dimHint(tile, state) {
   return 'Dim — production is halved until a bioluminescent structure is unlocked next to it.';
 }
 
-export function showTilePanel(tile, state, eligible, onUnlock, onLevelUp) {
+export function showTilePanel(tile, state, eligible, onUnlock, onLevelUp, onToggleGenerator) {
   elements.panel.classList.remove('hidden');
-  const hint = boosterHint(tile, state) || dimHint(tile, state) || starvedHint(tile, state);
+  const hint = boosterHint(tile, state) || dimHint(tile, state) || pausedHint(tile, state) || starvedHint(tile, state);
   elements.panelHint.textContent = hint;
   elements.panelHint.classList.toggle('hidden', hint === '');
   elements.panelIcon.textContent = tileIcon(tile);
@@ -379,6 +396,7 @@ export function showTilePanel(tile, state, eligible, onUnlock, onLevelUp) {
     elements.panelUnlockBtn.textContent = 'Unlock';
     elements.panelUnlockBtn.disabled = !eligible;
     elements.panelUnlockBtn.onclick = () => onUnlock(tile);
+    elements.panelToggleBtn.classList.add('hidden');
     return;
   }
 
@@ -386,7 +404,21 @@ export function showTilePanel(tile, state, eligible, onUnlock, onLevelUp) {
     elements.panelDesc.textContent = 'A walkway between rafts. It makes nothing itself, but opens the way to the tiles beside it.';
     elements.panelProgress.textContent = '';
     elements.panelUnlockBtn.classList.add('hidden');
+    elements.panelToggleBtn.classList.add('hidden');
     return;
+  }
+
+  // A generator's on/off switch applies to every tile of its family at once (see js/state.js's
+  // generatorsEnabled), so it's shown regardless of level -- including at max level, where the
+  // Level Up button above is already gone.
+  if (tile.kind === 'generator') {
+    const enabled = state.generatorsEnabled[tile.family] !== false;
+    elements.panelToggleBtn.classList.remove('hidden');
+    elements.panelToggleBtn.classList.toggle('off', !enabled);
+    elements.panelToggleBtn.textContent = `Turn ${enabled ? 'Off' : 'On'} ${resourceTitle(tile.family)} Generators`;
+    elements.panelToggleBtn.onclick = () => onToggleGenerator(tile);
+  } else {
+    elements.panelToggleBtn.classList.add('hidden');
   }
 
   const level = getLevel(state, tile.id);
