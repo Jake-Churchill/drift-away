@@ -103,7 +103,7 @@
       <h2>Prestige</h2>
       <div id="prestige-main">
         <button id="prestige-action-btn" disabled>Prestige</button>
-        <button id="prestige-store-btn">Prestige Store</button>
+        <button id="prestige-store-btn">Prestige tree</button>
       </div>
       <div id="prestige-confirm" class="hidden">
         <p id="prestige-confirm-text"></p>
@@ -112,69 +112,23 @@
       </div>
       <div id="prestige-store" class="hidden">
         <p id="prestige-store-tokens"></p>
-        <div class="store-row">
-          <span class="store-icon">🐟</span>
-          <span id="store-fish-count"></span>
-          <span id="store-fish-cost"></span>
-          <button id="store-fish-buy-btn" aria-label="Buy fish upgrade">+1</button>
-          <button id="store-fish-buy5-btn" aria-label="Buy 5 fish upgrades">+5</button>
-          <button id="store-fish-buy10-btn" aria-label="Buy 10 fish upgrades">+10</button>
+        <div id="prestige-tree" role="group" aria-label="Prestige tree"></div>
+        <div id="prestige-legend" aria-hidden="true">
+          <span><i class="maxed"></i>Maxed</span>
+          <span><i class="buy"></i>Affordable</span>
+          <span><i class="poor"></i>Locked or too costly</span>
         </div>
-        <div class="store-row">
-          <span class="store-icon">🌿</span>
-          <span id="store-kelp-count"></span>
-          <span id="store-kelp-cost"></span>
-          <button id="store-kelp-buy-btn" aria-label="Buy kelp upgrade">+1</button>
-          <button id="store-kelp-buy5-btn" aria-label="Buy 5 kelp upgrades">+5</button>
-          <button id="store-kelp-buy10-btn" aria-label="Buy 10 kelp upgrades">+10</button>
-        </div>
-        <div class="store-row">
-          <span class="store-icon">🪵</span>
-          <span id="store-driftwood-count"></span>
-          <span id="store-driftwood-cost"></span>
-          <button id="store-driftwood-buy-btn" aria-label="Buy driftwood upgrade">+1</button>
-          <button id="store-driftwood-buy5-btn" aria-label="Buy 5 driftwood upgrades">+5</button>
-          <button id="store-driftwood-buy10-btn" aria-label="Buy 10 driftwood upgrades">+10</button>
-        </div>
-        <div class="store-row">
-          <span class="store-icon">🌾</span>
-          <span id="store-crops-count"></span>
-          <span id="store-crops-cost"></span>
-          <button id="store-crops-buy-btn" aria-label="Buy crops upgrade">+1</button>
-          <button id="store-crops-buy5-btn" aria-label="Buy 5 crops upgrades">+5</button>
-          <button id="store-crops-buy10-btn" aria-label="Buy 10 crops upgrades">+10</button>
-        </div>
-        <div class="store-row">
-          <span class="store-icon">🟫</span>
-          <span id="store-planks-count"></span>
-          <span id="store-planks-cost"></span>
-          <button id="store-planks-buy-btn" aria-label="Buy planks upgrade">+1</button>
-          <button id="store-planks-buy5-btn" aria-label="Buy 5 planks upgrades">+5</button>
-          <button id="store-planks-buy10-btn" aria-label="Buy 10 planks upgrades">+10</button>
-        </div>
-        <div class="store-row">
-          <span class="store-icon">🪢</span>
-          <span id="store-kelp_rope-count"></span>
-          <span id="store-kelp_rope-cost"></span>
-          <button id="store-kelp_rope-buy-btn" aria-label="Buy kelp rope upgrade">+1</button>
-          <button id="store-kelp_rope-buy5-btn" aria-label="Buy 5 kelp rope upgrades">+5</button>
-          <button id="store-kelp_rope-buy10-btn" aria-label="Buy 10 kelp rope upgrades">+10</button>
-        </div>
-        <div class="store-row">
-          <span class="store-icon">🍞</span>
-          <span id="store-bread-count"></span>
-          <span id="store-bread-cost"></span>
-          <button id="store-bread-buy-btn" aria-label="Buy bread upgrade">+1</button>
-          <button id="store-bread-buy5-btn" aria-label="Buy 5 bread upgrades">+5</button>
-          <button id="store-bread-buy10-btn" aria-label="Buy 10 bread upgrades">+10</button>
-        </div>
-        <div class="store-row">
-          <span class="store-icon">⛵</span>
-          <span id="store-headstart-count"></span>
-          <span id="store-headstart-cost"></span>
-          <button id="store-headstart-buy-btn" aria-label="Buy head start">+1</button>
-          <button id="store-headstart-buy5-btn" aria-label="Buy 5 head starts">+5</button>
-          <button id="store-headstart-buy10-btn" aria-label="Buy 10 head starts">+10</button>
+        <div id="prestige-node-detail" class="hidden">
+          <p id="node-detail-title"></p>
+          <p id="node-detail-meta"></p>
+          <p id="node-detail-effect"></p>
+          <p id="node-detail-cost"></p>
+          <button id="node-detail-tier-btn">Buy next tier</button>
+          <div id="node-detail-qty" class="store-row">
+            <button id="node-detail-buy-btn" aria-label="Buy 1 level">+1</button>
+            <button id="node-detail-buy5-btn" aria-label="Buy 5 levels">+5</button>
+            <button id="node-detail-buy10-btn" aria-label="Buy 10 levels">+10</button>
+          </div>
         </div>
         <button id="prestige-store-back-btn">Back</button>
       </div>

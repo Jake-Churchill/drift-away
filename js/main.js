@@ -4,6 +4,9 @@ import {
   buyHeadStart,
   buyPrestigeUpgrade,
   buyShopItem,
+  buyTreeBallast,
+  buyTreeHold,
+  buyTreeTides,
   createInitialState,
   decodeSave,
   doPrestige,
@@ -147,9 +150,11 @@ initPrestige(
   },
   (upgrade, qty = 1) => {
     const tokensBefore = state.prestige.tokens;
+    const buyers = { headStart: buyHeadStart, hold: buyTreeHold, tides: buyTreeTides, ballast: buyTreeBallast };
+    const buy = buyers[upgrade] ?? ((s) => buyPrestigeUpgrade(s, upgrade));
     let purchases = 0;
     for (let i = 0; i < qty; i++) {
-      const success = upgrade === 'headStart' ? buyHeadStart(state) : buyPrestigeUpgrade(state, upgrade);
+      const success = buy(state);
       if (!success) break;
       purchases++;
     }

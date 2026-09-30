@@ -11,19 +11,17 @@ import {
   levelMultiplier,
   levelUpCost,
   MAX_LEVEL,
-  HEAD_START_MAX_LEVEL,
   HEAD_START_TILES_PER_LEVEL,
-  completionCount,
   costProgressFraction,
-  headStartCost,
-  isFullyComplete,
   isLit,
+  offlineCapSeconds,
+  offlineRate,
+  PRESTIGE_MIN_TOKENS,
   prestigeTokensEarned,
-  prestigeUpgradeCost,
+  prestigeTreeCatalog,
   PRESTIGE_UPGRADE_PERCENT,
   rateBreakdown,
   shopCatalog,
-  TOTAL_TILE_COUNT,
   unlockEta,
 } from './state.js';
 import { formatCount, formatEta } from './format.js';
@@ -324,7 +322,7 @@ function describeUnlock(tile) {
 function describeProduction(tile, state) {
   const level = getLevel(state, tile.id);
   if (tile.kind === 'producer') {
-    const mine = effectiveTileRate(tile, state.unlocked, state.levels, state.prestige.upgrades, state.shop.ballast);
+    const mine = effectiveTileRate(tile, state.unlocked, state.levels, state.prestige.upgrades, state.prestige.ballast);
     const share = Math.round((mine / rateBreakdown(state, tile.produces).total) * 100);
     return `Produces ${Number(mine.toFixed(2))} ${tile.produces}/s \u00b7 ${share}% of your ${tile.produces}`;
   }
@@ -600,7 +598,7 @@ export function initMenu({ onRestart, onRefresh, onExport, onImport, onShopBuy, 
   elements.menuAchievementsBtn.addEventListener('click', showAchievements);
   elements.menuAchievementsBackBtn.addEventListener('click', showMain);
 
-  const shopHeadings = { comfort: 'Comfort', look: 'Look', ballast: 'Ballast' };
+  const shopHeadings = { look: 'Look' };
   function renderShop() {
     const state = elements.lastState;
     elements.shopGold.textContent = `${RESOURCE_ICONS.gold} ${state.gold.toLocaleString()} gold`;
@@ -776,6 +774,43 @@ function wireQuickBuyButtons(row, onBuy) {
   wireHoldToRepeat(row.buyBtn10, () => onBuy(10));
 }
 
+// The prestige tree's layout: each node's spot, x as a % of the tree's width and y in px from its top
+// (style.css keeps the tree 300px tall to match). Every branch hangs off the root's bar; production's
+// hub drops between Ballast and Head start to the seven lanes spread along the bottom row.
+const TREE_SPOTS = { hold: [16, 80], tides: [16, 156], ballast: [50, 80], headStart: [84, 80] };
+const LANE_Y = 276;
+const laneX = (i) => 6 + (88 / (RESOURCES.length - 1)) * i;
+const TREE_LINES = `M50 16V40M16 40H84M16 40V156M50 40V80M84 40V80M67 40V242M6 242H94${RESOURCES.map((_, i) => `M${laneX(i)} 242V${LANE_Y}`).join('')}`;
+const TREE_FRAME =
+  `<svg viewBox="0 0 100 300" preserveAspectRatio="none" aria-hidden="true"><path d="${TREE_LINES}"/></svg>` +
+  `<div class="tree-root" style="left:50%;top:16px" aria-hidden="true">${TOKEN_ICON}</div>` +
+  `<div class="tree-hub" style="left:67%;top:214px" aria-hidden="true">Production</div>`;
+const TREE_ICONS = { hold: '📦', tides: '🌊', ballast: '⚓', headStart: '⛵' };
+const BRANCH_NAMES = { production: 'Production', comfort: 'Comfort', efficiency: 'Efficiency', headstart: 'Head start' };
+const STATUS_WORDS = { buy: 'affordable', poor: 'too costly', maxed: 'maxed', locked: 'locked' };
+
+const nodeIcon = (row) => TREE_ICONS[row.id] ?? RESOURCE_ICONS[row.id];
+const nodeTitle = (row) => row.name[0].toUpperCase() + row.name.slice(1);
+const nodeLevel = (row) => (row.maxLevel ? `tier ${row.level} of ${row.maxLevel}` : `level ${row.level}`);
+
+function treeNodeHtml(row, selected) {
+  const [x, y] = TREE_SPOTS[row.id] ?? [laneX(RESOURCES.indexOf(row.id)), LANE_Y];
+  const lane = row.branch === 'production';
+  const label = `${nodeTitle(row)} (${BRANCH_NAMES[row.branch]}), ${nodeLevel(row)}, ${STATUS_WORDS[row.status]}`;
+  return `<button class="tree-node ${row.status}${lane ? ' lane' : ''}" data-node="${row.id}" style="left:${x}%;top:${y}px" aria-label="${label}"${selected ? ' aria-current="true"' : ''}>` +
+    `<span class="tree-icon">${nodeIcon(row)}</span>${lane ? '' : `<span>${nodeTitle(row)}</span>`}` +
+    `<small>${row.maxLevel ? `${row.level}/${row.maxLevel}` : `Lv ${row.level}`}</small></button>`;
+}
+
+// What a node gives you now.
+function nodeEffect(row, state) {
+  if (row.id === 'hold') return `Time away counts for up to ${offlineCapSeconds(state) / 3600}h`;
+  if (row.id === 'tides') return `Time away is counted at ${Math.round(offlineRate(state) * 100)}% of your rate`;
+  if (row.id === 'ballast') return `+${row.level}% to all production (+1% per level)`;
+  if (row.id === 'headStart') return `Every run starts with ${row.level * HEAD_START_TILES_PER_LEVEL} free tiles (+${HEAD_START_TILES_PER_LEVEL} per tier)`;
+  return `+${row.level * PRESTIGE_UPGRADE_PERCENT}% ${row.name} production (+${PRESTIGE_UPGRADE_PERCENT}% per level)`;
+}
+
 export function initPrestige(onPrestige, onBuyUpgrade, onRefresh) {
   elements.prestigeBtn = document.getElementById('prestige-btn');
   elements.prestigeOverlay = document.getElementById('prestige-overlay');
@@ -789,25 +824,64 @@ export function initPrestige(onPrestige, onBuyUpgrade, onRefresh) {
   elements.prestigeStore = document.getElementById('prestige-store');
   elements.prestigeStoreTokens = document.getElementById('prestige-store-tokens');
   elements.prestigeStoreBackBtn = document.getElementById('prestige-store-back-btn');
-  elements.storeRows = {};
-  for (const resource of RESOURCES) {
-    elements.storeRows[resource] = {
-      count: document.getElementById(`store-${resource}-count`),
-      cost: document.getElementById(`store-${resource}-cost`),
-      buyBtn: document.getElementById(`store-${resource}-buy-btn`),
-      buyBtn5: document.getElementById(`store-${resource}-buy5-btn`),
-      buyBtn10: document.getElementById(`store-${resource}-buy10-btn`),
-    };
-    wireQuickBuyButtons(elements.storeRows[resource], (qty) => onBuyUpgrade(resource, qty));
-  }
-  elements.headStartRow = {
-    count: document.getElementById('store-headstart-count'),
-    cost: document.getElementById('store-headstart-cost'),
-    buyBtn: document.getElementById('store-headstart-buy-btn'),
-    buyBtn5: document.getElementById('store-headstart-buy5-btn'),
-    buyBtn10: document.getElementById('store-headstart-buy10-btn'),
+  elements.prestigeTree = document.getElementById('prestige-tree');
+  elements.prestigeNodeDetail = document.getElementById('prestige-node-detail');
+  const detail = {
+    title: document.getElementById('node-detail-title'),
+    meta: document.getElementById('node-detail-meta'),
+    effect: document.getElementById('node-detail-effect'),
+    cost: document.getElementById('node-detail-cost'),
+    tierBtn: document.getElementById('node-detail-tier-btn'),
+    qty: document.getElementById('node-detail-qty'),
+    buyBtn: document.getElementById('node-detail-buy-btn'),
+    buyBtn5: document.getElementById('node-detail-buy5-btn'),
+    buyBtn10: document.getElementById('node-detail-buy10-btn'),
   };
-  wireQuickBuyButtons(elements.headStartRow, (qty) => onBuyUpgrade('headStart', qty));
+  let selectedNodeId = null;
+  let shownState = null; // what the tree was last drawn from, for re-drawing it when a node is picked
+
+  // Cleared and rebuilt like renderShop: the tree's buttons are only ever clicked, never held. Focus
+  // goes back to the rebuilt node so a keyboard player doesn't lose their place.
+  function renderTree(state) {
+    shownState = state;
+    const focused = elements.prestigeTree.contains(document.activeElement) ? document.activeElement.dataset.node : null;
+    // The production lanes go last so the tab order runs top to bottom, the way the tree reads.
+    const rows = prestigeTreeCatalog(state).sort((a, b) => (a.branch === 'production') - (b.branch === 'production'));
+    elements.prestigeTree.innerHTML = TREE_FRAME + rows.map((row) => treeNodeHtml(row, row.id === selectedNodeId)).join('');
+    if (focused) elements.prestigeTree.querySelector(`[data-node="${focused}"]`).focus();
+  }
+
+  // Unlike the tree, this panel's buttons are fixed and wired once, below: a +1/+5/+10 button is held
+  // to repeat, so it must never be swapped out from under the pointer as each purchase re-renders.
+  function renderNodeDetail(state) {
+    const row = prestigeTreeCatalog(state).find((r) => r.id === selectedNodeId);
+    elements.prestigeNodeDetail.classList.toggle('hidden', !row);
+    if (!row) return;
+    const tiered = row.branch === 'comfort';
+    detail.title.textContent = `${nodeIcon(row)} ${nodeTitle(row)}`;
+    detail.meta.textContent = `${BRANCH_NAMES[row.branch]} · ${nodeLevel(row)}`;
+    detail.effect.textContent = nodeEffect(row, state);
+    detail.cost.textContent =
+      row.status === 'maxed' ? 'Maxed'
+      : row.status === 'locked' ? 'Locked until Deeper hold is maxed'
+      : `Next ${row.maxLevel ? 'tier' : 'level'}: ${TOKEN_ICON} ${row.cost}`;
+    detail.tierBtn.classList.toggle('hidden', !tiered);
+    detail.qty.classList.toggle('hidden', tiered);
+    for (const button of [detail.tierBtn, detail.buyBtn, detail.buyBtn5, detail.buyBtn10]) button.disabled = row.status !== 'buy';
+  }
+
+  elements.renderPrestigeTree = renderTree;
+  elements.renderPrestigeNodeDetail = renderNodeDetail;
+  elements.prestigeTree.addEventListener('click', (event) => {
+    const node = event.target.closest('[data-node]');
+    if (!node) return;
+    selectedNodeId = node.dataset.node;
+    renderTree(shownState);
+    renderNodeDetail(shownState);
+  });
+  // Hold and Tides are a few fixed tiers, each dearer than the last, so they get one button, no quantity.
+  detail.tierBtn.addEventListener('click', () => onBuyUpgrade(selectedNodeId, 1));
+  wireQuickBuyButtons(detail, (qty) => onBuyUpgrade(selectedNodeId, qty));
 
   function showMain() {
     elements.prestigeConfirm.classList.add('hidden');
@@ -875,39 +949,19 @@ export function hidePrestigeOverlay() {
 }
 
 export function updatePrestigeDisplay(state) {
-  const complete = isFullyComplete(state);
-  const count = completionCount(state);
-  elements.pendingPrestigeTokens = complete ? prestigeTokensEarned(state) : 0;
-  elements.prestigeActionBtn.disabled = !complete;
-  elements.prestigeActionBtn.textContent = complete
+  const tokens = prestigeTokensEarned(state);
+  const eligible = tokens >= PRESTIGE_MIN_TOKENS;
+  elements.pendingPrestigeTokens = eligible ? tokens : 0;
+  elements.prestigeActionBtn.disabled = !eligible;
+  elements.prestigeActionBtn.textContent = eligible
     ? `Prestige (+${elements.pendingPrestigeTokens} tokens)`
-    : `Prestige (${count}/${TOTAL_TILE_COUNT} maxed)`;
+    : 'Prestige (not yet — earn more first)';
 
   elements.prestigeStoreTokens.textContent = `Tokens: ${state.prestige.tokens}`;
-  for (const resource of RESOURCES) {
-    const row = elements.storeRows[resource];
-    const purchaseCount = state.prestige.upgrades[resource];
-    const cost = prestigeUpgradeCost(purchaseCount);
-    // The icon itself is already the static `.store-icon` span in the HTML — this
-    // text is the cumulative bonus percentage, not a raw purchase count, and it
-    // doesn't duplicate the icon.
-    row.count.textContent = `+${purchaseCount * PRESTIGE_UPGRADE_PERCENT}%`;
-    row.cost.textContent = `${cost} tokens`;
-    const poor = state.prestige.tokens < cost;
-    row.buyBtn.disabled = poor;
-    row.buyBtn5.disabled = poor;
-    row.buyBtn10.disabled = poor;
-  }
-
-  const level = state.prestige.headStart;
-  const headStart = elements.headStartRow;
-  const maxed = level >= HEAD_START_MAX_LEVEL;
-  headStart.count.textContent = `Head start +${level * HEAD_START_TILES_PER_LEVEL}`;
-  headStart.cost.textContent = maxed ? 'Max' : `${headStartCost(level)} tokens`;
-  const headStartLocked = maxed || state.prestige.tokens < headStartCost(level);
-  headStart.buyBtn.disabled = headStartLocked;
-  headStart.buyBtn5.disabled = headStartLocked;
-  headStart.buyBtn10.disabled = headStartLocked;
+  // Given `state`, not elements.lastState: after a prestige or an import this runs before the next
+  // frame hands the resource bar the new state.
+  elements.renderPrestigeTree(state);
+  elements.renderPrestigeNodeDetail(state);
 }
 
 const POPUP_DURATION_MS = 1200;

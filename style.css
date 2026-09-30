@@ -1003,10 +1003,16 @@ html, body {
   color: #10263a;
 }
 
+/* Centered and tall enough to reach the HUD (z-index 3), so it sits above it -- but below
+   #feedback-layer (20), whose token popups must stay visible over the tree. */
 #prestige-overlay {
   position: fixed;
   inset: 0;
+  z-index: 10;
   background: rgba(9, 20, 31, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 #prestige-overlay.hidden {
@@ -1014,17 +1020,28 @@ html, body {
 }
 
 #prestige-panel {
-  position: absolute;
-  top: 60px;
-  right: 60px;
   background: rgba(16, 38, 58, 0.95);
   color: #f4ead2;
   padding: 28px 36px;
   border-radius: 10px;
   min-width: 280px;
   max-width: 340px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
   text-align: center;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+/* The main and confirm views stay compact; the panel only widens while it shows the tree. */
+#prestige-panel:has(#prestige-store:not(.hidden)) {
+  width: min(680px, calc(100vw - 32px));
+  max-width: none;
+}
+
+@media (max-width: 600px) {
+  #prestige-panel {
+    padding: 20px 16px;
+  }
 }
 
 #prestige-panel h2 {
@@ -1045,12 +1062,14 @@ html, body {
   margin-bottom: 10px;
 }
 
-#prestige-action-btn {
+#prestige-action-btn,
+#node-detail-tier-btn {
   background: #d9b545;
   color: #10263a;
 }
 
-#prestige-action-btn:disabled {
+#prestige-action-btn:disabled,
+#node-detail-tier-btn:disabled {
   background: #6b6b6b;
   color: #ccc;
   cursor: not-allowed;
@@ -1092,25 +1111,188 @@ html, body {
   font-weight: bold;
 }
 
+/* The tree: an SVG of connector lines under absolutely placed nodes. js/ui.js places every node
+   (x as a % of the width, y in px), and draws the lines in a 100-wide, 300-tall viewBox that is
+   stretched across the tree, so this height must stay 300px. */
+#prestige-tree {
+  position: relative;
+  height: 300px;
+  margin-bottom: 8px;
+}
+
+#prestige-tree svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+#prestige-tree path {
+  fill: none;
+  stroke: #3d5568;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.tree-root,
+.tree-hub,
+#prestige-tree .tree-node {
+  position: absolute;
+  transform: translate(-50%, -50%);
+}
+
+.tree-root {
+  width: 28px;
+  height: 28px;
+  line-height: 24px;
+  border-radius: 50%;
+  border: 2px solid #d9b545;
+  background: #24455e;
+  font-size: 13px;
+}
+
+.tree-hub {
+  padding: 4px 10px;
+  border-radius: 12px;
+  border: 1px solid #3d5568;
+  background: #1a3348;
+  font-size: 10px;
+  font-weight: bold;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+#prestige-tree .tree-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 84px;
+  margin: 0;
+  padding: 5px 2px;
+  border: 2px solid #d9b545;
+  border-radius: 8px;
+  background: #24455e;
+  color: #f4ead2;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+#prestige-tree .tree-node.lane {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 10px;
+}
+
+#prestige-tree .tree-node .tree-icon {
+  font-size: 17px;
+  font-weight: normal;
+}
+
+#prestige-tree .tree-node.lane .tree-icon {
+  font-size: 15px;
+}
+
+#prestige-tree .tree-node small {
+  font-size: 10px;
+  opacity: 0.85;
+}
+
+#prestige-tree .tree-node.maxed,
+#prestige-legend .maxed {
+  background: #1f4a38;
+  border-color: #8fe0a0;
+}
+
+#prestige-legend .buy {
+  background: #24455e;
+  border-color: #d9b545;
+}
+
+#prestige-tree .tree-node.poor,
+#prestige-tree .tree-node.locked,
+#prestige-legend .poor {
+  background: #2a3f52;
+  border-color: #52697c;
+  color: #7fa0b3;
+}
+
+#prestige-tree .tree-node[aria-current="true"] {
+  box-shadow: 0 0 0 3px rgba(244, 234, 210, 0.55);
+}
+
+#prestige-legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 14px;
+  margin-bottom: 12px;
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+#prestige-legend i {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  margin-right: 5px;
+  border: 2px solid;
+  border-radius: 3px;
+  vertical-align: -1px;
+}
+
+#prestige-node-detail {
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: rgba(244, 234, 210, 0.06);
+  text-align: left;
+}
+
+#prestige-node-detail.hidden,
+#prestige-panel #node-detail-tier-btn.hidden,
+#node-detail-qty.hidden {
+  display: none;
+}
+
+#prestige-node-detail p {
+  margin: 0 0 6px;
+  font-size: 13px;
+}
+
+#prestige-node-detail #node-detail-title {
+  margin-bottom: 2px;
+  font-size: 16px;
+  font-weight: bold;
+}
+
+#prestige-node-detail #node-detail-meta {
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+#prestige-node-detail #node-detail-cost {
+  margin-bottom: 10px;
+  font-weight: bold;
+}
+
+#prestige-panel #node-detail-tier-btn,
+#node-detail-qty {
+  margin-bottom: 0;
+}
+
+#node-detail-qty button {
+  flex: 1;
+}
+
 .store-row {
   display: flex;
   align-items: center;
   gap: 8px;
   margin-bottom: 10px;
   font-size: 14px;
-}
-
-.store-icon {
-  font-size: 18px;
-}
-
-.store-row span:nth-child(2) {
-  flex: 1;
-  text-align: left;
-}
-
-.store-row span:nth-child(3) {
-  opacity: 0.85;
 }
 
 #prestige-panel .store-row button {
