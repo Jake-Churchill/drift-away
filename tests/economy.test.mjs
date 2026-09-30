@@ -11,6 +11,9 @@ import {
   buyHeadStart,
   buyPrestigeUpgrade,
   buyShopItem,
+  buyTreeBallast,
+  buyTreeHold,
+  buyTreeTides,
   checkAchievements,
   completionCount,
   createInitialState,
@@ -40,8 +43,10 @@ import {
   offlineCapSeconds,
   offlineRate,
   prestigeTokensEarned,
+  prestigeTreeCatalog,
   prestigeUpgradeCost,
   rateBreakdown,
+  RESOURCES,
   SAVE_KEY,
   setGeneratorEnabled,
   shopCatalog,
@@ -265,7 +270,7 @@ console.log('geometry-derived adjacency tests passed');
   const state = createInitialState();
   assert.deepEqual(
     state.prestige,
-    { tokens: 0, upgrades: { fish: 0, kelp: 0, driftwood: 0, crops: 0, planks: 0, kelp_rope: 0, bread: 0 }, headStart: 0, count: 0 },
+    { tokens: 0, upgrades: { fish: 0, kelp: 0, driftwood: 0, crops: 0, planks: 0, kelp_rope: 0, bread: 0 }, headStart: 0, hold: 0, tides: 0, ballast: 0, count: 0 },
     'a fresh game starts with zero prestige tokens (including zone 3 goods), no upgrades purchased, and no prestiges done'
   );
 }
@@ -431,7 +436,7 @@ console.log('geometry-derived adjacency tests passed');
     resources: { fish: 0, kelp: 0, driftwood: 0, crops: 0 },
     lifetime: { fish: 0, kelp: 0, driftwood: 0, crops: 0 },
     levels: {},
-    prestige: { tokens: 0, upgrades: { fish: 0, kelp: 0, driftwood: 0, crops: 0 } },
+    prestige: { tokens: 0, upgrades: { fish: 0, kelp: 0, driftwood: 0, crops: 0 }, hold: 0, tides: 0, ballast: 0 },
     shop: createInitialState().shop,
     gold: 0,
     achievements: [],
@@ -478,9 +483,17 @@ console.log('completion tracking tests passed');
 }
 
 {
-  const state = createInitialState(); // not fully complete
+  const state = createInitialState(); // fresh game, no lifetime production yet
   const result = doPrestige(state);
-  assert.equal(result, null, 'prestige is refused before full completion');
+  assert.equal(result, null, 'prestige is refused below the minimum token floor');
+}
+
+{
+  const state = createInitialState();
+  state.lifetime = { fish: 1000, kelp: 0, driftwood: 0, crops: 0, planks: 0, kelp_rope: 0, bread: 0 };
+  const result = doPrestige(state); // nowhere near fully complete, but past the token floor
+  assert.ok(result, 'prestige succeeds once the token floor is met, even far from full completion');
+  assert.equal(result.tokensEarned, 1);
 }
 
 {
@@ -547,6 +560,104 @@ console.log('prestige reset tests passed');
 
 console.log('prestige store tests passed');
 
+// --- prestige tree: comfort (hold -> tides) and efficiency (ballast) ---
+{
+  const s = createInitialState();
+  assert.deepEqual(s.shop, { palette: 'default', palettes: [] }, 'shop only holds cosmetics now');
+  assert.deepEqual(
+    s.prestige,
+    { tokens: 0, upgrades: Object.fromEntries(RESOURCES.map((r) => [r, 0])), headStart: 0, hold: 0, tides: 0, ballast: 0, count: 0 },
+    'prestige gained hold/tides/ballast'
+  );
+  assert.equal(offlineCapSeconds(s), 8 * 3600);
+  assert.equal(offlineRate(s), 0.5);
+
+  s.prestige.tokens = 5;
+  assert.equal(buyTreeHold(s), false, 'six tokens needed, five held');
+  assert.equal(s.prestige.tokens, 5, 'a refused purchase costs nothing');
+  s.prestige.tokens = 100;
+  for (const [cost, hours] of [[6, 12], [12, 16], [20, 24]]) {
+    const before = s.prestige.tokens;
+    assert.equal(buyTreeHold(s), true);
+    assert.equal(before - s.prestige.tokens, cost, `deeper hold to ${hours}h costs ${cost}`);
+    assert.equal(offlineCapSeconds(s), hours * 3600);
+  }
+  assert.equal(buyTreeHold(s), false, 'nothing above the top step');
+
+  const beforeHoldMaxed = createInitialState();
+  beforeHoldMaxed.prestige.tokens = 100;
+  assert.equal(buyTreeTides(beforeHoldMaxed), false, 'tides is locked until hold is fully maxed');
+
+  for (const [cost, rate] of [[8, 0.65], [16, 0.8]]) {
+    const before = s.prestige.tokens;
+    assert.equal(buyTreeTides(s), true);
+    assert.equal(before - s.prestige.tokens, cost);
+    assert.equal(offlineRate(s), rate);
+  }
+  assert.equal(buyTreeTides(s), false, 'nothing above the top step');
+
+  // the tree's effect on time away
+  const away = createInitialState();
+  away.prestige.hold = 2; // 16h
+  away.prestige.tides = 1; // 65%
+  const result = applyOfflineProgress(away, 20 * 3600);
+  assert.equal(result.seconds, 16 * 3600, 'the bought cap applies');
+  assert.equal(result.rate, 0.65, 'the summary reports the rate used');
+  assert.equal(result.gains.driftwood, 0.5 * 16 * 3600 * 0.65);
+
+  // ballast: unlimited, +1% each, price climbs by 2 -- same formula, now token-priced
+  const b = createInitialState();
+  b.prestige.tokens = 1000;
+  const baseRate = effectiveRate('driftwood', b.unlocked, b.levels, b.prestige.upgrades);
+  assert.equal(ballastCost(b), 4);
+  for (const cost of [4, 6, 8]) {
+    const before = b.prestige.tokens;
+    assert.equal(buyTreeBallast(b), true);
+    assert.equal(before - b.prestige.tokens, cost);
+  }
+  assert.equal(b.prestige.ballast, 3);
+  assert.equal(ballastCost(b), 10);
+  const info = rateBreakdown(b, 'driftwood');
+  assert.equal(info.ballastPercent, 3);
+  assert(Math.abs(info.total - baseRate * 1.03) < 1e-9, 'three ballast is +3% on everything');
+  const beforeDriftwood = b.resources.driftwood;
+  tick(b, 10);
+  assert(Math.abs(b.resources.driftwood - beforeDriftwood - baseRate * 1.03 * 10) < 1e-9, 'production actually uses it');
+  for (let i = 0; i < 40; i++) buyTreeBallast(b);
+  assert.equal(b.prestige.ballast > 3, true, 'ballast has no ceiling until tokens run out');
+
+  // survives export/import, and a legacy pre-rework save migrates gold-bought progress in
+  const kept = createInitialState();
+  kept.prestige.hold = 2;
+  kept.prestige.tides = 1;
+  kept.prestige.ballast = 5;
+  const roundTrip = decodeSave(encodeSave(kept));
+  assert.equal(roundTrip.prestige.hold, 2);
+  assert.equal(roundTrip.prestige.tides, 1);
+  assert.equal(roundTrip.prestige.ballast, 5);
+
+  const legacy = decodeSave(btoa(JSON.stringify({
+    version: 3, resources: {}, lifetime: {}, unlocked: ['driftwood_start'],
+    shop: { holdLevel: 2, tidesLevel: 1, ballast: 5, palette: 'default', palettes: [] },
+  })));
+  assert.equal(legacy.prestige.hold, 2, "a legacy save's gold-bought hold carries into the tree");
+  assert.equal(legacy.prestige.tides, 1, 'and tides');
+  assert.equal(legacy.prestige.ballast, 5, 'and ballast');
+  assert.equal(legacy.shop.holdLevel, undefined, 'the old shop fields are gone from the normalized state');
+
+  // the catalog the tree screen renders: every node, and tides shown locked until hold is maxed
+  const tree = createInitialState();
+  tree.prestige.tokens = 7;
+  const status = () => Object.fromEntries(prestigeTreeCatalog(tree).map((r) => [r.id, r.status]));
+  assert.deepEqual(prestigeTreeCatalog(tree).map((r) => r.id), [...RESOURCES, 'hold', 'tides', 'ballast', 'headStart']);
+  assert.deepEqual(status(), { ...Object.fromEntries(RESOURCES.map((r) => [r, 'buy'])), hold: 'buy', tides: 'locked', ballast: 'buy', headStart: 'poor' });
+  tree.prestige.hold = 3;
+  assert.equal(status().hold, 'maxed');
+  assert.equal(status().tides, 'poor', 'unlocked once hold is maxed; 8 tokens needed, 7 held');
+
+  console.log('prestige tree comfort and efficiency tests passed');
+}
+
 // --- prestige upgrades feeding effectiveRate / effectiveTileRate / tick / applyOfflineProgress ---
 
 {
@@ -585,7 +696,7 @@ console.log('prestige store tests passed');
     resources: { fish: 0, kelp: 0, driftwood: 0, crops: 0 },
     lifetime: { fish: 0, kelp: 0, driftwood: 0, crops: 0 },
     levels: {},
-    prestige: { tokens: 0, upgrades: { fish: 2, kelp: 0, driftwood: 0, crops: 0 } },
+    prestige: { tokens: 0, upgrades: { fish: 2, kelp: 0, driftwood: 0, crops: 0 }, hold: 0, tides: 0, ballast: 0 },
     shop: createInitialState().shop,
     gold: 0,
     achievements: [],
@@ -600,7 +711,7 @@ console.log('prestige store tests passed');
     resources: { fish: 0, kelp: 0, driftwood: 0, crops: 0 },
     lifetime: { fish: 0, kelp: 0, driftwood: 0, crops: 0 },
     levels: {},
-    prestige: { tokens: 0, upgrades: { fish: 2, kelp: 0, driftwood: 0, crops: 0 } },
+    prestige: { tokens: 0, upgrades: { fish: 2, kelp: 0, driftwood: 0, crops: 0 }, hold: 0, tides: 0, ballast: 0 },
     shop: createInitialState().shop,
     gold: 0,
     achievements: [],
@@ -1316,43 +1427,11 @@ const corridorEntry = (zone, fromZone) =>
   console.log('idle booster tests passed');
 }
 
-// --- gold shop ---
+// --- gold shop: cosmetics ---
 {
   const s = createInitialState();
-  assert.deepEqual(s.shop, { holdLevel: 0, tidesLevel: 0, palette: 'default', palettes: [], ballast: 0 });
-  assert.equal(offlineCapSeconds(s), 8 * 3600);
-  assert.equal(offlineRate(s), 0.5);
+  assert.deepEqual(s.shop, { palette: 'default', palettes: [] });
 
-  s.gold = 5;
-  assert.equal(buyShopItem(s, 'hold'), false, 'six gold needed, five held');
-  assert.equal(s.gold, 5, 'a refused purchase costs nothing');
-  s.gold = 100;
-  for (const [cost, hours] of [[6, 12], [12, 16], [20, 24]]) {
-    const before = s.gold;
-    assert.equal(buyShopItem(s, 'hold'), true);
-    assert.equal(before - s.gold, cost, `deeper hold to ${hours}h costs ${cost}`);
-    assert.equal(offlineCapSeconds(s), hours * 3600);
-  }
-  assert.equal(buyShopItem(s, 'hold'), false, 'nothing above the top step');
-  for (const [cost, rate] of [[8, 0.65], [16, 0.8]]) {
-    const before = s.gold;
-    assert.equal(buyShopItem(s, 'tides'), true);
-    assert.equal(before - s.gold, cost);
-    assert.equal(offlineRate(s), rate);
-  }
-  assert.equal(buyShopItem(s, 'tides'), false);
-  assert.equal(shopCatalog(s).find((r) => r.id === 'hold').status, 'maxed');
-
-  // the shop's effect on time away
-  const away = createInitialState();
-  away.shop.holdLevel = 2; // 16h
-  away.shop.tidesLevel = 1; // 65%
-  const result = applyOfflineProgress(away, 20 * 3600);
-  assert.equal(result.seconds, 16 * 3600, 'the bought cap applies');
-  assert.equal(result.rate, 0.65, 'the summary reports the rate used');
-  assert.equal(result.gains.driftwood, 0.5 * 16 * 3600 * 0.65);
-
-  // palettes
   const p = createInitialState();
   p.gold = 100;
   assert.equal(buyShopItem(p, 'palette:lagoon'), true);
@@ -1369,35 +1448,17 @@ const corridorEntry = (zone, fromZone) =>
   assert.equal(p.shop.palette, 'default');
   assert.equal(buyShopItem(p, 'palette:storm-nonsense'), false);
   assert.equal(buyShopItem(p, 'not-an-item'), false);
+  assert.equal(buyShopItem(p, 'hold'), false, 'hold moved to the prestige tree, not a shop id anymore');
+  assert.equal(buyShopItem(p, 'ballast'), false, 'so did ballast');
   const rows = shopCatalog(p);
+  assert.ok(!rows.some((r) => ['hold', 'tides', 'ballast'].includes(r.id)), 'only palettes are left');
   assert.equal(rows.find((r) => r.id === 'palette:dusk').status, 'owned');
   assert.equal(rows.find((r) => r.id === 'palette:default').status, 'active');
   assert.equal(rows.find((r) => r.id === 'palette:storm').status, 'buy');
 
-  // ballast: unlimited, +1% each, price climbs by 2
-  const b = createInitialState();
-  b.gold = 1000;
-  const baseRate = effectiveRate('driftwood', b.unlocked, b.levels, b.prestige.upgrades);
-  assert.equal(ballastCost(b), 4);
-  for (const cost of [4, 6, 8]) {
-    const before = b.gold;
-    assert.equal(buyShopItem(b, 'ballast'), true);
-    assert.equal(before - b.gold, cost);
-  }
-  assert.equal(b.shop.ballast, 3);
-  assert.equal(ballastCost(b), 10);
-  const info = rateBreakdown(b, 'driftwood');
-  assert.equal(info.ballastPercent, 3);
-  assert(Math.abs(info.total - baseRate * 1.03) < 1e-9, 'three ballast is +3% on everything');
-  const before = b.resources.driftwood;
-  tick(b, 10);
-  assert(Math.abs(b.resources.driftwood - before - baseRate * 1.03 * 10) < 1e-9, 'production actually uses it');
-  for (let i = 0; i < 40; i++) buyShopItem(b, 'ballast');
-  assert.equal(b.shop.ballast > 3, true, 'ballast has no ceiling until gold runs out');
-
   // survives export/import, prestige, and a save from before the shop existed
   const kept = createInitialState();
-  kept.shop = { holdLevel: 2, tidesLevel: 1, palette: 'dusk', palettes: ['dusk'], ballast: 5 };
+  kept.shop = { palette: 'dusk', palettes: ['dusk'] };
   kept.gold = 9;
   const roundTrip = decodeSave(encodeSave(kept));
   assert.deepEqual(roundTrip.shop, kept.shop);
@@ -1434,7 +1495,7 @@ const corridorEntry = (zone, fromZone) =>
     for (const r of ['fish', 'kelp', 'driftwood', 'crops']) f.lifetime[r] = 10000;
     f.prestige.headStart = headStart;
     f.prestige.count = 4;
-    f.shop.ballast = 7;
+    f.prestige.ballast = 7;
     f.shop.palettes = ['dusk'];
     f.shop.palette = 'dusk';
     f.gold = 33;
@@ -1447,7 +1508,8 @@ const corridorEntry = (zone, fromZone) =>
   const none = doPrestige(finished(0)).state;
   assert.equal(none.unlocked.length, 1, 'no head start: just the starting tile');
   assert.equal(none.prestige.count, 5, 'each prestige is counted');
-  assert.deepEqual(none.shop, { holdLevel: 0, tidesLevel: 0, palette: 'dusk', palettes: ['dusk'], ballast: 7 }, 'the shop is kept');
+  assert.deepEqual(none.shop, { palette: 'dusk', palettes: ['dusk'] }, 'the shop (cosmetics) is kept');
+  assert.equal(none.prestige.ballast, 7, 'ballast carries over through prestige');
   assert.equal(none.gold, 33);
 
   const two = doPrestige(finished(2)).state;

@@ -53,12 +53,21 @@ const PRODUCER_UPGRADE_BASE = 30;
 const BOOSTER_UPGRADE_BASE = 6;
 
 export function createInitialPrestige() {
-  return { tokens: 0, upgrades: Object.fromEntries(RESOURCES.map((r) => [r, 0])), headStart: 0, count: 0 };
+  return {
+    tokens: 0,
+    upgrades: Object.fromEntries(RESOURCES.map((r) => [r, 0])),
+    headStart: 0,
+    hold: 0,
+    tides: 0,
+    ballast: 0,
+    count: 0,
+  };
 }
 
-// What gold has bought. Like gold itself it survives a prestige.
+// What gold has bought -- cosmetics only. Like gold itself it survives a prestige. Deeper Hold,
+// Steady Tides and Ballast moved to the prestige tree (state.prestige), bought with tokens instead.
 export function createInitialShop() {
-  return { holdLevel: 0, tidesLevel: 0, palette: 'default', palettes: [], ballast: 0 };
+  return { palette: 'default', palettes: [] };
 }
 
 export function createInitialState() {
@@ -134,7 +143,7 @@ export function effectiveTileRate(tile, unlockedIds, levels = {}, prestigeUpgrad
 
 // A resource's income for this game state: everything that applies, ballast included.
 function stateRate(state, resource) {
-  return effectiveRate(resource, state.unlocked, state.levels, state.prestige.upgrades, state.shop.ballast);
+  return effectiveRate(resource, state.unlocked, state.levels, state.prestige.upgrades, state.prestige.ballast);
 }
 
 // Where a resource's income comes from, for the HUD: producer output, the boosters stacked on it,
@@ -166,7 +175,7 @@ export function rateBreakdown(state, resource) {
     }
   }
   const prestigePercent = PRESTIGE_UPGRADE_PERCENT * (state.prestige.upgrades[resource] || 0);
-  const ballastPercent = state.shop.ballast;
+  const ballastPercent = state.prestige.ballast;
   return {
     base,
     boostPercent,
@@ -446,6 +455,7 @@ export function checkAchievements(state) {
 }
 
 export const PRESTIGE_TOKEN_DIVISOR = 1000; // first-pass constant, not playtested
+export const PRESTIGE_MIN_TOKENS = 1; // below this, a prestige would earn nothing worth resetting for
 
 export function prestigeTokensEarned(state) {
   const total = RESOURCES.reduce((sum, r) => sum + state.lifetime[r], 0);
@@ -453,13 +463,16 @@ export function prestigeTokensEarned(state) {
 }
 
 export function doPrestige(state) {
-  if (!isFullyComplete(state)) return null;
+  if (prestigeTokensEarned(state) < PRESTIGE_MIN_TOKENS) return null;
   const tokensEarned = prestigeTokensEarned(state);
   const nextState = createInitialState();
   nextState.prestige = {
     tokens: state.prestige.tokens + tokensEarned,
     upgrades: { ...state.prestige.upgrades },
     headStart: state.prestige.headStart,
+    hold: state.prestige.hold,
+    tides: state.prestige.tides,
+    ballast: state.prestige.ballast,
     count: state.prestige.count + 1,
   };
   nextState.shop = { ...state.shop, palettes: [...state.shop.palettes] };
@@ -484,6 +497,33 @@ export function buyHeadStart(state) {
   if (level >= HEAD_START_MAX_LEVEL || state.prestige.tokens < headStartCost(level)) return false;
   state.prestige.tokens -= headStartCost(level);
   state.prestige.headStart += 1;
+  return true;
+}
+
+export function buyTreeHold(state) {
+  const level = state.prestige.hold;
+  if (level >= HOLD_COSTS.length || state.prestige.tokens < HOLD_COSTS[level]) return false;
+  state.prestige.tokens -= HOLD_COSTS[level];
+  state.prestige.hold += 1;
+  return true;
+}
+
+// Locked until Deeper Hold is fully maxed -- the one place this rework adds a dependency between
+// two things that used to be independent gold purchases.
+export function buyTreeTides(state) {
+  const level = state.prestige.tides;
+  const holdMaxed = state.prestige.hold >= HOLD_COSTS.length;
+  if (!holdMaxed || level >= TIDES_COSTS.length || state.prestige.tokens < TIDES_COSTS[level]) return false;
+  state.prestige.tokens -= TIDES_COSTS[level];
+  state.prestige.tides += 1;
+  return true;
+}
+
+export function buyTreeBallast(state) {
+  const cost = ballastCost(state);
+  if (state.prestige.tokens < cost) return false;
+  state.prestige.tokens -= cost;
+  state.prestige.ballast += 1;
   return true;
 }
 
@@ -514,37 +554,22 @@ function grantHeadStart(state, count) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Harbor Shop: what gold buys. Comfort (time away), looks (palettes) and ballast (a small, endless
-// production bonus so gold never has nowhere to go).
+// Prestige tree comfort and efficiency nodes, bought with tokens: Deeper Hold, Steady Tides (locked
+// until Deeper Hold is maxed) and Ballast (a small, endless production bonus).
 const HOLD_COSTS = [6, 12, 20];
 const TIDES_COSTS = [8, 16];
 
 export function ballastCost(state) {
-  return 4 + 2 * state.shop.ballast;
+  return 4 + 2 * state.prestige.ballast;
 }
 
-// The rows the shop screen shows. `status` is one of buy / poor (can't afford yet) / owned /
-// active (a look that is on) / maxed.
+// Harbor Shop: what gold buys -- looks (palettes). The rows the shop screen shows. `status` is one
+// of buy / poor (can't afford yet) / owned / active (a look that is on).
 export function shopCatalog(state) {
   const { shop, gold } = state;
   const row = (id, section, name, detail, cost, status, extra = {}) => ({ id, section, name, detail, cost, status, ...extra });
   const priced = (cost) => (gold >= cost ? 'buy' : 'poor');
   const rows = [];
-
-  const hold = shop.holdLevel;
-  rows.push(
-    hold >= HOLD_COSTS.length
-      ? row('hold', 'comfort', `Deeper hold \u00b7 ${hold} of ${HOLD_COSTS.length}`, `Offline cap ${OFFLINE_CAP_HOURS[hold]}h`, 0, 'maxed')
-      : row('hold', 'comfort', `Deeper hold \u00b7 ${hold} of ${HOLD_COSTS.length}`, `Offline cap ${OFFLINE_CAP_HOURS[hold]}h \u2192 ${OFFLINE_CAP_HOURS[hold + 1]}h`, HOLD_COSTS[hold], priced(HOLD_COSTS[hold]))
-  );
-
-  const tides = shop.tidesLevel;
-  const percent = (level) => Math.round(OFFLINE_RATES[level] * 100);
-  rows.push(
-    tides >= TIDES_COSTS.length
-      ? row('tides', 'comfort', `Steady tides \u00b7 ${tides} of ${TIDES_COSTS.length}`, `Time away counted at ${percent(tides)}%`, 0, 'maxed')
-      : row('tides', 'comfort', `Steady tides \u00b7 ${tides} of ${TIDES_COSTS.length}`, `Time away counted at ${percent(tides + 1)}% instead of ${percent(tides)}%`, TIDES_COSTS[tides], priced(TIDES_COSTS[tides]))
-  );
 
   const look = (id, name, detail, cost, swatch) => {
     const active = shop.palette === id;
@@ -553,10 +578,43 @@ export function shopCatalog(state) {
   };
   if (shop.palettes.length > 0) rows.push(look('default', 'Classic', 'The original look', 0, '#2e7ba8'));
   for (const [id, palette] of Object.entries(PALETTES)) rows.push(look(id, palette.name, palette.blurb, palette.cost, palette.swatch));
+  return rows;
+}
 
-  rows.push(
-    row('ballast', 'ballast', `Ballast \u00b7 owned ${shop.ballast}`, '+1% to all production each. Cost rises by 2 every time, no limit', ballastCost(state), priced(ballastCost(state)))
-  );
+// Every prestige tree node's current level, cost and status in one place, mirroring shopCatalog --
+// js/ui.js stays a pure renderer with no purchase logic of its own.
+export function prestigeTreeCatalog(state) {
+  const { tokens } = state.prestige;
+  const rows = [];
+  for (const resource of RESOURCES) {
+    const level = state.prestige.upgrades[resource];
+    const cost = prestigeUpgradeCost(level);
+    rows.push({ id: resource, branch: 'production', name: resourceLabel(resource), level, cost, status: tokens >= cost ? 'buy' : 'poor' });
+  }
+  const holdLevel = state.prestige.hold;
+  const holdMaxed = holdLevel >= HOLD_COSTS.length;
+  rows.push({
+    id: 'hold', branch: 'comfort', name: 'Deeper hold', level: holdLevel, maxLevel: HOLD_COSTS.length,
+    cost: holdMaxed ? 0 : HOLD_COSTS[holdLevel],
+    status: holdMaxed ? 'maxed' : tokens >= HOLD_COSTS[holdLevel] ? 'buy' : 'poor',
+  });
+  const tidesLevel = state.prestige.tides;
+  const tidesMaxed = tidesLevel >= TIDES_COSTS.length;
+  rows.push({
+    id: 'tides', branch: 'comfort', name: 'Steady tides', level: tidesLevel, maxLevel: TIDES_COSTS.length,
+    cost: tidesMaxed ? 0 : TIDES_COSTS[tidesLevel],
+    status: !holdMaxed ? 'locked' : tidesMaxed ? 'maxed' : tokens >= TIDES_COSTS[tidesLevel] ? 'buy' : 'poor',
+  });
+  const ballastLevel = state.prestige.ballast;
+  const ballastPrice = ballastCost(state);
+  rows.push({ id: 'ballast', branch: 'efficiency', name: 'Ballast', level: ballastLevel, cost: ballastPrice, status: tokens >= ballastPrice ? 'buy' : 'poor' });
+  const hsLevel = state.prestige.headStart;
+  const hsMaxed = hsLevel >= HEAD_START_MAX_LEVEL;
+  rows.push({
+    id: 'headStart', branch: 'headstart', name: 'Head start', level: hsLevel, maxLevel: HEAD_START_MAX_LEVEL,
+    cost: hsMaxed ? 0 : headStartCost(hsLevel),
+    status: hsMaxed ? 'maxed' : tokens >= headStartCost(hsLevel) ? 'buy' : 'poor',
+  });
   return rows;
 }
 
@@ -568,21 +626,6 @@ export function buyShopItem(state, id) {
     state.gold -= cost;
     return true;
   };
-  if (id === 'hold') {
-    if (shop.holdLevel >= HOLD_COSTS.length || !pay(HOLD_COSTS[shop.holdLevel])) return false;
-    shop.holdLevel += 1;
-    return true;
-  }
-  if (id === 'tides') {
-    if (shop.tidesLevel >= TIDES_COSTS.length || !pay(TIDES_COSTS[shop.tidesLevel])) return false;
-    shop.tidesLevel += 1;
-    return true;
-  }
-  if (id === 'ballast') {
-    if (!pay(ballastCost(state))) return false;
-    shop.ballast += 1;
-    return true;
-  }
   if (id.startsWith('palette:')) {
     const key = id.slice('palette:'.length);
     if (shop.palette === key) return false;
@@ -667,17 +710,17 @@ export function upgradeList(state) {
   return rows.sort((a, b) => b.ready - a.ready || (a.ready ? 0 : b.fraction - a.fraction));
 }
 
-// Time away. The cap and the rate start at 8 hours and 50% and are raised in the Harbor Shop.
+// Time away. The cap and the rate start at 8 hours and 50% and are raised in the prestige tree.
 export const OFFLINE_CAP_HOURS = [8, 12, 16, 24];
 const OFFLINE_RATES = [0.5, 0.65, 0.8];
 const MIN_OFFLINE_SECONDS = 60;
 
 export function offlineCapSeconds(state) {
-  return OFFLINE_CAP_HOURS[state.shop.holdLevel] * 60 * 60;
+  return OFFLINE_CAP_HOURS[state.prestige.hold] * 60 * 60;
 }
 
 export function offlineRate(state) {
-  return OFFLINE_RATES[state.shop.tidesLevel];
+  return OFFLINE_RATES[state.prestige.tides];
 }
 
 // Zone 3's mechanic: a generator (kind 'generator') doesn't produce from nothing like every
@@ -825,11 +868,7 @@ function normalizeSave(parsed) {
     resources: { ...base.resources, ...parsed.resources },
     lifetime: { ...base.lifetime, ...parsed.lifetime },
     levels: { ...base.levels, ...parsed.levels },
-    prestige: {
-      ...base.prestige,
-      ...(parsed.prestige || {}),
-      upgrades: { ...base.prestige.upgrades, ...(parsed.prestige || {}).upgrades },
-    },
+    prestige: normalizePrestige(parsed.prestige || {}, parsed.shop || {}, base.prestige),
     gold: parsed.gold ?? base.gold,
     achievements: [...(parsed.achievements || base.achievements)],
     shop: normalizeShop(parsed.shop, base.shop),
@@ -839,13 +878,28 @@ function normalizeSave(parsed) {
   };
 }
 
-// A pasted or hand-edited save can hold anything, so the shop is clamped to what exists.
-function normalizeShop(saved, base) {
-  const shop = { ...base, ...(saved || {}) };
+// A save from before the prestige tree rework kept Deeper Hold, Steady Tides and Ballast in `shop`,
+// bought with gold; this rework moves them into `prestige`, bought with tokens. A legacy save's
+// `shop.holdLevel`/`tidesLevel`/`ballast` is carried into the new `prestige.hold`/`tides`/`ballast`
+// fields so a player doesn't lose progress they already paid gold for. A save already in the new
+// shape (no `shop.holdLevel`) is untouched by the `??` fallback below.
+function normalizePrestige(parsedPrestige, legacyShop, base) {
   const clamp = (value, max) => Math.min(max, Math.max(0, Math.floor(Number(value)) || 0));
-  shop.holdLevel = clamp(shop.holdLevel, OFFLINE_CAP_HOURS.length - 1);
-  shop.tidesLevel = clamp(shop.tidesLevel, OFFLINE_RATES.length - 1);
-  shop.ballast = clamp(shop.ballast, Infinity);
+  return {
+    ...base,
+    ...parsedPrestige,
+    upgrades: { ...base.upgrades, ...(parsedPrestige.upgrades || {}) },
+    hold: clamp(parsedPrestige.hold ?? legacyShop.holdLevel ?? base.hold, OFFLINE_CAP_HOURS.length - 1),
+    tides: clamp(parsedPrestige.tides ?? legacyShop.tidesLevel ?? base.tides, OFFLINE_RATES.length - 1),
+    ballast: clamp(parsedPrestige.ballast ?? legacyShop.ballast ?? base.ballast, Infinity),
+  };
+}
+
+// A pasted or hand-edited save can hold anything, so the shop is clamped to what exists. Only
+// cosmetics live here now -- Deeper Hold, Steady Tides and Ballast moved into `prestige` (see
+// normalizePrestige above).
+function normalizeShop(saved, base) {
+  const shop = { palette: saved?.palette ?? base.palette, palettes: saved?.palettes };
   shop.palettes = (Array.isArray(shop.palettes) ? shop.palettes : []).filter((id) => PALETTES[id]);
   if (shop.palette !== 'default' && !shop.palettes.includes(shop.palette)) shop.palette = 'default';
   return shop;
