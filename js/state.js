@@ -456,23 +456,24 @@ export function checkAchievements(state) {
 
 export const PRESTIGE_TOKEN_DIVISOR = 1000; // first-pass constant, not playtested
 export const PRESTIGE_MIN_TOKENS = 1; // below this, a prestige would earn nothing worth resetting for
+export const PRESTIGE_MIN_LIFETIME = PRESTIGE_MIN_TOKENS * PRESTIGE_TOKEN_DIVISOR; // the same floor, in lifetime resources
+
+export function lifetimeTotal(state) {
+  return RESOURCES.reduce((sum, r) => sum + state.lifetime[r], 0);
+}
 
 export function prestigeTokensEarned(state) {
-  const total = RESOURCES.reduce((sum, r) => sum + state.lifetime[r], 0);
-  return Math.floor(total / PRESTIGE_TOKEN_DIVISOR);
+  return Math.floor(lifetimeTotal(state) / PRESTIGE_TOKEN_DIVISOR);
 }
 
 export function doPrestige(state) {
-  if (prestigeTokensEarned(state) < PRESTIGE_MIN_TOKENS) return null;
   const tokensEarned = prestigeTokensEarned(state);
+  if (tokensEarned < PRESTIGE_MIN_TOKENS) return null;
   const nextState = createInitialState();
   nextState.prestige = {
+    ...state.prestige,
     tokens: state.prestige.tokens + tokensEarned,
     upgrades: { ...state.prestige.upgrades },
-    headStart: state.prestige.headStart,
-    hold: state.prestige.hold,
-    tides: state.prestige.tides,
-    ballast: state.prestige.ballast,
     count: state.prestige.count + 1,
   };
   nextState.shop = { ...state.shop, palettes: [...state.shop.palettes] };
@@ -603,7 +604,7 @@ export function prestigeTreeCatalog(state) {
   rows.push({
     id: 'tides', branch: 'comfort', name: 'Steady tides', level: tidesLevel, maxLevel: TIDES_COSTS.length,
     cost: tidesMaxed ? 0 : TIDES_COSTS[tidesLevel],
-    status: !holdMaxed ? 'locked' : tidesMaxed ? 'maxed' : tokens >= TIDES_COSTS[tidesLevel] ? 'buy' : 'poor',
+    status: tidesMaxed ? 'maxed' : !holdMaxed ? 'locked' : tokens >= TIDES_COSTS[tidesLevel] ? 'buy' : 'poor',
   });
   const ballastLevel = state.prestige.ballast;
   const ballastPrice = ballastCost(state);

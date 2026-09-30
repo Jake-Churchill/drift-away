@@ -14,8 +14,10 @@ import {
   HEAD_START_TILES_PER_LEVEL,
   costProgressFraction,
   isLit,
+  lifetimeTotal,
   offlineCapSeconds,
   offlineRate,
+  PRESTIGE_MIN_LIFETIME,
   PRESTIGE_MIN_TOKENS,
   prestigeTokensEarned,
   prestigeTreeCatalog,
@@ -234,6 +236,9 @@ export function updateResourceBar(state) {
     elements.rates[resource].innerHTML = `+${info.total.toFixed(1)}/s${boost}`;
   }
   elements.goldCount.textContent = state.gold.toLocaleString();
+  // Lifetime totals keep climbing while the prestige screen is open, so its button can't wait for a
+  // reopen to notice the floor was crossed. Only the button: the tree and detail panel stay put.
+  if (!elements.prestigeOverlay.classList.contains('hidden')) updatePrestigeButton(state);
 }
 
 // "ready now (+2 more)", "in 4m 12s", or "needs 🌾 income" for a nextUnlock() result.
@@ -629,10 +634,10 @@ export function initMenu({ onRestart, onRefresh, onExport, onImport, onShopBuy, 
       info.append(name, detail);
 
       const button = document.createElement('button');
-      const label = { buy: `${RESOURCE_ICONS.gold} ${row.cost}`, poor: `${RESOURCE_ICONS.gold} ${row.cost}`, owned: 'Use', active: 'In use', maxed: 'Max' };
+      const label = { buy: `${RESOURCE_ICONS.gold} ${row.cost}`, poor: `${RESOURCE_ICONS.gold} ${row.cost}`, owned: 'Use', active: 'In use' };
       button.textContent = label[row.status];
-      button.disabled = row.status === 'poor' || row.status === 'active' || row.status === 'maxed';
-      if (row.status === 'owned' || row.status === 'active' || row.status === 'maxed') button.className = 'own';
+      button.disabled = row.status === 'poor' || row.status === 'active';
+      if (row.status === 'owned' || row.status === 'active') button.className = 'own';
       button.addEventListener('click', () => {
         if (onShopBuy(row.id)) renderShop();
       });
@@ -760,8 +765,13 @@ function wireHoldToRepeat(button, onFire) {
     if (event.button !== 0) return;
     onFire();
     timeoutId = setTimeout(() => {
-      intervalId = setInterval(onFire, HOLD_REPEAT_INTERVAL_MS);
+      // A disabled button may never see the pointerup, so the repeat checks for itself.
+      intervalId = setInterval(() => (button.disabled ? stop() : onFire()), HOLD_REPEAT_INTERVAL_MS);
     }, HOLD_REPEAT_DELAY_MS);
+  });
+  // Enter/Space (and click()) arrive as a click with no press count; a pointer's click already fired above.
+  button.addEventListener('click', (event) => {
+    if (event.detail === 0) onFire();
   });
   button.addEventListener('pointerup', stop);
   button.addEventListener('pointerleave', stop);
@@ -796,7 +806,8 @@ const nodeLevel = (row) => (row.maxLevel ? `tier ${row.level} of ${row.maxLevel}
 function treeNodeHtml(row, selected) {
   const [x, y] = TREE_SPOTS[row.id] ?? [laneX(RESOURCES.indexOf(row.id)), LANE_Y];
   const lane = row.branch === 'production';
-  const label = `${nodeTitle(row)} (${BRANCH_NAMES[row.branch]}), ${nodeLevel(row)}, ${STATUS_WORDS[row.status]}`;
+  const branch = BRANCH_NAMES[row.branch] === nodeTitle(row) ? '' : ` (${BRANCH_NAMES[row.branch]})`;
+  const label = `${nodeTitle(row)}${branch}, ${nodeLevel(row)}, ${STATUS_WORDS[row.status]}`;
   return `<button class="tree-node ${row.status}${lane ? ' lane' : ''}" data-node="${row.id}" style="left:${x}%;top:${y}px" aria-label="${label}"${selected ? ' aria-current="true"' : ''}>` +
     `<span class="tree-icon">${nodeIcon(row)}</span>${lane ? '' : `<span>${nodeTitle(row)}</span>`}` +
     `<small>${row.maxLevel ? `${row.level}/${row.maxLevel}` : `Lv ${row.level}`}</small></button>`;
@@ -903,7 +914,7 @@ export function initPrestige(onPrestige, onBuyUpgrade, onRefresh) {
 
   function showStore() {
     // Hides every sub-view, not just prestige-main: this is called both from
-    // prestige-main (via the Store button) and directly from the confirm sub-view
+    // prestige-main (via the Prestige tree button) and directly from the confirm sub-view
     // (right after a successful prestige), so it can't assume what's visible.
     elements.prestigeMain.classList.add('hidden');
     elements.prestigeConfirm.classList.add('hidden');
@@ -948,15 +959,19 @@ export function hidePrestigeOverlay() {
   elements.prestigeOverlay.classList.add('hidden');
 }
 
-export function updatePrestigeDisplay(state) {
+function updatePrestigeButton(state) {
   const tokens = prestigeTokensEarned(state);
   const eligible = tokens >= PRESTIGE_MIN_TOKENS;
   elements.pendingPrestigeTokens = eligible ? tokens : 0;
   elements.prestigeActionBtn.disabled = !eligible;
-  elements.prestigeActionBtn.textContent = eligible
-    ? `Prestige (+${elements.pendingPrestigeTokens} tokens)`
-    : 'Prestige (not yet — earn more first)';
+  const text = eligible
+    ? `Prestige (+${tokens} tokens)`
+    : `Prestige (${formatCount(lifetimeTotal(state))} / ${formatCount(PRESTIGE_MIN_LIFETIME)} lifetime resources)`;
+  if (elements.prestigeActionBtn.textContent !== text) elements.prestigeActionBtn.textContent = text;
+}
 
+export function updatePrestigeDisplay(state) {
+  updatePrestigeButton(state);
   elements.prestigeStoreTokens.textContent = `Tokens: ${state.prestige.tokens}`;
   // Given `state`, not elements.lastState: after a prestige or an import this runs before the next
   // frame hands the resource bar the new state.

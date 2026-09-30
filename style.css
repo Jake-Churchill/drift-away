@@ -912,9 +912,11 @@ html, body {
   margin-bottom: 0;
 }
 
+/* Above #prestige-overlay (10), which it can pop up over, and below #feedback-layer (20). */
 #offline-overlay {
   position: fixed;
   inset: 0;
+  z-index: 15;
   background: rgba(9, 20, 31, 0.75);
   display: flex;
   align-items: center;
@@ -1333,7 +1335,7 @@ html, body {
    and ~47px tall, counting the rate line). Popups are absolutely positioned against
    it and centre themselves on it with their own translateX(-50%). The z-index
    deliberately lifts it above the menu/prestige/offline overlays, so the token
-   popups fired from inside the prestige store stay visible. */
+   popups fired from inside the prestige tree stay visible. */
 #feedback-layer {
   position: fixed;
   top: 62px;

@@ -490,6 +490,15 @@ console.log('completion tracking tests passed');
 
 {
   const state = createInitialState();
+  state.unlocked = TILES.map((t) => t.id);
+  for (const t of TILES) state.levels[t.id] = MAX_LEVEL;
+  state.lifetime.fish = 999;
+  assert.equal(isFullyComplete(state), true);
+  assert.equal(doPrestige(state), null, 'a fully maxed map is still refused under 1,000 lifetime resources');
+}
+
+{
+  const state = createInitialState();
   state.lifetime = { fish: 1000, kelp: 0, driftwood: 0, crops: 0, planks: 0, kelp_rope: 0, bread: 0 };
   const result = doPrestige(state); // nowhere near fully complete, but past the token floor
   assert.ok(result, 'prestige succeeds once the token floor is met, even far from full completion');
@@ -558,7 +567,7 @@ console.log('prestige reset tests passed');
   assert.equal(state.prestige.upgrades.fish, 0, 'purchase count unchanged on failure');
 }
 
-console.log('prestige store tests passed');
+console.log('prestige upgrade purchase tests passed');
 
 // --- prestige tree: comfort (hold -> tides) and efficiency (ballast) ---
 {
@@ -654,6 +663,9 @@ console.log('prestige store tests passed');
   tree.prestige.hold = 3;
   assert.equal(status().hold, 'maxed');
   assert.equal(status().tides, 'poor', 'unlocked once hold is maxed; 8 tokens needed, 7 held');
+  tree.prestige.hold = 1;
+  tree.prestige.tides = 2;
+  assert.equal(status().tides, 'maxed', 'a legacy save with tides bought out and hold not maxed shows tides maxed, not locked');
 
   console.log('prestige tree comfort and efficiency tests passed');
 }
@@ -1496,6 +1508,8 @@ const corridorEntry = (zone, fromZone) =>
     f.prestige.headStart = headStart;
     f.prestige.count = 4;
     f.prestige.ballast = 7;
+    f.prestige.hold = 3;
+    f.prestige.tides = 1;
     f.shop.palettes = ['dusk'];
     f.shop.palette = 'dusk';
     f.gold = 33;
@@ -1510,6 +1524,8 @@ const corridorEntry = (zone, fromZone) =>
   assert.equal(none.prestige.count, 5, 'each prestige is counted');
   assert.deepEqual(none.shop, { palette: 'dusk', palettes: ['dusk'] }, 'the shop (cosmetics) is kept');
   assert.equal(none.prestige.ballast, 7, 'ballast carries over through prestige');
+  assert.equal(none.prestige.hold, 3, 'deeper hold carries over through prestige');
+  assert.equal(none.prestige.tides, 1, 'steady tides carries over through prestige');
   assert.equal(none.gold, 33);
 
   const two = doPrestige(finished(2)).state;
