@@ -806,9 +806,9 @@ export function saveState(state) {
   }
 }
 
-// Shared by loading from localStorage and importing a pasted code: fills a v2 save in from the
-// defaults, so any field it lacks gets its starting value. Null when it isn't a v2 save (any other
-// version, including every v1 save, is rejected) or doesn't look like a save at all.
+// Shared by loading from localStorage and importing a pasted code: fills a v3 save in from the
+// defaults, so any field it lacks gets its starting value. Null when it isn't a v3 save (any other
+// version, including every v1 and v2 save, is rejected) or doesn't look like a save at all.
 function normalizeSave(parsed) {
   const looksValid =
     parsed &&

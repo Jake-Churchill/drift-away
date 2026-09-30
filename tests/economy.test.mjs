@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { TILES, TILE_BY_ID, TILE_NEARBY, TILE_NEIGHBORS } from '../js/tiles.js';
-import { hexDistance, isStraightLine } from '../js/hex.js';
+import { cellKey, hexDistance, isStraightLine, neighborCells } from '../js/hex.js';
 import {
   ACHIEVEMENTS,
   advance,
@@ -327,14 +327,14 @@ console.log('geometry-derived adjacency tests passed');
 
 {
   const state = { unlocked: ['driftwood_start'] };
-  const bridgeIds = TILE_NEIGHBORS.get('driftwood_start');
-  const bridge = TILE_BY_ID.get(bridgeIds[0]);
-  assert.equal(isDiscovered(bridge, state), true, 'a bridge touching the start cluster is discovered');
+  const neighborIds = TILE_NEIGHBORS.get('driftwood_start');
+  const blank = TILE_BY_ID.get(neighborIds[0]);
+  assert.equal(isDiscovered(blank, state), true, 'a blank touching the start cluster is discovered');
 
-  const beyond = TILE_BY_ID.get(TILE_NEIGHBORS.get(bridge.id).find((id) => id !== 'driftwood_start'));
-  assert.equal(beyond.kind !== 'blank', true, 'fixture assumption: the far side of a start bridge is a cluster');
-  assert.equal(isDiscovered(beyond, state), false, 'a cluster two tiles from the start is hidden until the bridge is unlocked');
-  assert.equal(isDiscovered(beyond, { unlocked: ['driftwood_start', bridge.id] }), true, '...and discovered once that bridge is unlocked');
+  const beyond = TILE_BY_ID.get(TILE_NEIGHBORS.get(blank.id).find((id) => id !== 'driftwood_start'));
+  assert.equal(beyond.kind !== 'blank', true, 'fixture assumption: the far side of a start blank is a cluster');
+  assert.equal(isDiscovered(beyond, state), false, 'a cluster two tiles from the start is hidden until the blank is unlocked');
+  assert.equal(isDiscovered(beyond, { unlocked: ['driftwood_start', blank.id] }), true, '...and discovered once that blank is unlocked');
 
   const start = TILES.find((t) => t.id === 'driftwood_start');
   assert.equal(isDiscovered(start, state), true, 'an already-unlocked tile is always discovered');
@@ -977,8 +977,8 @@ const corridorEntry = (zone, fromZone) =>
 // 15x in the original design and was then multiplied by 6 after a simulated
 // run showed zone 2 finishing in about 2 minutes; this pins the shipped numbers.
 {
-  const zone1Tiles = TILES.filter((t) => t.zone === 'zone1' && t.kind !== 'blank');
-  const zone2Tiles = TILES.filter((t) => t.zone === 'zone2' && t.kind !== 'blank');
+  const zone1Tiles = TILES.filter((t) => t.zone === 'zone1' && t.kind !== 'blank' && t.kind !== 'bridge');
+  const zone2Tiles = TILES.filter((t) => t.zone === 'zone2' && t.kind !== 'blank' && t.kind !== 'bridge');
 
   const UNLOCK_MULTIPLIER = 90;
   const PRODUCTION_MULTIPLIER = 4;
@@ -1787,8 +1787,8 @@ const corridorEntry = (zone, fromZone) =>
   console.log('zone 3 generator tests passed');
 }
 
-// --- Blank bridge tiles: engine rules ---
-// The v2 map has real blanks (see the map data tests); this pins the engine rules with a stand-in, so
+// --- Blank tiles: engine rules ---
+// The map has real blanks (see the map data tests); this pins the engine rules with a stand-in, so
 // they hold whatever the map looks like.
 {
   const blank = {
@@ -1846,14 +1846,14 @@ const corridorEntry = (zone, fromZone) =>
   console.log('bridge tile engine tests passed');
 }
 
-// --- Blank bridge tiles: the map's data ---
+// --- Blank tiles: the map's data ---
 {
-  const bridge = TILE_BY_ID.get(TILE_NEIGHBORS.get('driftwood_start')[0]);
-  assert.equal(bridge.kind, 'blank', 'fixture assumption: the start cluster is ringed by blanks');
+  const blank = TILE_BY_ID.get(TILE_NEIGHBORS.get('driftwood_start')[0]);
+  assert.equal(blank.kind, 'blank', 'fixture assumption: the start cluster is ringed by blanks');
 
   const state = createInitialState();
   state.resources.driftwood = 12;
-  assert.equal(unlockTile(state, bridge), true, 'a blank is bought like any other tile');
+  assert.equal(unlockTile(state, blank), true, 'a blank is bought like any other tile');
 
   // Every blank in a zone shares one flat price.
   const costsByZone = {};
@@ -1867,12 +1867,12 @@ const corridorEntry = (zone, fromZone) =>
   const total = (cost) => Object.values(cost).reduce((sum, n) => sum + n, 0);
   const BASE4 = ['fish', 'kelp', 'driftwood', 'crops'];
 
-  assert.deepEqual(Object.keys(blankCost('zone1')), ['driftwood'], 'Home Waters bridges cost driftwood only');
+  assert.deepEqual(Object.keys(blankCost('zone1')), ['driftwood'], 'Home Waters blanks cost driftwood only');
   for (const zone of ['zone2', 'zone3']) {
-    assert.ok(Object.keys(blankCost(zone)).every((r) => BASE4.includes(r)), `${zone} bridges cost zone-1 resources only: the toll for leaving Home Waters`);
+    assert.ok(Object.keys(blankCost(zone)).every((r) => BASE4.includes(r)), `${zone} blanks cost zone-1 resources only: the toll for leaving Home Waters`);
   }
-  assert.ok(total(blankCost('zone3')) > total(blankCost('zone2')), 'Timberline bridges cost more than Frozen Reach');
-  assert.deepEqual(Object.keys(blankCost('zone4')).sort(), ['kelp_rope', 'planks'], 'Abyssal bridges cost only planks and kelp_rope');
+  assert.ok(total(blankCost('zone3')) > total(blankCost('zone2')), 'Timberline blanks cost more than Frozen Reach');
+  assert.deepEqual(Object.keys(blankCost('zone4')).sort(), ['kelp_rope', 'planks'], 'Abyssal blanks cost only planks and kelp_rope');
 
   // Unlock costs the rework changed.
   for (const t of clusters.filter((x) => x.zone === 'zone3')) {
@@ -1913,6 +1913,42 @@ const corridorEntry = (zone, fromZone) =>
   const blanks = TILES.filter((t) => t.kind === 'blank');
   const costsByZone = { zone1: { driftwood: 12 }, zone2: { driftwood: 1200, crops: 800 }, zone3: { driftwood: 1800, crops: 1200, kelp: 900 }, zone4: { planks: 60, kelp_rope: 40 } };
   for (const blank of blanks) assert.deepEqual(blank.unlock.cost, costsByZone[blank.zone], `${blank.id} costs exactly what every blank in ${blank.zone} costs`);
-  assert.ok(blanks.length > 164, 'the dense connector rule roughly doubled the blank count from the old 177 minus the 13 the bridges absorbed');
   console.log('bridge tile map data tests passed');
+}
+
+// --- Dense connectors: every same-zone cluster pair two hexes apart has its shared hex filled ---
+// Spec Goal 1 of the map-v3 plan: every hex that could bridge two neighbouring same-zone clusters is
+// a real, buyable blank -- not just a sparse shortest-path tree. The earlier tests above only check
+// aggregate counts; this checks the actual geometric property, the same way the (now-deleted)
+// build-map-v3.mjs codemod computed it.
+{
+  const cellToTile = new Map();
+  for (const t of TILES) for (const c of t.cells) cellToTile.set(cellKey(c.row, c.col), t);
+
+  const midpoint = (a, b) => {
+    const an = neighborCells(a.row, a.col);
+    const bnKeys = new Set(neighborCells(b.row, b.col).map((c) => cellKey(c.row, c.col)));
+    return an.find((c) => bnKeys.has(cellKey(c.row, c.col)));
+  };
+
+  let checked = 0;
+  for (const a of clusters) {
+    for (const cellA of a.cells) {
+      for (const b of clusters) {
+        if (a === b || a.zone !== b.zone) continue;
+        for (const cellB of b.cells) {
+          if (hexDistance(cellA, cellB) !== 2) continue;
+          const mid = midpoint(cellA, cellB);
+          if (!mid) continue;
+          checked++;
+          const tile = cellToTile.get(cellKey(mid.row, mid.col));
+          assert.ok(tile, `(${mid.row},${mid.col}) between ${a.id} and ${b.id} is occupied by some tile`);
+          assert.equal(tile.kind, 'blank', `(${mid.row},${mid.col}) between ${a.id} and ${b.id} is a blank, not a ${tile.kind}`);
+          assert.equal(tile.zone, a.zone, `the connector between ${a.id} and ${b.id} belongs to their own zone`);
+        }
+      }
+    }
+  }
+  assert.ok(checked > 0, 'fixture assumption: at least one same-zone cluster pair is two hexes apart');
+  console.log('dense connector coverage tests passed');
 }

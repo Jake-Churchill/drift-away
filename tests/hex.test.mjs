@@ -59,6 +59,16 @@ assert.equal(hexDistance({ row: -3, col: 2 }, { row: 3, col: -1 }), hexDistance(
     false,
     'two cells that are not neighbours at all is not a line'
   );
+  assert.equal(
+    isStraightLine([{ row: -10, col: 0 }, { row: -11, col: 0 }, { row: -12, col: 1 }]),
+    true,
+    'a diagonal line crossing even and odd rows (the real bridge_frozen shape) is still one direction throughout'
+  );
+  assert.equal(
+    isStraightLine([{ row: 0, col: 0 }, { row: -1, col: 0 }, { row: -2, col: 0 }]),
+    false,
+    'a zigzag across row parities (NE then NW) is not a line'
+  );
   console.log('isStraightLine tests passed');
 }
 

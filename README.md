@@ -1,6 +1,6 @@
 # Drift Away
 
-A calm, idle resource-management game: unlock hexagonal raft tiles on the open sea, each producing fish, kelp, driftwood, or crops, or boosting another resource's output, until the whole map is claimed: 321 tiles, 144 three-hex producer/generator/booster clusters joined by 177 one-hex blank bridge tiles, across four biomes (Home Waters, Frozen Reach, Timberline Coast, Abyssal Trench).
+A calm, idle resource-management game: unlock hexagonal raft tiles on the open sea, each producing fish, kelp, driftwood, or crops, or boosting another resource's output, until the whole map is claimed: 492 tiles, 144 three-hex producer/generator/booster clusters joined by 345 one-hex blanks and 3 plank bridges between biomes, across four biomes (Home Waters, Frozen Reach, Timberline Coast, Abyssal Trench).
 
 Once deployed, it will be live at **https://driftaway.jakechurchill.com**.
 
