@@ -71,7 +71,7 @@ fixed ratio, preserving the conversion) scales `1.6^(ring-1)`×. First-pass, not
 `js/state.js` and folded into `RESOURCES` itself (not kept as a separate layer, which is how they
 started — see the design doc's history): main HUD bar with a rate line (since v1.7.2 every
 resource cell, goods included, stays hidden until the first unit of that resource is earned), a
-prestige upgrade row, baron/magnate lifetime achievements, and they count toward prestige tokens earned.
+Production lane in the prestige tree, baron/magnate lifetime achievements, and they count toward prestige tokens earned.
 `resourceLabel`/`resourceTitle` turn `kelp_rope` into `kelp rope`/`Kelp Rope` wherever a resource
 name is shown as text, since it's the one multi-word resource name in the game.
 
