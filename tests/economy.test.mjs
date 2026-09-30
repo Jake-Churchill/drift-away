@@ -1815,6 +1815,36 @@ const corridorEntry = (zone, fromZone) =>
   console.log('blank tile engine tests passed');
 }
 
+// --- Bridge tiles: engine rules ---
+// No real bridge exists in js/tiles.js yet (Task 3 of the map-v3 plan adds the 3 real ones); this
+// pins the engine rules with a stand-in, so they hold whatever the map looks like.
+{
+  const bridge = {
+    id: 'test_bridge', name: 'Test Bridge', family: null, kind: 'bridge',
+    cells: [{ row: 90, col: 90 }, { row: 90, col: 91 }, { row: 90, col: 92 }, { row: 90, col: 93 }],
+    produces: null, rate: null, boosts: null,
+    unlock: { type: 'cost', cost: { driftwood: 500 } }, zone: 'zone2',
+  };
+  TILES.push(bridge);
+  TILE_BY_ID.set(bridge.id, bridge);
+  try {
+    const state = createInitialState();
+    assert.equal(getLevel(state, bridge.id), MAX_LEVEL, 'a bridge has nothing to level, so it is maxed from the start');
+
+    const before = completionCount(state);
+    state.unlocked.push(bridge.id);
+    assert.equal(completionCount(state), before + 1, 'an unlocked bridge counts toward completion straight away');
+    assert.ok(!upgradeList(state).some((row) => row.tile.id === bridge.id), 'a bridge never shows in the upgrade list');
+    assert.equal(isLevelUpEligible(state, bridge), false, 'and can never be levelled');
+    assert.equal(rateBreakdown(state, 'driftwood').total, 0.5, 'a bridge adds no production');
+  } finally {
+    TILES.pop();
+    TILE_BY_ID.delete(bridge.id);
+  }
+
+  console.log('bridge tile engine tests passed');
+}
+
 // --- Blank bridge tiles: the map's data ---
 {
   const bridge = TILE_BY_ID.get(TILE_NEIGHBORS.get('driftwood_start')[0]);

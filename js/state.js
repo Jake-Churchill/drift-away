@@ -29,7 +29,7 @@ export function isUnlocked(unlockedIds, tileId) {
 }
 
 // Tiles by kind, computed once: the per-frame rate maths walks these, not every tile on the map.
-const RATE_TILES = TILES.filter((t) => t.kind !== 'blank');
+const RATE_TILES = TILES.filter((t) => t.kind !== 'blank' && t.kind !== 'bridge');
 const BOOSTER_TILES = TILES.filter((t) => t.kind === 'booster');
 const PRODUCER_TILES = TILES.filter((t) => t.kind === 'producer');
 const GENERATOR_TILES = TILES.filter((t) => t.kind === 'generator');
@@ -262,10 +262,11 @@ export function nextUnlock(state, statuses = lockedTileStatuses(state)) {
   return { ...best, readyCount: statuses.filter((x) => x.eta.seconds === 0).length };
 }
 
-// A blank bridge has nothing to level, so it counts as maxed the moment it is unlocked -- which keeps
+// A blank or a bridge has nothing to level, so it counts as maxed the moment it is unlocked -- which keeps
 // completionCount, the "max out every tile" achievements and the upgrade list working unchanged.
 export function getLevel(state, tileId) {
-  if (TILE_BY_ID.get(tileId)?.kind === 'blank') return MAX_LEVEL;
+  const kind = TILE_BY_ID.get(tileId)?.kind;
+  if (kind === 'blank' || kind === 'bridge') return MAX_LEVEL;
   return state.levels[tileId] || 1;
 }
 
@@ -484,21 +485,23 @@ export function buyHeadStart(state) {
 }
 
 // Free tiles for a new run: the ones a player would have unlocked first. Skips boosters that have
-// nothing to boost yet, so the free tiles are ones that do something. Blank bridges never count
+// nothing to boost yet, so the free tiles are ones that do something. Blanks and bridges never count
 // toward `count` -- they're only the way to the next cluster, so they're granted as needed.
 function grantHeadStart(state, count) {
   let granted = 0;
   while (granted < count) {
     const all = lockedTileStatuses(state);
-    const useful = all.filter((x) => x.tile.kind !== 'blank' && (x.tile.kind !== 'booster' || !boosterIsIdle(state, x.tile)));
+    const useful = all.filter((x) =>
+      x.tile.kind !== 'blank' && x.tile.kind !== 'bridge' && (x.tile.kind !== 'booster' || !boosterIsIdle(state, x.tile))
+    );
     if (useful.length > 0) {
       state.unlocked.push(nextUnlock(state, useful).tile.id);
       granted++;
       continue;
     }
-    const bridges = all.filter((x) => x.tile.kind === 'blank');
-    if (bridges.length > 0) {
-      state.unlocked.push(nextUnlock(state, bridges).tile.id);
+    const connectors = all.filter((x) => x.tile.kind === 'blank' || x.tile.kind === 'bridge');
+    if (connectors.length > 0) {
+      state.unlocked.push(nextUnlock(state, connectors).tile.id);
       continue;
     }
     if (all.length === 0) break;

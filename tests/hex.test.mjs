@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { cellKey, cellsWithin, hexDistance, neighborCells } from '../js/hex.js';
+import { cellKey, cellsWithin, hexDistance, isStraightLine, neighborCells } from '../js/hex.js';
 import { buildTileIndex } from '../js/tiles.js';
 
 // --- neighbours ---
@@ -37,6 +37,29 @@ assert.equal(hexDistance({ row: -3, col: 2 }, { row: 3, col: -1 }), hexDistance(
     const d = hexDistance({ row: -1, col: 3 }, c);
     assert.ok(d >= 1 && d <= 2, `(${c.row},${c.col}) is 1-2 steps away`);
   }
+}
+
+// --- isStraightLine ---
+
+{
+  assert.equal(isStraightLine([{ row: 0, col: 0 }]), true, 'a single cell is trivially a line');
+  assert.equal(isStraightLine([{ row: 0, col: 0 }, { row: 0, col: 1 }]), true, 'two adjacent cells are always a line');
+  assert.equal(
+    isStraightLine([{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }, { row: 0, col: 3 }]),
+    true,
+    'four cells in a row, same direction throughout'
+  );
+  assert.equal(
+    isStraightLine([{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: -1, col: 1 }]),
+    false,
+    'a bend (two different step directions) is not a line'
+  );
+  assert.equal(
+    isStraightLine([{ row: 0, col: 0 }, { row: 5, col: 5 }]),
+    false,
+    'two cells that are not neighbours at all is not a line'
+  );
+  console.log('isStraightLine tests passed');
 }
 
 // --- buildTileIndex over a hand-made map ---

@@ -13,6 +13,20 @@ export function neighborCells(row, col) {
   return deltas.map(([dr, dc]) => ({ row: row + dr, col: col + dc }));
 }
 
+// True when every consecutive pair of cells steps in the same one of the six hex directions --
+// the shape every bridge tile must be (unlike a cluster's fixed "up" triangle or a blank's single
+// hex). A list of 0 or 1 cells is trivially a line.
+export function isStraightLine(cells) {
+  if (cells.length < 2) return true;
+  const directionOf = (a, b) => neighborCells(a.row, a.col).findIndex((n) => n.row === b.row && n.col === b.col);
+  const first = directionOf(cells[0], cells[1]);
+  if (first === -1) return false;
+  for (let i = 1; i < cells.length - 1; i++) {
+    if (directionOf(cells[i], cells[i + 1]) !== first) return false;
+  }
+  return true;
+}
+
 function toAxial(row, col) {
   return { q: col - (row - (row & 1)) / 2, r: row };
 }
