@@ -11,8 +11,11 @@ export const RESOURCES = [...BASE_RESOURCES, ...GOODS];
 // v2 is the map rework (blank bridges, 3-hex clusters): the map's layout, clusters and zones changed,
 // so a v1 save's unlocks and levels can't carry over. A new key leaves the old save untouched in
 // storage rather than erasing it.
-export const SAVE_KEY = 'driftaway_save_v2';
-const SAVE_VERSION = 2;
+// v3 is the bridges rework (dense connectors, single-tile inter-biome bridges): the blank set and
+// the three crossings changed, so a v2 save's unlocks can't carry over. A new key leaves the v2 key
+// untouched in storage, same pattern v1->v2 used.
+export const SAVE_KEY = 'driftaway_save_v3';
+const SAVE_VERSION = 3;
 
 // Membership in `state.unlocked` is asked per tile, per frame, from many places, so on a map of a few
 // hundred tiles a linear `includes` scan dominates the frame. The array stays the saved source of

@@ -925,7 +925,7 @@ function seedSave(save) {
 {
   // a save from before gold/achievements existed
   seedSave({
-    version: 2,
+    version: 3,
     resources: { fish: 1, kelp: 2, driftwood: 3, crops: 4 },
     lifetime: { fish: 1, kelp: 2, driftwood: 3, crops: 4 },
     unlocked: ['driftwood_start'],
@@ -942,7 +942,7 @@ function seedSave(save) {
 {
   // a migrated save already past a threshold is credited on load, not on the next tick
   seedSave({
-    version: 2,
+    version: 3,
     resources: { fish: 0, kelp: 0, driftwood: 0, crops: 0 },
     lifetime: { fish: 6000, kelp: 0, driftwood: 0, crops: 0 },
     unlocked: ['driftwood_start'],
@@ -1163,7 +1163,7 @@ const corridorEntry = (zone, fromZone) =>
   }
 
   // a save from an older version missing newer fields is filled in from the defaults
-  const old = decodeSave(btoa(JSON.stringify({ version: 2, resources: { fish: 5 }, lifetime: { fish: 5 }, unlocked: ['driftwood_start'] })));
+  const old = decodeSave(btoa(JSON.stringify({ version: 3, resources: { fish: 5 }, lifetime: { fish: 5 }, unlocked: ['driftwood_start'] })));
   assert(old, 'a sparser save from this version still imports');
   assert.equal(old.resources.fish, 5);
   assert.equal(old.resources.kelp, 0);
@@ -1401,11 +1401,11 @@ const corridorEntry = (zone, fromZone) =>
   kept.gold = 9;
   const roundTrip = decodeSave(encodeSave(kept));
   assert.deepEqual(roundTrip.shop, kept.shop);
-  const old = decodeSave(btoa(JSON.stringify({ version: 2, resources: {}, lifetime: {}, unlocked: ['driftwood_start'] })));
+  const old = decodeSave(btoa(JSON.stringify({ version: 3, resources: {}, lifetime: {}, unlocked: ['driftwood_start'] })));
   assert.deepEqual(old.shop, createInitialState().shop, 'a save without a shop gets an empty one');
-  for (const stale of [{ version: 1 }, {}]) {
+  for (const stale of [{ version: 1 }, { version: 2 }, {}]) {
     const v1 = btoa(JSON.stringify({ ...stale, resources: {}, lifetime: {}, unlocked: ['driftwood_start'] }));
-    assert.equal(decodeSave(v1), null, 'a save from before the v2 map rework is rejected: the map layout, clusters and zones changed');
+    assert.equal(decodeSave(v1), null, 'a save from before the v3 bridges rework is rejected: the blank set and the crossings changed');
   }
 
   console.log('gold shop tests passed');
