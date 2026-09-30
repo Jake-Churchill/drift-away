@@ -5,6 +5,7 @@ import { buildZone2Prop } from './zone2-props.js';
 import { buildAbyssalProp } from './abyssal-props.js';
 import { buildTimberlineProp } from './timberline-props.js';
 import { buildClusterProp, clusterProp, clusterScale, buildGenericCluster, buildCenteredCluster } from './cluster-props.js';
+import { buildBridgeProp } from './bridge-props.js';
 import { buildCloudField } from './clouds.js';
 import { createFoamTexture, createWaterNormalTexture } from './textures.js';
 import { DEFAULT_PALETTE } from './palettes.js';
@@ -547,22 +548,28 @@ function buildLevelProps(tile, level, offsets) {
   // CLUSTER_PROPS's `scale`). The generic fallback below still builds each cell's prop at the old
   // per-hex scale, so its group needs the old per-hex multiplier too -- but that multiplier must NOT
   // stretch the cell positions apart, only the props themselves (see buildGenericCluster).
-  const groupScale = (cluster ? clusterScale(cluster, level) : PROP_SCALE * extraScale) * LEVEL_SCALE[level];
+  const groupScale = tile.kind === 'bridge'
+    ? 1
+    : (cluster ? clusterScale(cluster, level) : PROP_SCALE * extraScale) * LEVEL_SCALE[level];
   const propGroup = new THREE.Group();
   propGroup.position.set(0, WALL_HEIGHT, 0);
-  if (cluster) {
+  if (tile.kind === 'bridge') {
+    buildBridgeProp(propGroup, offsets);
+  } else if (cluster) {
     buildClusterProp(cluster, propGroup, level, offsets);
   } else if (tile.family === 'booster') {
     buildCenteredCluster(propGroup, offsets, (sub) => buildSingleHexProp(sub, tile, level), { groupScale });
   } else {
     buildGenericCluster(propGroup, offsets, (sub) => buildSingleHexProp(sub, tile, level), { groupScale });
   }
-  const anchorKey = tile.family === 'booster' ? tile.id : tile.family;
-  const zoneAnchorKey = `${tile.zone}:${anchorKey}`;
-  const anchorHeight = cluster ? cluster.badgeHeight : BADGE_ANCHOR_HEIGHT[zoneAnchorKey] ?? BADGE_ANCHOR_HEIGHT[anchorKey];
-  addLevelBadge(propGroup, level, anchorHeight);
-  if (tile.kind === 'generator') {
-    levelGroup.userData.pausedMarker = addPausedMarker(propGroup, anchorHeight);
+  if (tile.kind !== 'bridge') {
+    const anchorKey = tile.family === 'booster' ? tile.id : tile.family;
+    const zoneAnchorKey = `${tile.zone}:${anchorKey}`;
+    const anchorHeight = cluster ? cluster.badgeHeight : BADGE_ANCHOR_HEIGHT[zoneAnchorKey] ?? BADGE_ANCHOR_HEIGHT[anchorKey];
+    addLevelBadge(propGroup, level, anchorHeight);
+    if (tile.kind === 'generator') {
+      levelGroup.userData.pausedMarker = addPausedMarker(propGroup, anchorHeight);
+    }
   }
   propGroup.scale.setScalar(groupScale);
   levelGroup.add(propGroup);
@@ -604,9 +611,12 @@ function trimParts(level) {
 // Blank bridges wear their zone's colour a little paler than the clusters, so a walkway reads as
 // ground between buildings rather than as one more building.
 const BLANK_LIGHTEN = 0.22;
+const BRIDGE_TINT = 0x8a6a45; // warm plank-brown, distinct from a blank's white-lightened tint
 function raftColor(tile) {
   const color = new THREE.Color(ZONE_RAFT_COLOR.get(tile.zone));
-  return tile.kind === 'blank' ? color.lerp(new THREE.Color(0xffffff), BLANK_LIGHTEN) : color;
+  if (tile.kind === 'blank') return color.lerp(new THREE.Color(0xffffff), BLANK_LIGHTEN);
+  if (tile.kind === 'bridge') return color.lerp(new THREE.Color(BRIDGE_TINT), 0.55);
+  return color;
 }
 
 // One group per tile, positioned at the tile's centre, holding a raft hex per cell (plus each
