@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { TILES, TILE_BY_ID, TILE_NEARBY, TILE_NEIGHBORS } from '../js/tiles.js';
-import { hexDistance } from '../js/hex.js';
+import { hexDistance, isStraightLine } from '../js/hex.js';
 import {
   ACHIEVEMENTS,
   advance,
@@ -55,20 +55,21 @@ import {
 
 // --- Tile data integrity ---
 
-const clusters = TILES.filter((t) => t.kind !== 'blank');
+const clusters = TILES.filter((t) => t.kind !== 'blank' && t.kind !== 'bridge');
 const blanks = TILES.filter((t) => t.kind === 'blank');
 assert.equal(clusters.length, 144, 'expected 144 producer/booster/generator clusters (36 per zone)');
-assert.equal(blanks.length, 177, 'expected 177 blank bridge tiles');
-assert.equal(TILES.length, 321, 'clusters + blanks');
+assert.equal(blanks.length, 345, 'expected 345 blank tiles');
+assert.equal(TILES.length, 492, 'clusters + blanks + 3 bridges');
 
 const ids = TILES.map((t) => t.id);
 assert.equal(new Set(ids).size, TILES.length, 'tile ids must be unique');
 
 const cellKeys = TILES.flatMap((t) => t.cells.map((c) => `${c.row},${c.col}`));
 assert.equal(new Set(cellKeys).size, cellKeys.length, 'no two tiles share a hex cell');
-assert.equal(cellKeys.length, 144 * 3 + 177, 'every cluster spans 3 cells and every blank 1');
+assert.equal(cellKeys.length, 144 * 3 + 345 + 4 + 4 + 5, 'every cluster spans 3 cells, every blank 1, and the bridges 4, 4 and 5');
 
 for (const t of TILES) {
+  if (t.kind === 'bridge') continue; // a bridge's shape is pinned in the bridge map data tests
   assert.equal(t.cells.length, t.kind === 'blank' ? 1 : 3, `${t.id} has the right number of cells`);
   if (t.kind === 'blank') continue;
   for (const a of t.cells) {
@@ -98,19 +99,19 @@ assert.deepEqual(
 );
 
 const zoneCounts = TILES.reduce((counts, t) => {
-  const key = `${t.zone}:${t.kind === 'blank' ? 'blank' : 'cluster'}`;
+  const key = `${t.zone}:${t.kind === 'blank' || t.kind === 'bridge' ? t.kind : 'cluster'}`;
   counts[key] = (counts[key] || 0) + 1;
   return counts;
 }, {});
 assert.deepEqual(
   zoneCounts,
   {
-    'zone1:cluster': 36, 'zone1:blank': 41,
-    'zone2:cluster': 36, 'zone2:blank': 45,
-    'zone3:cluster': 36, 'zone3:blank': 45,
-    'zone4:cluster': 36, 'zone4:blank': 46,
+    'zone1:cluster': 36, 'zone1:blank': 86,
+    'zone2:cluster': 36, 'zone2:blank': 86, 'zone2:bridge': 1,
+    'zone3:cluster': 36, 'zone3:blank': 86, 'zone3:bridge': 1,
+    'zone4:cluster': 36, 'zone4:blank': 87, 'zone4:bridge': 1,
   },
-  'every zone keeps its 36 clusters, plus its blank bridges'
+  'every zone keeps its 36 clusters, plus its blanks, and every zone after the first its one bridge in'
 );
 
 for (const t of blanks) {
@@ -143,7 +144,7 @@ assert.deepEqual(
 
 for (const a of clusters) {
   for (const id of TILE_NEIGHBORS.get(a.id)) {
-    assert.equal(TILE_BY_ID.get(id).kind, 'blank', `${a.id} only ever touches blank bridges, never another cluster directly`);
+    assert.ok(['blank', 'bridge'].includes(TILE_BY_ID.get(id).kind), `${a.id} only ever touches blanks and bridges, never another cluster directly`);
   }
 }
 
@@ -956,13 +957,13 @@ function seedSave(save) {
 console.log('achievement save migration tests passed');
 
 // --- zone corridors ---
-// Every zone after the first is entered along a corridor of blank bridges from the zone that leads to it.
+// Every zone after the first is entered across a plank bridge from the zone that leads to it.
 const corridorEntry = (zone, fromZone) =>
-  TILES.find((t) => t.zone === zone && t.kind === 'blank' && TILE_NEIGHBORS.get(t.id).some((id) => TILE_BY_ID.get(id).zone === fromZone));
+  TILES.find((t) => t.zone === zone && TILE_NEIGHBORS.get(t.id).some((id) => TILE_BY_ID.get(id).zone === fromZone));
 {
-  assert.ok(corridorEntry('zone2', 'zone1'), 'Frozen Reach is entered from Home Waters');
-  assert.ok(corridorEntry('zone3', 'zone1'), 'Timberline Coast is entered from Home Waters');
-  assert.ok(corridorEntry('zone4', 'zone2'), 'the Abyssal Trench is entered from Frozen Reach');
+  assert.equal(corridorEntry('zone2', 'zone1')?.kind, 'bridge', 'Frozen Reach is entered from Home Waters, across a bridge');
+  assert.equal(corridorEntry('zone3', 'zone1')?.kind, 'bridge', 'Timberline Coast is entered from Home Waters, across a bridge');
+  assert.equal(corridorEntry('zone4', 'zone2')?.kind, 'bridge', 'the Abyssal Trench is entered from Frozen Reach, across a bridge');
   assert.equal(corridorEntry('zone4', 'zone1'), undefined, 'the Abyssal Trench has no way in from Home Waters');
   assert.equal(corridorEntry('zone3', 'zone2'), undefined, 'and Timberline has none from Frozen Reach');
 
@@ -1440,9 +1441,9 @@ const corridorEntry = (zone, fromZone) =>
     f.achievements = ACHIEVEMENTS.map((a) => a.id); // already earned, so gold only shows what persists
     return f;
   };
-  // Blank bridges are only the way between clusters, so a head start grants them as needed and never
+  // Blanks and bridges are only the way between clusters, so a head start grants them as needed and never
   // counts them: two "tiles" per level means two clusters.
-  const clusterCount = (st) => st.unlocked.filter((id) => TILE_BY_ID.get(id).kind !== 'blank').length;
+  const clusterCount = (st) => st.unlocked.filter((id) => !['blank', 'bridge'].includes(TILE_BY_ID.get(id).kind)).length;
   const none = doPrestige(finished(0)).state;
   assert.equal(none.unlocked.length, 1, 'no head start: just the starting tile');
   assert.equal(none.prestige.count, 5, 'each prestige is counted');
@@ -1816,8 +1817,8 @@ const corridorEntry = (zone, fromZone) =>
 }
 
 // --- Bridge tiles: engine rules ---
-// No real bridge exists in js/tiles.js yet (Task 3 of the map-v3 plan adds the 3 real ones); this
-// pins the engine rules with a stand-in, so they hold whatever the map looks like.
+// The map has 3 real bridges (see the bridge map data tests); this pins the engine rules with a
+// stand-in, so they hold whatever the map looks like.
 {
   const bridge = {
     id: 'test_bridge', name: 'Test Bridge', family: null, kind: 'bridge',
@@ -1874,14 +1875,44 @@ const corridorEntry = (zone, fromZone) =>
   assert.deepEqual(Object.keys(blankCost('zone4')).sort(), ['kelp_rope', 'planks'], 'Abyssal bridges cost only planks and kelp_rope');
 
   // Unlock costs the rework changed.
-  for (const t of TILES.filter((x) => x.zone === 'zone3' && x.kind !== 'blank')) {
+  for (const t of clusters.filter((x) => x.zone === 'zone3')) {
     assert.ok(Object.keys(t.unlock.cost).every((r) => BASE4.includes(r)), `${t.id}: Timberline unlocks cost base resources only`);
   }
-  for (const t of TILES.filter((x) => x.zone === 'zone4' && x.kind !== 'blank')) {
+  for (const t of clusters.filter((x) => x.zone === 'zone4')) {
     if (t.unlock.type === 'milestone') continue;
     assert.ok(t.unlock.cost.planks > 0 && t.unlock.cost.kelp_rope > 0, `${t.id}: Abyssal unlocks also need planks and kelp_rope`);
     assert.equal(t.unlock.cost.bread, undefined, `${t.id}: bread is deliberately not part of it`);
   }
 
   console.log('blank tile tests passed');
+}
+
+// --- Bridge tiles: the map's data (Task 3 of the map-v3 plan) ---
+{
+  const bridges = TILES.filter((t) => t.kind === 'bridge');
+  assert.equal(bridges.length, 3, 'exactly one bridge per inter-biome crossing');
+  for (const bridge of bridges) {
+    assert.ok(isStraightLine(bridge.cells), `${bridge.id}'s cells are a straight line`);
+    assert.ok(bridge.cells.length >= 2, `${bridge.id} spans more than one hex`);
+  }
+  const byZone = Object.fromEntries(bridges.map((b) => [b.zone, b]));
+  assert.deepEqual(byZone.zone2.unlock.cost, { driftwood: 1500, crops: 900 }, 'Home Waters -> Frozen Reach bridge cost, paid in Home Waters resources');
+  assert.deepEqual(byZone.zone3.unlock.cost, { driftwood: 1500, crops: 900 }, 'Home Waters -> Timberline Coast bridge cost, paid in Home Waters resources');
+  assert.deepEqual(byZone.zone4.unlock.cost, { driftwood: 60000, crops: 36000 }, 'Frozen Reach -> Abyssal Trench bridge cost, paid in Frozen Reach resources');
+  // A bridge is the only way from one zone into another: no blank or cluster touches a tile of
+  // another zone, so no dense connector bypasses a crossing.
+  for (const t of TILES) {
+    for (const id of TILE_NEIGHBORS.get(t.id)) {
+      const other = TILE_BY_ID.get(id);
+      if (other.zone === t.zone) continue;
+      assert.ok(t.kind === 'bridge' || other.kind === 'bridge', `${t.id} and ${other.id} touch across zones without a bridge`);
+    }
+  }
+  // Every ordinary blank still costs exactly what its zone always charged -- the dense new
+  // connectors don't introduce a new cost tier.
+  const blanks = TILES.filter((t) => t.kind === 'blank');
+  const costsByZone = { zone1: { driftwood: 12 }, zone2: { driftwood: 1200, crops: 800 }, zone3: { driftwood: 1800, crops: 1200, kelp: 900 }, zone4: { planks: 60, kelp_rope: 40 } };
+  for (const blank of blanks) assert.deepEqual(blank.unlock.cost, costsByZone[blank.zone], `${blank.id} costs exactly what every blank in ${blank.zone} costs`);
+  assert.ok(blanks.length > 164, 'the dense connector rule roughly doubled the blank count from the old 177 minus the 13 the bridges absorbed');
+  console.log('bridge tile map data tests passed');
 }
