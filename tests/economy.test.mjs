@@ -1773,6 +1773,49 @@ const corridorEntry = (zone, fromZone) =>
     assert.equal(Math.round((1000 - state.resources.driftwood) * 1e9) / 1e9, 0.25, 'driftwood is drawn at its own full rate (0.5) throttled by the kelp factor (0.5) = 0.25, not further reduced');
   }
 
+  // A step longer than a second (a 1-59s gap through advance) can't draw more than the pool holds,
+  // and the frame after never runs the generators backwards.
+  {
+    const state = createInitialState();
+    state.unlocked = [sawmill1.id, sawmill2.id];
+    state.resources.driftwood = 3;
+    advance(state, 30);
+    assert.ok(state.resources.driftwood > -1e-9, `a 30s gap drains driftwood to zero at most (got ${state.resources.driftwood})`);
+    assert.equal(Math.round(state.resources.planks * 1e9) / 1e9, 1.5, 'and turns the 3 driftwood in stock into 1.5 planks, no more');
+    const planksAfterGap = state.resources.planks;
+    const lifetimeAfterGap = state.lifetime.planks;
+    tick(state, 1 / 60);
+    assert.ok(state.resources.planks >= planksAfterGap, 'the next frame never un-makes planks');
+    assert.ok(state.lifetime.planks >= lifetimeAfterGap, 'or lifetime planks');
+  }
+
+  // Time away: generators can use what was in stock plus what producers earned while away, and no
+  // more. The summary reports what actually changed, not phantom output.
+  {
+    const state = createInitialState(); // driftwood_start makes 0.5 driftwood/s
+    state.unlocked.push(sawmill1.id, sawmill2.id);
+    state.resources.driftwood = 100;
+    const away = applyOfflineProgress(state, 8 * 3600); // 8h at the base 50% rate: +7,200 driftwood earned
+    assert.ok(state.resources.driftwood > -1e-9, `driftwood never goes negative while away (got ${state.resources.driftwood})`);
+    assert.equal(Math.round(state.resources.planks), 3650, 'the 7,300 driftwood available becomes 3,650 planks at 2:1');
+    assert.equal(Math.round(away.gains.planks), 3650, 'the welcome-back summary reports the planks actually made');
+    assert.equal(Math.round(away.gains.driftwood), -100, 'and driftwood net of what the sawmills used');
+    assert.equal(Math.round(state.lifetime.driftwood), 7200, 'lifetime still counts all the driftwood earned');
+  }
+
+  // A save the overdraw already corrupted (negative pools) loads with them floored at zero, so the
+  // resource shows again and the generators don't keep running backwards.
+  {
+    const corrupt = createInitialState();
+    corrupt.resources.driftwood = -93034;
+    corrupt.resources.planks = -12023;
+    corrupt.lifetime.planks = -5000;
+    const restored = decodeSave(encodeSave(corrupt));
+    assert.equal(restored.resources.driftwood, 0);
+    assert.equal(restored.resources.planks, 0);
+    assert.equal(restored.lifetime.planks, 0);
+  }
+
   // Leveling up a generator costs its own output resource, the same convention as a producer.
   {
     assert.deepEqual(levelUpCost(sawmill1, 2), { planks: 18 }, 'round(0.6 rate * 30 base * step-1 multiplier 1)');

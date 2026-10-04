@@ -744,7 +744,9 @@ function generatorMultiplier(tile, unlockedIds, levels) {
   return levelMultiplier(levels[tile.id] || 1) * (1 + boostPercent / 100);
 }
 
-function generatorScarcityFactors(state) {
+// Demand is compared over the step being applied (never less than one second, so ordinary frames and
+// the HUD's per-second rates are unchanged): a 30s gap or an hour away can't draw more than the pool holds.
+function generatorScarcityFactors(state, dt = 1) {
   const generators = generatorTiles(state);
   const inputResources = [...new Set(generators.flatMap((t) => Object.keys(t.consumes)))];
   const factors = {};
@@ -753,7 +755,7 @@ function generatorScarcityFactors(state) {
       const rate = t.consumes[resource];
       return rate ? sum + rate * generatorMultiplier(t, state.unlocked, state.levels) : sum;
     }, 0);
-    factors[resource] = desired > 0 ? Math.min(1, state.resources[resource] / desired) : 1;
+    factors[resource] = desired > 0 ? Math.max(0, Math.min(1, state.resources[resource] / (desired * Math.max(dt, 1)))) : 1;
   }
   return factors;
 }
@@ -776,25 +778,27 @@ export function generatorFullRate(state, tile) {
   return tile.rate * generatorMultiplier(tile, state.unlocked, state.levels);
 }
 
-// Returns how much of each output resource was actually produced this call, so offline progress
+// Returns the net change to each resource this call (goods made, inputs used), so offline progress
 // can fold it into its gains summary the same way it does for the base 4.
 function applyGenerators(state, dt) {
   const generators = generatorTiles(state);
-  const produced = {};
-  if (generators.length === 0) return produced;
-  const factors = generatorScarcityFactors(state);
+  const changes = {};
+  if (generators.length === 0) return changes;
+  const factors = generatorScarcityFactors(state, dt);
   for (const tile of generators) {
     const multiplier = generatorMultiplier(tile, state.unlocked, state.levels);
     const throttle = generatorThrottle(tile, factors);
     for (const [resource, rate] of Object.entries(tile.consumes)) {
-      state.resources[resource] -= rate * multiplier * throttle * dt;
+      const used = rate * multiplier * throttle * dt;
+      state.resources[resource] -= used;
+      changes[resource] = (changes[resource] || 0) - used;
     }
     const output = tile.rate * multiplier * throttle * dt;
     state.resources[tile.produces] += output;
     state.lifetime[tile.produces] += output;
-    produced[tile.produces] = (produced[tile.produces] || 0) + output;
+    changes[tile.produces] = (changes[tile.produces] || 0) + output;
   }
-  return produced;
+  return changes;
 }
 
 export function applyOfflineProgress(state, elapsedSeconds) {
@@ -850,6 +854,11 @@ export function saveState(state) {
   }
 }
 
+// No real game state has a negative count, but saves written while generators could overdraw do.
+function floorAtZero(counts) {
+  return Object.fromEntries(Object.entries(counts).map(([key, value]) => [key, Math.max(0, value)]));
+}
+
 // Shared by loading from localStorage and importing a pasted code: fills a v3 save in from the
 // defaults, so any field it lacks gets its starting value. Null when it isn't a v3 save (any other
 // version, including every v1 and v2 save, is rejected) or doesn't look like a save at all.
@@ -866,8 +875,8 @@ function normalizeSave(parsed) {
   return {
     ...base,
     ...parsed,
-    resources: { ...base.resources, ...parsed.resources },
-    lifetime: { ...base.lifetime, ...parsed.lifetime },
+    resources: floorAtZero({ ...base.resources, ...parsed.resources }),
+    lifetime: floorAtZero({ ...base.lifetime, ...parsed.lifetime }),
     levels: { ...base.levels, ...parsed.levels },
     prestige: normalizePrestige(parsed.prestige || {}, parsed.shop || {}, base.prestige),
     gold: parsed.gold ?? base.gold,
