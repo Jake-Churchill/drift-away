@@ -129,7 +129,7 @@ function showRateTip(resource, event) {
   };
   const label = resourceLabel(resource);
   const title = label.replace(/\b\w/g, (c) => c.toUpperCase());
-  line(`${title} ${info.total.toFixed(2)}/s`);
+  line(`${title} ${info.net.toFixed(2)}/s`);
   line(`${GOODS.includes(resource) ? 'Generators' : 'Producers'} ${info.base.toFixed(2)}/s`);
   if (info.boosters.length > 0) {
     line(`Boosters +${Math.round(info.boostPercent)}%`);
@@ -139,6 +139,7 @@ function showRateTip(resource, event) {
   }
   if (info.prestigePercent > 0) line(`Prestige +${info.prestigePercent}%`);
   if (info.ballastPercent > 0) line(`Ballast +${info.ballastPercent}%`);
+  if (info.used > 0) line(`Used by generators −${info.used.toFixed(2)}/s`);
   tip.classList.remove('hidden');
   tip.style.left = `${Math.min(window.innerWidth - 270, event.clientX + 14)}px`;
   tip.style.top = `${event.clientY + 18}px`;
@@ -233,7 +234,7 @@ export function updateResourceBar(state) {
 
     element.textContent = formatCount(shownCounts[resource]);
     const boost = info.boostPercent > 0 ? `<small>\u00d7${(1 + info.boostPercent / 100).toFixed(2)}</small>` : '';
-    elements.rates[resource].innerHTML = `+${info.total.toFixed(1)}/s${boost}`;
+    elements.rates[resource].innerHTML = `+${info.net.toFixed(1)}/s${boost}`;
   }
   elements.goldCount.textContent = state.gold.toLocaleString();
   // Lifetime totals keep climbing while the prestige screen is open, so its button can't wait for a
@@ -352,8 +353,8 @@ function pausedHint(tile, state) {
   return 'Paused \u2014 turned off. Switch it back on below to resume.';
 }
 
-// Zone 3's generators are throttled when demand for an input outruns the shared stock (see
-// applyGenerators in state.js) -- this is the same idea as zone 4's dim hint, but continuous
+// Zone 3's generators are throttled when demand for an input outruns their share of its income
+// (see generatorScarcityFactors in state.js) -- the same idea as zone 4's dim hint, but continuous
 // rather than a flat on/off penalty, so it's reported as a shortfall rather than "halved".
 function starvedHint(tile, state) {
   if (tile.kind !== 'generator' || !state.unlocked.includes(tile.id)) return '';
@@ -363,7 +364,7 @@ function starvedHint(tile, state) {
   if (fullRate <= 0 || rate >= fullRate * 0.999) return '';
   const percent = Math.round((rate / fullRate) * 100);
   const inputs = Object.keys(tile.consumes).map((r) => RESOURCE_ICONS[r]).join('/');
-  return `Starved \u2014 running at ${percent}% of full rate. Needs more ${inputs} income to keep up.`;
+  return `Starved \u2014 running at ${percent}% of full rate. Generators only use half your ${inputs} income, so more ${inputs} income speeds it up.`;
 }
 
 function boosterHint(tile, state) {

@@ -1720,42 +1720,54 @@ const corridorEntry = (zone, fromZone) =>
   const toolShed = TILES.find((t) => t.id === 'timberline_booster_tool_shed');
   assert.deepEqual(sawmill1.consumes, { driftwood: 1.2 }, 'fixture assumption: Driftwood Sawpit consumes 1.2 driftwood/s for 0.6 planks/s');
   assert.deepEqual(ropeworks1.consumes, { kelp: 0.65, driftwood: 0.5 }, 'fixture assumption: Kelp Ropewalk has two inputs');
+  const round = (n) => Math.round(n * 1e9) / 1e9;
+  // Generators only draw on producer income (never stock), so these fixtures bring their own.
+  const driftwoodIncome = ['driftwood_start', 'driftwood_storm_wreckage', 'driftwood_flotsam_dredge']; // 2.5/s
+  const kelpIncome = ['kelp_start', 'kelp_seaweed_raft']; // 2.0/s
 
-  // Full rate: abundant input, no throttling.
+  // Full rate: half of the input's income covers the generator's whole demand.
   {
     const state = createInitialState();
-    state.unlocked = [sawmill1.id];
-    state.resources.driftwood = 1000;
+    state.unlocked = [...driftwoodIncome, sawmill1.id]; // half of 2.5 driftwood/s covers the 1.2 it wants
     assert.equal(generatorRate(state, sawmill1), 0.6, 'unthrottled, a level-1 sawmill runs at its listed rate');
-    assert.equal(generatorRate(state, sawmill1), generatorFullRate(state, sawmill1), 'full rate matches the throttled rate when input is abundant');
+    assert.equal(generatorRate(state, sawmill1), generatorFullRate(state, sawmill1), 'full rate matches the throttled rate when income is enough');
     tick(state, 2);
     assert.equal(state.resources.planks, 1.2, 'planks gained = rate * dt (0.6 * 2)');
-    assert.equal(Math.round(state.resources.driftwood * 10) / 10, 997.6, 'driftwood spent = consume rate * dt (1.2 * 2)');
+    assert.equal(round(state.resources.driftwood), 2.6, 'driftwood = income minus what the sawmill used: (2.5 - 1.2) * 2');
     assert.equal(state.lifetime.planks, 1.2, 'lifetime tracks generator output too');
   }
 
-  // Scarcity: a single generator throttles proportionally to what's actually in stock.
+  // Scarcity: generators share half of their input's producer income and never touch the stockpile,
+  // so whatever is saved stays saved for unlocks and the player can't stall by leaving them on.
+  {
+    const state = createInitialState(); // driftwood_start: 0.5 driftwood/s
+    state.unlocked.push(sawmill1.id);
+    state.resources.driftwood = 1000;
+    assert.equal(round(generatorRate(state, sawmill1)), 0.125, 'half the income (0.25/s) runs the 1.2/s sawmill at 0.25/1.2 of full');
+    tick(state, 1);
+    assert.equal(round(state.resources.planks), 0.125);
+    assert.equal(round(state.resources.driftwood), 1000.25, 'the stock is untouched and still grows by the other half of the income');
+  }
   {
     const state = createInitialState();
-    state.unlocked = [sawmill1.id];
-    state.resources.driftwood = 0.6; // half of the 1.2 desired for a 1s tick
-    assert.equal(generatorRate(state, sawmill1), 0.3, 'half the driftwood in stock halves the output');
-    tick(state, 1);
-    assert.equal(state.resources.planks, 0.3);
-    assert.equal(Math.round(state.resources.driftwood * 1e9) / 1e9, 0, 'the pool is drained to exactly zero, never negative');
+    state.unlocked = [sawmill1.id]; // no driftwood income at all
+    state.resources.driftwood = 1000;
+    assert.equal(generatorRate(state, sawmill1), 0, 'no income, no output, however much is in stock');
+    advance(state, 30);
+    assert.equal(state.resources.driftwood, 1000, 'even a long gap leaves the stockpile alone');
+    assert.equal(state.resources.planks, 0);
   }
 
   // Two generators sharing a scarce input are throttled by the same fraction each -- not
   // first-come-first-served, where one would run full and the other starve.
   {
     const state = createInitialState();
-    state.unlocked = [sawmill1.id, sawmill2.id];
-    state.resources.driftwood = 1.25; // half of 1.2 + 1.3 = 2.5 combined demand for a 1s tick
-    assert.equal(generatorRate(state, sawmill1), 0.3, 'sawmill 1 gets exactly half its full 0.6 rate');
-    assert.equal(generatorRate(state, sawmill2), 0.325, 'sawmill 2 gets exactly half its full 0.65 rate too, not zero');
+    state.unlocked = ['driftwood_start', 'driftwood_storm_wreckage', sawmill1.id, sawmill2.id]; // 1.5/s, so 0.75 for 2.5 of demand
+    assert.equal(round(generatorRate(state, sawmill1)), 0.18, 'sawmill 1 gets 30% of its full 0.6 rate');
+    assert.equal(round(generatorRate(state, sawmill2)), 0.195, 'sawmill 2 gets the same 30% of its 0.65, not zero');
     tick(state, 1);
-    assert.equal(Math.round(state.resources.planks * 1000) / 1000, 0.625, '0.3 + 0.325');
-    assert.equal(Math.round(state.resources.driftwood * 1e9) / 1e9, 0, 'combined draw exactly matches the shared pool');
+    assert.equal(round(state.resources.planks), 0.375, '0.18 + 0.195');
+    assert.equal(round(state.resources.driftwood), 0.75, 'the generators took exactly their half of the 1.5 earned');
   }
 
   // A multi-input generator is capped by whichever input is scarcest -- and, per the documented
@@ -1763,25 +1775,24 @@ const corridorEntry = (zone, fromZone) =>
   // input rather than also scaling that draw down to match.
   {
     const state = createInitialState();
-    state.unlocked = [ropeworks1.id];
-    state.resources.kelp = 0.325; // half of the 0.65 desired
-    state.resources.driftwood = 1000; // abundant
-    assert.equal(generatorRate(state, ropeworks1), 0.25, 'output capped by the scarcer input (kelp), half of the full 0.5 rate');
+    state.unlocked = [...driftwoodIncome, 'kelp_start', ropeworks1.id]; // kelp: half of 1.0 for 0.65 wanted
+    const kelpFactor = 0.5 / 0.65;
+    assert.equal(round(generatorRate(state, ropeworks1)), round(0.5 * kelpFactor), 'output capped by the scarcer input (kelp)');
     tick(state, 1);
-    assert.equal(state.resources.kelp_rope, 0.25);
-    assert.equal(Math.round(state.resources.kelp * 1e9) / 1e9, 0, 'kelp (the limiting input) is drained exactly to zero');
-    assert.equal(Math.round((1000 - state.resources.driftwood) * 1e9) / 1e9, 0.25, 'driftwood is drawn at its own full rate (0.5) throttled by the kelp factor (0.5) = 0.25, not further reduced');
+    assert.equal(round(state.resources.kelp_rope), round(0.5 * kelpFactor));
+    assert.equal(round(state.resources.kelp), 0.5, 'kelp (the limiting input) keeps the other half of its income');
+    assert.equal(round(2.5 - state.resources.driftwood), round(0.5 * kelpFactor), 'driftwood is drawn at its own full rate (0.5) throttled by the kelp factor, not further reduced');
   }
 
-  // A step longer than a second (a 1-59s gap through advance) can't draw more than the pool holds,
-  // and the frame after never runs the generators backwards.
+  // A long gap (1-59s through advance) uses the same per-second shares, so it can't overdraw, and
+  // the frame after never runs the generators backwards.
   {
-    const state = createInitialState();
-    state.unlocked = [sawmill1.id, sawmill2.id];
+    const state = createInitialState(); // 0.5 driftwood/s
+    state.unlocked.push(sawmill1.id, sawmill2.id);
     state.resources.driftwood = 3;
     advance(state, 30);
-    assert.ok(state.resources.driftwood > -1e-9, `a 30s gap drains driftwood to zero at most (got ${state.resources.driftwood})`);
-    assert.equal(Math.round(state.resources.planks * 1e9) / 1e9, 1.5, 'and turns the 3 driftwood in stock into 1.5 planks, no more');
+    assert.equal(round(state.resources.driftwood), 10.5, '3 in stock plus half of the 15 earned; the other half went to the sawmills');
+    assert.equal(round(state.resources.planks), 3.75, 'that 7.5 driftwood at 2:1');
     const planksAfterGap = state.resources.planks;
     const lifetimeAfterGap = state.lifetime.planks;
     tick(state, 1 / 60);
@@ -1789,18 +1800,39 @@ const corridorEntry = (zone, fromZone) =>
     assert.ok(state.lifetime.planks >= lifetimeAfterGap, 'or lifetime planks');
   }
 
-  // Time away: generators can use what was in stock plus what producers earned while away, and no
-  // more. The summary reports what actually changed, not phantom output.
+  // Time away: generators get their half of what producers earned while away, and the summary
+  // reports what actually changed, not phantom output.
   {
     const state = createInitialState(); // driftwood_start makes 0.5 driftwood/s
     state.unlocked.push(sawmill1.id, sawmill2.id);
     state.resources.driftwood = 100;
     const away = applyOfflineProgress(state, 8 * 3600); // 8h at the base 50% rate: +7,200 driftwood earned
-    assert.ok(state.resources.driftwood > -1e-9, `driftwood never goes negative while away (got ${state.resources.driftwood})`);
-    assert.equal(Math.round(state.resources.planks), 3650, 'the 7,300 driftwood available becomes 3,650 planks at 2:1');
-    assert.equal(Math.round(away.gains.planks), 3650, 'the welcome-back summary reports the planks actually made');
-    assert.equal(Math.round(away.gains.driftwood), -100, 'and driftwood net of what the sawmills used');
+    assert.equal(Math.round(state.resources.driftwood), 3700, 'the 100 in stock plus the half of 7,200 the sawmills left');
+    assert.equal(Math.round(state.resources.planks), 1800, 'the other 3,600 driftwood became 1,800 planks at 2:1');
+    assert.equal(Math.round(away.gains.planks), 1800, 'the welcome-back summary reports the planks actually made');
+    assert.equal(Math.round(away.gains.driftwood), 3600, 'and driftwood net of what the sawmills used');
     assert.equal(Math.round(state.lifetime.driftwood), 7200, 'lifetime still counts all the driftwood earned');
+  }
+
+  // Rates and unlock timers are net: what generators use comes off their inputs' income, and the
+  // goods they make count as income.
+  {
+    const state = createInitialState(); // 0.5 driftwood/s
+    state.unlocked.push(sawmill1.id); // uses 0.25 of it
+    const wood = rateBreakdown(state, 'driftwood');
+    assert.equal(wood.total, 0.5, 'producers still make 0.5 driftwood/s');
+    assert.equal(round(wood.used), 0.25, 'the sawmill uses 0.25 of it');
+    assert.equal(round(wood.net), 0.25, 'so the HUD shows the 0.25/s that actually lands in the stock');
+    const soil = TILES.find((t) => t.id === 'crops_soil_barge');
+    assert.deepEqual(soil.unlock.cost, { driftwood: 35 }, 'fixture assumption');
+    assert.equal(round(unlockEta(state, soil).seconds), 140, '35 driftwood at the net 0.25/s, not 70s at the gross 0.5/s');
+
+    state.unlocked.push('kelp_start', ropeworks1.id);
+    const abyssalBlank = TILES.find((t) => t.id === 'abyssal_blank_01');
+    assert.deepEqual(abyssalBlank.unlock.cost, { planks: 60, kelp_rope: 40 }, 'fixture assumption');
+    const eta = unlockEta(state, abyssalBlank);
+    assert.equal(eta.blockedBy, null, 'planks and kelp rope from running generators count as income');
+    assert.ok(Number.isFinite(eta.seconds) && eta.seconds > 0, `so it has a real countdown (got ${eta.seconds})`);
   }
 
   // A save the overdraw already corrupted (negative pools) loads with them floored at zero, so the
@@ -1825,12 +1857,11 @@ const corridorEntry = (zone, fromZone) =>
   // rateBreakdown's generator branch reports the actual *throttled* rate (matching generatorRate
   // exactly), not the unthrottled capacity -- the HUD's "+X/s" line has to match reality.
   {
-    const state = createInitialState();
-    state.unlocked = [sawmill1.id];
-    state.resources.driftwood = 0.6; // half of the 1.2 desired for a 1s-equivalent factor
+    const state = createInitialState(); // 0.5 driftwood/s, half of it available to the sawmill
+    state.unlocked.push(sawmill1.id);
     const info = rateBreakdown(state, 'planks');
     assert.equal(info.base, generatorRate(state, sawmill1), 'rateBreakdown.base matches the throttled generatorRate exactly');
-    assert.equal(info.base, 0.3, 'half the driftwood in stock halves the reported rate, same as the tick math');
+    assert.equal(round(info.base), 0.125, 'the reported rate is throttled the same way as the tick math');
   }
 
   // boosterIsIdle is decoupled from that throttled rate on purpose: a freshly-unlocked generator
@@ -1840,7 +1871,7 @@ const corridorEntry = (zone, fromZone) =>
   {
     const state = createInitialState();
     assert.equal(boosterIsIdle(state, toolShed), true, 'no planks source yet');
-    state.unlocked = [toolShed.id, sawmill1.id]; // driftwood is 0, so sawmill1's rate is 0 too
+    state.unlocked = [toolShed.id, sawmill1.id]; // no driftwood income, so sawmill1's rate is 0 too
     assert.equal(generatorRate(state, sawmill1), 0, 'fixture assumption: the sawmill is fully throttled to zero here');
     assert.equal(boosterIsIdle(state, toolShed), false, 'a sawmill exists now, even fully throttled, so the booster is not idle');
   }
@@ -1859,14 +1890,15 @@ const corridorEntry = (zone, fromZone) =>
     const state = createInitialState();
     assert.deepEqual(state.generatorsEnabled, { planks: true, kelp_rope: true, bread: true }, 'every generator family starts enabled');
 
-    state.unlocked = [sawmill1.id];
+    state.unlocked = [...driftwoodIncome, sawmill1.id];
     state.resources.driftwood = 1000;
     setGeneratorEnabled(state, 'planks', false);
     assert.equal(generatorRate(state, sawmill1), 0, 'a disabled family reports a 0 rate regardless of how abundant its input is');
     assert.equal(rateBreakdown(state, 'planks').base, 0, "rateBreakdown excludes a disabled family's generators from the resource's HUD rate");
+    assert.equal(rateBreakdown(state, 'driftwood').used, 0, 'and from what its inputs report as used');
     const driftwoodBefore = state.resources.driftwood;
     tick(state, 5);
-    assert.equal(state.resources.driftwood, driftwoodBefore, 'a disabled sawmill draws no driftwood at all');
+    assert.equal(round(state.resources.driftwood - driftwoodBefore), 12.5, 'a disabled sawmill draws no driftwood: the stock grows by all 2.5/s of income');
     assert.equal(state.resources.planks, 0, 'a disabled sawmill makes no planks');
 
     setGeneratorEnabled(state, 'planks', true);
@@ -1877,9 +1909,7 @@ const corridorEntry = (zone, fromZone) =>
   // instead of that input staying split as if the disabled generator were still bidding for it.
   {
     const state = createInitialState();
-    state.unlocked = [ropeworks1.id]; // consumes kelp + driftwood
-    state.resources.kelp = 1000;
-    state.resources.driftwood = 1000;
+    state.unlocked = [...driftwoodIncome, ...kelpIncome, ropeworks1.id]; // consumes kelp + driftwood
     setGeneratorEnabled(state, 'planks', false); // no sawmill unlocked here anyway; proves it's harmless
     assert.equal(generatorRate(state, ropeworks1), generatorFullRate(state, ropeworks1), "disabling an unrelated, unlocked-nowhere family doesn't throttle a running one");
   }

@@ -75,9 +75,10 @@ Production lane in the prestige tree, baron/magnate lifetime achievements, and t
 `resourceLabel`/`resourceTitle` turn `kelp_rope` into `kelp rope`/`Kelp Rope` wherever a resource
 name is shown as text, since it's the one multi-word resource name in the game.
 
-When several unlocked generators draw on the same scarce input, each is throttled by the same
-proportional factor (not first-come-first-served) so the shared pool never goes negative; a
-generator with two inputs is capped by whichever is scarcer. See `applyGenerators` in
+Generators only take half of each input's producer income, never the stockpile. When several
+unlocked generators want more than that share, each is throttled by the same proportional factor
+(not first-come-first-served); a generator with two inputs is capped by whichever is scarcer. See
+`generatorScarcityFactors` in
 `js/state.js` and the "Generators (zone 3, Timberline Coast)" tests in `tests/economy.test.mjs`.
 
 Zone 4 is entered through the row 0 / row -1 border (zone 1's own north edge) — the same hex

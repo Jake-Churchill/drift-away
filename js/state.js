@@ -147,7 +147,8 @@ function stateRate(state, resource) {
 }
 
 // Where a resource's income comes from, for the HUD: producer output, the boosters stacked on it,
-// and the prestige bonus. `total` is exactly effectiveRate.
+// and the prestige bonus. `total` is exactly effectiveRate; `used` is what running generators take
+// of it, and `net` what actually lands in the stock.
 export function rateBreakdown(state, resource) {
   let base = 0;
   let boostPercent = 0;
@@ -176,14 +177,16 @@ export function rateBreakdown(state, resource) {
   }
   const prestigePercent = PRESTIGE_UPGRADE_PERCENT * (state.prestige.upgrades[resource] || 0);
   const ballastPercent = state.prestige.ballast;
-  return {
-    base,
-    boostPercent,
-    boosters,
-    prestigePercent,
-    ballastPercent,
-    total: base * (1 + boostPercent / 100) * (1 + prestigePercent / 100) * (1 + ballastPercent / 100),
-  };
+  const total = base * (1 + boostPercent / 100) * (1 + prestigePercent / 100) * (1 + ballastPercent / 100);
+  const used = generatorFlows(state, generatorFactors).used[resource] || 0;
+  return { base, boostPercent, boosters, prestigePercent, ballastPercent, total, used, net: total - used };
+}
+
+// Every resource's net change per second right now: producer income plus what generators make,
+// minus what they use. Unlock timers wait on this.
+function netRates(state) {
+  const { used, made } = generatorFlows(state);
+  return Object.fromEntries(RESOURCES.map((r) => [r, stateRate(state, r) + (made[r] || 0) - (used[r] || 0)]));
 }
 
 // True when nothing the booster affects has a producer yet, so unlocking it would change nothing.
@@ -229,9 +232,9 @@ export function isEligible(tile, state) {
   return false;
 }
 
-// How close a locked tile is to being unlockable, and how long that takes at current rates.
-// `blockedBy` names a needed resource nothing produces yet.
-export function unlockEta(state, tile) {
+// How close a locked tile is to being unlockable, and how long that takes at current net rates.
+// `blockedBy` names a needed resource with no net income.
+export function unlockEta(state, tile, rates = netRates(state)) {
   let needs = [];
   if (tile.unlock.type === 'cost') {
     needs = Object.entries(tile.unlock.cost).map(([r, amount]) => [r, amount, state.resources[r]]);
@@ -244,7 +247,7 @@ export function unlockEta(state, tile) {
   for (const [resource, amount, have] of needs) {
     fraction = Math.min(fraction, Math.min(1, have / amount));
     if (have >= amount) continue;
-    const rate = stateRate(state, resource);
+    const rate = rates[resource];
     if (rate <= 0) {
       blockedBy = resource;
       seconds = Infinity;
@@ -257,9 +260,10 @@ export function unlockEta(state, tile) {
 
 // Every tile the player can see but hasn't unlocked, with its timer.
 export function lockedTileStatuses(state) {
+  const rates = netRates(state);
   return TILES.filter((t) => !isUnlocked(state.unlocked, t.id) && isDiscovered(t, state)).map((tile) => ({
     tile,
-    eta: unlockEta(state, tile),
+    eta: unlockEta(state, tile, rates),
   }));
 }
 
@@ -726,13 +730,13 @@ export function offlineRate(state) {
 
 // Zone 3's mechanic: a generator (kind 'generator') doesn't produce from nothing like every
 // other tile -- it consumes existing resources to make a new one (planks/kelp_rope/bread). It
-// draws on the shared pool alongside everything else (unlocks, other generators), so if unlocked
-// generators together want more of an input than is in stock, every one of them drawing on that
-// resource is throttled by the same fraction rather than first-come-first-served -- the pool
-// never goes negative, and each generator's own output is capped by whichever of its inputs is
-// scarcest. A generator with two inputs can end up drawing slightly more of its non-limiting
-// input than its (lower, capped) output actually needed that tick -- a known first-pass
-// simplification; see docs/superpowers/specs/2026-09-24-drift-away-zone4-design.md.
+// only ever takes a share of its inputs' producer income (GENERATOR_INCOME_SHARE), never the
+// stockpile, so leaving generators on can't stall unlocks. If unlocked generators together want
+// more of an input than that share, every one of them drawing on it is throttled by the same
+// fraction rather than first-come-first-served, and each generator's own output is capped by
+// whichever of its inputs is scarcest. A generator with two inputs can end up drawing slightly
+// more of its non-limiting input than its (lower, capped) output actually needed -- a known
+// first-pass simplification; see docs/superpowers/specs/2026-09-24-drift-away-zone4-design.md.
 // A disabled family's generators are excluded outright -- they neither draw on the shared pool
 // nor count toward it being scarce for everyone else still running.
 function generatorTiles(state) {
@@ -744,9 +748,11 @@ function generatorMultiplier(tile, unlockedIds, levels) {
   return levelMultiplier(levels[tile.id] || 1) * (1 + boostPercent / 100);
 }
 
-// Demand is compared over the step being applied (never less than one second, so ordinary frames and
-// the HUD's per-second rates are unchanged): a 30s gap or an hour away can't draw more than the pool holds.
-function generatorScarcityFactors(state, dt = 1) {
+const GENERATOR_INCOME_SHARE = 0.5;
+
+// Comparing demand with income (a rate), not with the stock, also means no step -- however long --
+// can draw more than was earned during it.
+function generatorScarcityFactors(state) {
   const generators = generatorTiles(state);
   const inputResources = [...new Set(generators.flatMap((t) => Object.keys(t.consumes)))];
   const factors = {};
@@ -755,9 +761,25 @@ function generatorScarcityFactors(state, dt = 1) {
       const rate = t.consumes[resource];
       return rate ? sum + rate * generatorMultiplier(t, state.unlocked, state.levels) : sum;
     }, 0);
-    factors[resource] = desired > 0 ? Math.max(0, Math.min(1, state.resources[resource] / (desired * Math.max(dt, 1)))) : 1;
+    const available = GENERATOR_INCOME_SHARE * stateRate(state, resource);
+    factors[resource] = desired > 0 ? Math.min(1, available / desired) : 1;
   }
   return factors;
+}
+
+// What every running generator uses and makes per second right now.
+function generatorFlows(state, factors = generatorScarcityFactors(state)) {
+  const used = {};
+  const made = {};
+  for (const tile of generatorTiles(state)) {
+    const multiplier = generatorMultiplier(tile, state.unlocked, state.levels);
+    const throttle = generatorThrottle(tile, factors);
+    for (const [resource, rate] of Object.entries(tile.consumes)) {
+      used[resource] = (used[resource] || 0) + rate * multiplier * throttle;
+    }
+    made[tile.produces] = (made[tile.produces] || 0) + tile.rate * multiplier * throttle;
+  }
+  return { used, made };
 }
 
 function generatorThrottle(tile, factors) {
@@ -781,22 +803,16 @@ export function generatorFullRate(state, tile) {
 // Returns the net change to each resource this call (goods made, inputs used), so offline progress
 // can fold it into its gains summary the same way it does for the base 4.
 function applyGenerators(state, dt) {
-  const generators = generatorTiles(state);
+  const { used, made } = generatorFlows(state);
   const changes = {};
-  if (generators.length === 0) return changes;
-  const factors = generatorScarcityFactors(state, dt);
-  for (const tile of generators) {
-    const multiplier = generatorMultiplier(tile, state.unlocked, state.levels);
-    const throttle = generatorThrottle(tile, factors);
-    for (const [resource, rate] of Object.entries(tile.consumes)) {
-      const used = rate * multiplier * throttle * dt;
-      state.resources[resource] -= used;
-      changes[resource] = (changes[resource] || 0) - used;
-    }
-    const output = tile.rate * multiplier * throttle * dt;
-    state.resources[tile.produces] += output;
-    state.lifetime[tile.produces] += output;
-    changes[tile.produces] = (changes[tile.produces] || 0) + output;
+  for (const [resource, rate] of Object.entries(used)) {
+    state.resources[resource] -= rate * dt;
+    changes[resource] = -rate * dt;
+  }
+  for (const [resource, rate] of Object.entries(made)) {
+    state.resources[resource] += rate * dt;
+    state.lifetime[resource] += rate * dt;
+    changes[resource] = (changes[resource] || 0) + rate * dt;
   }
   return changes;
 }
