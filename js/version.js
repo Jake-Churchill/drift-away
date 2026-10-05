@@ -1,2 +1,2 @@
 // Shown in the menu. Bump on every gameplay, content, or visual change (see CLAUDE.md).
-export const VERSION = '2.3.5';
+export const VERSION = '2.3.6';

@@ -21,6 +21,7 @@ import {
   lockedTileStatuses,
   MAX_LEVEL,
   nextUnlock,
+  SAVE_KEY,
   saveState,
   setGeneratorEnabled,
   unlockIntensity,
@@ -50,6 +51,7 @@ import {
   initUpgrades,
   showOfflineModal,
   showResourcePopup,
+  showStaleTabNotice,
   showTokenPopup,
   updateAchievementsDisplay,
   updateBoardTint,
@@ -96,7 +98,7 @@ initMenu({
     resetCamera();
     selectedTileId = null;
     hideTilePanel();
-    saveState(state);
+    save();
     updateAchievementsDisplay(state);
   },
   onRefresh: () => {
@@ -110,7 +112,7 @@ initMenu({
     resetCamera();
     selectedTileId = null;
     hideTilePanel();
-    saveState(state);
+    save();
     updateAchievementsDisplay(state);
     updatePrestigeDisplay(state);
     return true;
@@ -118,7 +120,7 @@ initMenu({
   onShopBuy: (id) => {
     const success = buyShopItem(state, id);
     if (success) {
-      saveState(state);
+      save();
       playLevelUpSound();
     }
     return success;
@@ -139,7 +141,7 @@ initPrestige(
       resetCamera();
       selectedTileId = null;
       hideTilePanel();
-      saveState(state);
+      save();
       updatePrestigeDisplay(state);
       updateAchievementsDisplay(state);
       showTokenPopup(result.tokensEarned);
@@ -159,7 +161,7 @@ initPrestige(
       purchases++;
     }
     if (purchases > 0) {
-      saveState(state);
+      save();
       updatePrestigeDisplay(state);
       showTokenPopup(-(tokensBefore - state.prestige.tokens));
       playLevelUpSound();
@@ -178,6 +180,19 @@ const canvas = getCanvas();
 initScene(canvas);
 
 let { state, offline } = loadState();
+
+// Another tab saving means this tab's copy is out of date: it stops saving, so it can't overwrite
+// that progress, and asks to be reloaded. Every save in this file goes through save() for that.
+let staleTab = false;
+window.addEventListener('storage', (event) => {
+  if (event.key !== SAVE_KEY || staleTab) return;
+  staleTab = true;
+  showStaleTabNotice();
+});
+function save() {
+  if (!staleTab) saveState(state);
+}
+
 updateAchievementsDisplay(state);
 if (offline) showAway(offline);
 
@@ -205,7 +220,7 @@ function renderTilePanel(tile) {
 function handleToggleGeneratorClick(tile) {
   const enabled = state.generatorsEnabled[tile.family] !== false;
   setGeneratorEnabled(state, tile.family, !enabled);
-  saveState(state);
+  save();
   renderTilePanel(tile);
 }
 
@@ -217,7 +232,7 @@ function handleUnlockClick(tile) {
   const goldBefore = state.gold;
   const success = unlockTile(state, tile);
   if (success) {
-    saveState(state);
+    save();
     renderTilePanel(tile);
     updateAchievementsDisplay(state);
     if (cost) showResourcePopup(spent(cost));
@@ -236,7 +251,7 @@ function handleLevelUpClick(tile) {
   const goldBefore = state.gold;
   const success = levelUpTile(state, tile);
   if (success) {
-    saveState(state);
+    save();
     // Also called from the upgrades panel, where no tile panel should pop up.
     if (selectedTileId === tile.id) renderTilePanel(tile);
     updateAchievementsDisplay(state);
@@ -365,7 +380,7 @@ function loop(now) {
 
   timeSinceSave += elapsed;
   if (timeSinceSave >= 10) {
-    saveState(state);
+    save();
     timeSinceSave = 0;
   }
 
@@ -375,12 +390,12 @@ function loop(now) {
 requestAnimationFrame(loop);
 
 window.addEventListener('beforeunload', () => {
-  saveState(state);
+  save();
 });
 
 // beforeunload is unreliable on phones; hiding the tab is the last moment we can count on.
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) saveState(state);
+  if (document.hidden) save();
 });
 
 // Asks the browser not to evict the save under storage pressure. Harmless if refused or unsupported.

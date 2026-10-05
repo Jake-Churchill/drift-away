@@ -1081,6 +1081,50 @@ function seedSave(save) {
   assert.equal(state.gold, 1, 'the reward is granted on load');
 }
 
+// A damaged or hand-edited save can't poison the game: every count becomes a finite, non-negative
+// number, and ids and levels are limited to what exists.
+{
+  const hostile =
+    '{"version":3,' +
+    '"resources":{"driftwood":"50","fish":1e400,"kelp":-5},' +
+    '"lifetime":{"crops":"abc"},' +
+    '"unlocked":["not_a_tile",7],' +
+    '"levels":{"driftwood_start":"9"},' +
+    '"gold":"7","achievements":{"oops":true},' +
+    '"prestige":{"tokens":1e400,"count":-2,"headStart":99,"ballast":1e400,"upgrades":{"fish":"3"}},' +
+    '"lastSaved":"yesterday"}';
+  const state = decodeSave(btoa(hostile));
+  assert.ok(state, 'a damaged save still loads');
+  assert.equal(state.resources.driftwood, 50, 'a numeric string becomes a number');
+  assert.equal(state.resources.fish, 0, 'Infinity becomes 0');
+  assert.equal(state.resources.kelp, 0, 'a negative count becomes 0');
+  assert.equal(state.lifetime.crops, 0, 'garbage becomes 0');
+  assert.deepEqual(state.unlocked, ['driftwood_start'], 'unknown tile ids are dropped, and the starting tile is always there');
+  assert.equal(state.levels.driftwood_start, MAX_LEVEL, 'levels are clamped to what exists');
+  assert.deepEqual(state.achievements, ['maxed-out'], 'an achievements field that is not a list starts empty, then the level-3 tile earns Maxed Out');
+  assert.equal(state.gold, 8, 'the 7 saved gold, plus 1 for Maxed Out');
+  assert.equal(state.prestige.tokens, 0);
+  assert.equal(state.prestige.count, 0);
+  assert.equal(state.prestige.headStart, HEAD_START_MAX_LEVEL);
+  assert.equal(state.prestige.ballast, 0);
+  assert.equal(state.prestige.upgrades.fish, 3);
+  assert.equal(state.lastSaved, undefined, 'a timestamp that is not a number is dropped');
+  tick(state, 1);
+  for (const r of RESOURCES) assert.ok(Number.isFinite(state.resources[r]), `${r} stays a real number after a tick (got ${state.resources[r]})`);
+}
+
+// A save that can't be loaded is kept under a backup key, instead of being replaced by the new
+// game's first autosave.
+{
+  localStorage.setItem(SAVE_KEY, '{not json');
+  const { state } = loadState();
+  assert.deepEqual(state.unlocked, createInitialState().unlocked, 'the game starts fresh');
+  assert.equal(localStorage.getItem(`${SAVE_KEY}_backup`), '{not json', 'but the unreadable save is kept');
+  localStorage.setItem(SAVE_KEY, '{"version":3}');
+  loadState();
+  assert.equal(localStorage.getItem(`${SAVE_KEY}_backup`), '{"version":3}', 'same for a save missing its required parts');
+}
+
 console.log('achievement save migration tests passed');
 
 // --- zone corridors ---

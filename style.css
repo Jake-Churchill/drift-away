@@ -927,7 +927,28 @@ html, body {
   display: none;
 }
 
-#offline-panel {
+#stale-tab-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 25;
+  background: rgba(9, 20, 31, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#stale-tab-overlay.hidden {
+  display: none;
+}
+
+#stale-tab-panel p {
+  margin: 0 0 18px;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+#offline-panel,
+#stale-tab-panel {
   background: rgba(16, 38, 58, 0.95);
   color: #f4ead2;
   padding: 28px 36px;
@@ -938,7 +959,8 @@ html, body {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
 }
 
-#offline-panel h2 {
+#offline-panel h2,
+#stale-tab-panel h2 {
   margin: 0 0 14px;
   font-size: 22px;
   letter-spacing: 0.5px;
@@ -993,7 +1015,8 @@ html, body {
   gap: 6px;
 }
 
-#offline-collect-btn {
+#offline-collect-btn,
+#stale-tab-reload-btn {
   width: 100%;
   border: none;
   border-radius: 4px;

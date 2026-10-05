@@ -878,9 +878,20 @@ export function saveState(state) {
   }
 }
 
-// No real game state has a negative count, but saves written while generators could overdraw do.
-function floorAtZero(counts) {
-  return Object.fromEntries(Object.entries(counts).map(([key, value]) => [key, Math.max(0, value)]));
+// A pasted, hand-edited or damaged save can hold anything where a number belongs (strings,
+// Infinity, negatives -- old saves written while generators could overdraw went negative), and a
+// string would turn every `+=` into concatenation. Anything that isn't a finite positive number is 0.
+function count(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function wholeNumber(value, max = Infinity) {
+  return Math.min(max, Math.floor(count(value)));
+}
+
+function counts(saved) {
+  return Object.fromEntries(RESOURCES.map((r) => [r, count(saved?.[r])]));
 }
 
 // Shared by loading from localStorage and importing a pasted code: fills a v3 save in from the
@@ -896,20 +907,28 @@ function normalizeSave(parsed) {
     Array.isArray(parsed.unlocked);
   if (!looksValid) return null;
   const base = createInitialState();
+  const knownTile = (id) => TILE_BY_ID.has(id);
+  const levels = Object.entries(parsed.levels || {}).filter(([id]) => knownTile(id));
   return {
     ...base,
     ...parsed,
-    resources: floorAtZero({ ...base.resources, ...parsed.resources }),
-    lifetime: floorAtZero({ ...base.lifetime, ...parsed.lifetime }),
-    levels: { ...base.levels, ...parsed.levels },
-    prestige: normalizePrestige(parsed.prestige || {}, parsed.shop || {}, base.prestige),
-    gold: parsed.gold ?? base.gold,
-    achievements: [...(parsed.achievements || base.achievements)],
+    resources: counts(parsed.resources),
+    lifetime: counts(parsed.lifetime),
+    unlocked: [...new Set([...base.unlocked, ...parsed.unlocked.filter(knownTile)])],
+    levels: Object.fromEntries(levels.map(([id, level]) => [id, Math.max(1, wholeNumber(level, MAX_LEVEL))])),
+    prestige: normalizePrestige(isObject(parsed.prestige) ? parsed.prestige : {}, parsed.shop || {}),
+    gold: wholeNumber(parsed.gold),
+    achievements: Array.isArray(parsed.achievements) ? parsed.achievements.filter((id) => typeof id === 'string') : [],
     shop: normalizeShop(parsed.shop, base.shop),
     // A save from before this toggle existed has no key here at all, so the merge leaves every
     // family at the base's default of enabled.
     generatorsEnabled: { ...base.generatorsEnabled, ...(parsed.generatorsEnabled || {}) },
+    lastSaved: Number.isFinite(parsed.lastSaved) ? parsed.lastSaved : undefined,
   };
+}
+
+function isObject(value) {
+  return Boolean(value) && typeof value === 'object';
 }
 
 // A save from before the prestige tree rework kept Deeper Hold, Steady Tides and Ballast in `shop`,
@@ -917,15 +936,15 @@ function normalizeSave(parsed) {
 // `shop.holdLevel`/`tidesLevel`/`ballast` is carried into the new `prestige.hold`/`tides`/`ballast`
 // fields so a player doesn't lose progress they already paid gold for. A save already in the new
 // shape (no `shop.holdLevel`) is untouched by the `??` fallback below.
-function normalizePrestige(parsedPrestige, legacyShop, base) {
-  const clamp = (value, max) => Math.min(max, Math.max(0, Math.floor(Number(value)) || 0));
+function normalizePrestige(parsedPrestige, legacyShop) {
   return {
-    ...base,
-    ...parsedPrestige,
-    upgrades: { ...base.upgrades, ...(parsedPrestige.upgrades || {}) },
-    hold: clamp(parsedPrestige.hold ?? legacyShop.holdLevel ?? base.hold, OFFLINE_CAP_HOURS.length - 1),
-    tides: clamp(parsedPrestige.tides ?? legacyShop.tidesLevel ?? base.tides, OFFLINE_RATES.length - 1),
-    ballast: clamp(parsedPrestige.ballast ?? legacyShop.ballast ?? base.ballast, Infinity),
+    tokens: wholeNumber(parsedPrestige.tokens),
+    upgrades: Object.fromEntries(RESOURCES.map((r) => [r, wholeNumber(parsedPrestige.upgrades?.[r])])),
+    headStart: wholeNumber(parsedPrestige.headStart, HEAD_START_MAX_LEVEL),
+    hold: wholeNumber(parsedPrestige.hold ?? legacyShop.holdLevel, OFFLINE_CAP_HOURS.length - 1),
+    tides: wholeNumber(parsedPrestige.tides ?? legacyShop.tidesLevel, OFFLINE_RATES.length - 1),
+    ballast: wholeNumber(parsedPrestige.ballast ?? legacyShop.ballast),
+    count: wholeNumber(parsedPrestige.count),
   };
 }
 
@@ -940,19 +959,30 @@ function normalizeShop(saved, base) {
 }
 
 export function loadState() {
+  let raw = null;
   try {
-    const raw = localStorage.getItem(SAVE_KEY);
-    const state = raw ? normalizeSave(JSON.parse(raw)) : null;
-    if (!state) return { state: createInitialState(), offline: null };
-    const elapsedSeconds = state.lastSaved ? Math.max(0, (Date.now() - state.lastSaved) / 1000) : 0;
-    const offline = applyOfflineProgress(state, elapsedSeconds);
-    // A save migrated from before achievements existed may already meet several
-    // conditions; credit them now rather than on the next frame's tick.
-    checkAchievements(state);
-    return { state, offline };
+    raw = localStorage.getItem(SAVE_KEY);
+    const state = raw && normalizeSave(JSON.parse(raw));
+    if (state) {
+      const elapsedSeconds = state.lastSaved ? Math.max(0, (Date.now() - state.lastSaved) / 1000) : 0;
+      const offline = applyOfflineProgress(state, elapsedSeconds);
+      // A save migrated from before achievements existed may already meet several
+      // conditions; credit them now rather than on the next frame's tick.
+      checkAchievements(state);
+      return { state, offline };
+    }
   } catch {
-    return { state: createInitialState(), offline: null };
+    // unreadable: falls through to a fresh game below
   }
+  // Copied aside first, so the fresh game's first autosave doesn't destroy a save we couldn't read.
+  if (raw) {
+    try {
+      localStorage.setItem(`${SAVE_KEY}_backup`, raw);
+    } catch {
+      // storage full or blocked: nothing more to do
+    }
+  }
+  return { state: createInitialState(), offline: null };
 }
 
 // The save as one unbroken base64 string, stamped with the time so any offline credit on the

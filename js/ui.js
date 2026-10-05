@@ -153,6 +153,14 @@ function formatDuration(seconds) {
   return minutes === 0 ? `${hours}h` : `${hours}h ${minutes}m`;
 }
 
+// Covers the whole game: once another tab has saved, nothing done here would be kept.
+export function showStaleTabNotice() {
+  document.getElementById('stale-tab-overlay').classList.remove('hidden');
+  const reload = document.getElementById('stale-tab-reload-btn');
+  reload.addEventListener('click', () => location.reload());
+  reload.focus();
+}
+
 // `away` is applyOfflineProgress's result. `next` is nextUnlock(state) (or null): the modal ends by
 // pointing at it, and `onGo` (only used when there is a next tile) takes the player there.
 export function showOfflineModal(away, next, onCollect, onGo) {
