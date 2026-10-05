@@ -460,14 +460,16 @@ export function checkAchievements(state) {
 
 export const PRESTIGE_TOKEN_DIVISOR = 1000; // first-pass constant, not playtested
 export const PRESTIGE_MIN_TOKENS = 1; // below this, a prestige would earn nothing worth resetting for
-export const PRESTIGE_MIN_LIFETIME = PRESTIGE_MIN_TOKENS * PRESTIGE_TOKEN_DIVISOR; // the same floor, in lifetime resources
+export const PRESTIGE_MIN_LIFETIME = PRESTIGE_MIN_TOKENS ** 2 * PRESTIGE_TOKEN_DIVISOR; // the same floor, in lifetime resources
 
 export function lifetimeTotal(state) {
   return RESOURCES.reduce((sum, r) => sum + state.lifetime[r], 0);
 }
 
+// Square root, so each prestige makes the next run a little easier instead of one full clear
+// paying enough to trivialize every run after it; later areas can then ask for a lot of prestige.
 export function prestigeTokensEarned(state) {
-  return Math.floor(lifetimeTotal(state) / PRESTIGE_TOKEN_DIVISOR);
+  return Math.floor(Math.sqrt(lifetimeTotal(state) / PRESTIGE_TOKEN_DIVISOR));
 }
 
 export function doPrestige(state) {
@@ -767,6 +769,12 @@ function generatorScarcityFactors(state) {
   return factors;
 }
 
+// The prestige lane and Ballast raise a generator's output without raising what it uses, the same
+// way they raise a producer's output.
+function productionBonus(state, resource) {
+  return (1 + (PRESTIGE_UPGRADE_PERCENT * (state.prestige.upgrades[resource] || 0)) / 100) * (1 + state.prestige.ballast / 100);
+}
+
 // What every running generator uses and makes per second right now.
 function generatorFlows(state, factors = generatorScarcityFactors(state)) {
   const used = {};
@@ -777,7 +785,7 @@ function generatorFlows(state, factors = generatorScarcityFactors(state)) {
     for (const [resource, rate] of Object.entries(tile.consumes)) {
       used[resource] = (used[resource] || 0) + rate * multiplier * throttle;
     }
-    made[tile.produces] = (made[tile.produces] || 0) + tile.rate * multiplier * throttle;
+    made[tile.produces] = (made[tile.produces] || 0) + tile.rate * multiplier * throttle * productionBonus(state, tile.produces);
   }
   return { used, made };
 }
@@ -792,12 +800,12 @@ function generatorThrottle(tile, factors) {
 export function generatorRate(state, tile) {
   if (state.generatorsEnabled[tile.family] === false) return 0;
   const throttle = generatorThrottle(tile, generatorScarcityFactors(state));
-  return tile.rate * generatorMultiplier(tile, state.unlocked, state.levels) * throttle;
+  return generatorFullRate(state, tile) * throttle;
 }
 
 // The same, ignoring scarcity -- what the generator would produce with a full input pool.
 export function generatorFullRate(state, tile) {
-  return tile.rate * generatorMultiplier(tile, state.unlocked, state.levels);
+  return tile.rate * generatorMultiplier(tile, state.unlocked, state.levels) * productionBonus(state, tile.produces);
 }
 
 // Returns the net change to each resource this call (goods made, inputs used), so offline progress

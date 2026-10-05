@@ -478,8 +478,12 @@ console.log('completion tracking tests passed');
 
 {
   const state = createInitialState();
-  state.lifetime = { fish: 500, kelp: 500, driftwood: 1000, crops: 1000, planks: 0, kelp_rope: 0, bread: 0 };
-  assert.equal(prestigeTokensEarned(state), 3, 'floor((500+500+1000+1000) / 1000) = 3');
+  state.lifetime = { fish: 500, kelp: 1500, driftwood: 3000, crops: 4000, planks: 0, kelp_rope: 0, bread: 0 };
+  assert.equal(prestigeTokensEarned(state), 3, 'floor(sqrt(9,000 / 1000)) = 3');
+  state.lifetime.fish += 6000; // 15,000 lifetime
+  assert.equal(prestigeTokensEarned(state), 3, 'floor(sqrt(15)): tokens grow with the square root, so a longer run pays less per resource');
+  state.lifetime = { fish: 69_000_000, kelp: 0, driftwood: 0, crops: 0, planks: 0, kelp_rope: 0, bread: 0 };
+  assert.equal(prestigeTokensEarned(state), 262, 'a full clear (~69M lifetime) pays floor(sqrt(69,000)) = 262, not 69,000');
 }
 
 {
@@ -517,8 +521,8 @@ console.log('completion tracking tests passed');
   const result = doPrestige(state);
 
   assert.ok(result, 'prestige succeeds once fully complete');
-  assert.equal(result.tokensEarned, 4, 'floor(4000 / 1000) = 4');
-  assert.equal(result.state.prestige.tokens, 11, 'earned tokens add to the carried-over balance (7 + 4)');
+  assert.equal(result.tokensEarned, 2, 'floor(sqrt(4000 / 1000)) = 2');
+  assert.equal(result.state.prestige.tokens, 9, 'earned tokens add to the carried-over balance (7 + 2)');
   assert.deepEqual(
     result.state.prestige.upgrades,
     { fish: 2, kelp: 0, driftwood: 0, crops: 0, planks: 0, kelp_rope: 0, bread: 0 },
@@ -1833,6 +1837,22 @@ const corridorEntry = (zone, fromZone) =>
     const eta = unlockEta(state, abyssalBlank);
     assert.equal(eta.blockedBy, null, 'planks and kelp rope from running generators count as income');
     assert.ok(Number.isFinite(eta.seconds) && eta.seconds > 0, `so it has a real countdown (got ${eta.seconds})`);
+  }
+
+  // The planks / kelp rope / bread prestige lanes and Ballast raise what generators make, the same
+  // way they raise a producer's output -- without raising what the generators use.
+  {
+    const state = createInitialState();
+    state.unlocked = [...driftwoodIncome, sawmill1.id];
+    state.prestige.upgrades.planks = 5; // +50%
+    state.prestige.ballast = 20; // +20% to everything, driftwood income included
+    const boosted = 0.6 * 1.5 * 1.2;
+    assert.equal(round(generatorRate(state, sawmill1)), round(boosted), 'the tile panel shows the boosted rate');
+    assert.equal(round(generatorFullRate(state, sawmill1)), round(boosted), 'so does its full rate');
+    assert.equal(round(rateBreakdown(state, 'planks').total), round(boosted), 'the HUD agrees');
+    tick(state, 1);
+    assert.equal(round(state.resources.planks), round(boosted), 'and that is what actually gets made');
+    assert.equal(round(state.resources.driftwood), 1.8, 'while the sawmill still uses only 1.2 of the 3.0 driftwood/s earned');
   }
 
   // A save the overdraw already corrupted (negative pools) loads with them floored at zero, so the
